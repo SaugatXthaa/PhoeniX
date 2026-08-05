@@ -1,34 +1,33 @@
 {
-  "name": "phoenix-addon",
-  "version": "3.0.0",
-  "description": "PhoeniX — Nuvio/Stremio streaming addon, faithful port of sootio-stremio-addon HTTPS sources",
-  "main": "server.js",
+  "name": "phoenix",
+  "version": "4.0.0",
+  "description": "PhoeniX — Nuvio/Stremio streaming addon (WebStreamrMBG port)",
+  "main": "src/index.js",
   "type": "module",
   "engines": {
     "node": ">=18.0.0"
   },
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "node src/index.js"
   },
   "dependencies": {
-    "@movie-web/providers": "^2.4.13",
+    "async-mutex": "^0.5.0",
     "axios": "^1.7.9",
-    "axios-cookiejar-support": "^6.0.4",
-    "cheerio": "^1.1.2",
+    "axios-cache-interceptor": "^1.8.3",
+    "axios-retry": "^4.5.0",
+    "bytes": "^3.1.2",
+    "cheerio": "^1.0.0",
     "cors": "^2.8.5",
-    "dotenv": "^17.4.2",
     "express": "^4.21.1",
     "express-rate-limit": "^7.4.1",
+    "fast-levenshtein": "^3.0.0",
     "fuse.js": "^7.5.0",
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.5",
-    "node-fetch": "^3.3.2",
-    "parse-torrent-title": "github:TheBeastLT/parse-torrent-title#b98e2ba2fb64fd5fa1c34c620bd9050bbc2e271d",
-    "request-ip": "^3.3.0",
+    "minimatch": "^10.0.3",
+    "rot13-cipher": "^1.0.0",
     "socks-proxy-agent": "^8.0.4",
-    "stremio-addon-sdk": "^1.6.10",
     "tough-cookie": "^5.0.0",
-    "xml2js": "^0.6.2"
+    "unpacker": "^1.0.1"
   }
 }

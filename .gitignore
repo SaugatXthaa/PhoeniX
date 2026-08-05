@@ -1,8 +1,7 @@
-node_modules
+node_modules/
+research/
+upload/
+skills/
 *.log
+.git/
 .env
-.env.local
-.DS_Store
-test-*.js
-tests/
-tool-results/

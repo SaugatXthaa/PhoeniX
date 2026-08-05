@@ -1,43 +1,17 @@
 services:
   - type: web
-    name: phoenix-addon
-    runtime: docker
+    name: phoenix
+    env: node
     plan: free
-    region: oregon
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    buildCommand: npm install
+    startCommand: node src/index.js
     healthCheckPath: /health
-    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3000
-      - key: ADDON_NAME
-        value: PhoeniX
-      # Per-source timeouts (ms)
-      - key: HTTP_STREAMING_TIMEOUT_MS
-        value: "12000"
-      - key: HTTP_111477_TIMEOUT
-        value: "10000"
-      - key: HTTP_4KHDHUB_TIMEOUT
-        value: "15000"
-      - key: HTTP_HDHUB4U_TIMEOUT
-        value: "15000"
-      # 111477 streaming endpoints
-      - key: HTTP_111477_BASE_URL
-        value: https://a.111477.xyz
-      - key: HTTP_111477_BULK_BASE_URL
-        value: https://p.111477.xyz/bulk
-      # TMDB (optional — Cinemeta works without auth, but TMDB is fallback)
       - key: TMDB_API_KEY
         sync: false
-      # FlareSolverr (optional — for CF-protected sources)
-      - key: FLARESOLVERR_URL
-        sync: false
-      # Proxy (optional — for geo-restricted sources)
+      - key: FLARESOLVERR_ENDPOINT
+        value: https://phoenix-flaresolverr.onrender.com
       - key: ALL_PROXY
         sync: false
-      # Lazy load (preview streams without validation)
-      - key: ENABLE_HTTP_STREAM_LAZY_LOAD
-        value: "true"
