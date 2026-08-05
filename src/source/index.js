@@ -2,6 +2,7 @@
 // Ported from research/webstreamr-mbg/src/source/index.ts
 
 import { CineHDPlus } from './CineHDPlus.js';
+import { CineWave } from './CineWave.js';
 import { Cuevana } from './Cuevana.js';
 import { Einschalten } from './Einschalten.js';
 import { Eurostreaming } from './Eurostreaming.js';
@@ -10,6 +11,7 @@ import { FourKHDHub } from './FourKHDHub.js';
 import { Frembed } from './Frembed.js';
 import { FrenchCloud } from './FrenchCloud.js';
 import { HDHub4u } from './HDHub4u.js';
+import { HiAnime } from './HiAnime.js';
 import { HomeCine } from './HomeCine.js';
 import { KinoGer } from './KinoGer.js';
 import { Kokoshka } from './Kokoshka.js';
@@ -18,6 +20,8 @@ import { MeineCloud } from './MeineCloud.js';
 import { MostraGuarda } from './MostraGuarda.js';
 import { MovieBox } from './MovieBox.js';
 import { Movix } from './Movix.js';
+import { NineAnime } from './NineAnime.js';
+import { PrimeShows } from './PrimeShows.js';
 import { VerHdLink } from './VerHdLink.js';
 import { VidSrc } from './VidSrc.js';
 import { Vidzee } from './Vidzee.js';
@@ -36,6 +40,11 @@ export const createSources = (fetcher) => {
     new VidSrc(),
     new Vidzee(fetcher),
     new MovieBox(fetcher),
+    new CineWave(fetcher),
+    new PrimeShows(fetcher),
+    // anime
+    new NineAnime(fetcher),
+    new HiAnime(fetcher),
     // AL
     new Kokoshka(fetcher),
     // ES / MX
