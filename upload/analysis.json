@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "This is a screenshot of a video player interface, specifically a web-based media player, displaying an error message. The interface has a dark theme with a black background and white/light gray text.\n\n**Overall Layout:**\nThe screen is divided into three main horizontal sections:\n1.  **Top Header Bar:** Contains the media title, source information, and control icons.\n2.  **Main Content Area (Center):** Displays the error message and a button.\n3.  **Bottom Control Bar:** Contains playback progress, timestamps, and player settings.\n\n---\n\n### **Detailed Description by Section:**\n\n#### **1. Top Header Bar (Top Left & Right)**\n*   **Top Left Text:**\n    *   **Title:** \"Spider-Man: Homecoming\" (Large, bold white text).\n    *   **Source/Uploader:** \"PhoeniX PhoeniX\" (Smaller, gray text located directly below the title).\n*   **Top Right Icons (from left to right):**\n    *   An icon representing \"Open in new window\" or \"Pop-out player\" (a square with an arrow pointing out of the top-right corner).\n    *   A \"Lock\" or \"Secure\" icon (padlock shape).\n    *   A \"Settings\" or \"Tools\" icon (wrench or gear shape).\n    *   A \"Back\" or \"Return\" arrow icon pointing left.\n\n#### **2. Main Content Area (Center)**\nThis area is dominated by a large error notification centered on the screen.\n*   **Error Title:** \"Playback error\" (Very large, bold, white sans-serif font).\n*   **Error Message:** \"[mpv] unrecognized file format\" (Smaller white text below the title).\n    *   There are faint decorative icons flanking this text: a circular arrow (refresh/retry icon) on the left and what looks like a loading spinner or sunburst icon on the right.\n*   **Action Button:**\n    *   A large, rectangular button with rounded corners (\"pill\" shape).\n    *   **Background Color:** White or very light gray.\n    *   **Text Color:** Black.\n    *   **Text:** \"Go back\".\n\n#### **3. Bottom Control Bar**\nLocated at the very bottom of the screen, appearing slightly dimmed or overlaid on a dark background.\n\n*   **Progress Bar:**\n    *   A thin horizontal line spanning almost the full width.\n    *   It appears mostly empty/dark, indicating no playback progress.\n    *   There is a small circular handle (scrubber) visible at the far right end of the bar.\n\n*   **Timestamps:**\n    *   **Left Side:** \"00:00\" inside a subtle rounded rectangle outline.\n    *   **Right Side:** \"00:00\" inside a similar subtle rounded rectangle outline.\n\n*   **Player Controls (Centered horizontally within the bottom bar):**\n    These controls are contained within a faint, wide, rounded container. From left to right:\n    *   **Fit:** Icon resembling a rectangle with corners, followed by the text \"Fit\".\n    *   **1x:** Icon resembling a lightning bolt or speed gauge, followed by the text \"1x\" (indicating playback speed).\n    *   **Subs:** Icon resembling \"CC\" (Closed Captions), followed by the text \"Subs\".\n    *   **Audio:** Icon resembling a speaker or person silhouette, followed by the text \"Audio\".\n    *   **Sources:** Icon resembling two diagonal arrows or a shuffle symbol, followed by the text \"Sources\".\n\n### **Summary of All Visible Text:**\n1.  Spider-Man: Homecoming\n2.  PhoeniX PhoeniX\n3.  Playback error\n4.  [mpv] unrecognized file format\n5.  Go back\n6.  00:00\n7.  00:00\n8.  Fit\n9.  1x\n10. Subs\n11. Audio\n12. Sources",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1785897624,
+  "id": "20260805103945ff0cce30841c4863",
+  "model": "glm-5v-turbo",
+  "object": "chat.completion",
+  "request_id": "20260805103945ff0cce30841c4863",
+  "usage": {
+    "completion_tokens": 832,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 4882,
+    "prompt_tokens_details": {
+      "cached_tokens": 1
+    },
+    "total_tokens": 5714
+  }
+}
