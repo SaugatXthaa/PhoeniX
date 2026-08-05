@@ -32,7 +32,7 @@ const manifest = {
     id: 'community.phoenix.addon',
     version: '3.0.0',
     name: ADDON_NAME,
-    description: 'PhoeniX — Nuvio/Stremio streaming addon with 34 sources: 111477, 4KHDHub, CineWave, HDHub4u, MKVCinemas, CineDoze, MoviesMod, MoviesLeech, Pahe, DDLBase, MkvBase, SkyMoviesHD, KMMovies, HDMoviesChannel, XDMovies, ZStream, VixSrc, AnimeFlix, AnimePahe, Anikura, Anikoto, Enma, Tenies, Aether, Nima4K, UHDMovies, CineFreak, MoviesEQ, Miruro, AniWaves, AniWave, AcerMovies, MkvDrama, StreamXTV.',
+    description: 'PhoeniX — Nuvio/Stremio streaming addon with 37 sources: 111477, 4KHDHub, CineWave, HDHub4u, MKVCinemas, CineDoze, MoviesMod, MoviesLeech, Pahe, DDLBase, MkvBase, SkyMoviesHD, KMMovies, HDMoviesChannel, XDMovies, ZStream, VixSrc, AnimeFlix, AnimePahe, Anikura, Anikoto, Enma, Tenies, Aether, Nima4K, UHDMovies, CineFreak, MoviesEQ, Miruro, AniWaves, AniWave, AcerMovies, MkvDrama, StreamXTV, PrimeShows, HiAnime, FlixHQ.',
     logo: 'https://i.imgur.com/mDU8KgH.png',
     resources: ['stream'],
     types: ['movie', 'series'],
@@ -121,7 +121,8 @@ app.get('/health', (req, res) => {
                   'SkyMoviesHD', 'KMMovies', 'HDMoviesChannel', 'XDMovies', 'ZStream',
                   'VixSrc', 'AnimeFlix', 'AnimePahe', 'Anikura', 'Anikoto', 'Enma',
                   'Tenies', 'Aether', 'Nima4K', 'UHDMovies', 'CineFreak', 'MoviesEQ',
-                  'Miruro', 'AniWaves', 'AniWave', 'AcerMovies', 'MkvDrama', 'StreamXTV']
+                  'Miruro', 'AniWaves', 'AniWave', 'AcerMovies', 'MkvDrama', 'StreamXTV',
+                  'PrimeShows', 'HiAnime', 'FlixHQ']
     });
 });
 
@@ -359,7 +360,7 @@ app.listen(PORT, HOST, () => {
     console.log(`[${ADDON_NAME}] listening on http://${HOST}:${PORT}`);
     console.log(`[${ADDON_NAME}] manifest: http://${HOST}:${PORT}/manifest.json`);
     console.log(`[${ADDON_NAME}] NODE_ENV=${process.env.NODE_ENV || 'development'}`);
-    console.log(`[${ADDON_NAME}] Sources: 34 providers (111477, 4KHDHub, CineWave, HDHub4u, MKVCinemas, CineDoze, MoviesMod, MoviesLeech, Pahe, DDLBase, MkvBase, SkyMoviesHD, KMMovies, HDMoviesChannel, XDMovies, ZStream, VixSrc, AnimeFlix, AnimePahe, Anikura, Anikoto, Enma, Tenies, Aether, Nima4K, UHDMovies, CineFreak, MoviesEQ, Miruro, AniWaves, AniWave, AcerMovies, MkvDrama, StreamXTV)`);
+    console.log(`[${ADDON_NAME}] Sources: 37 providers (111477, 4KHDHub, CineWave, HDHub4u, MKVCinemas, CineDoze, MoviesMod, MoviesLeech, Pahe, DDLBase, MkvBase, SkyMoviesHD, KMMovies, HDMoviesChannel, XDMovies, ZStream, VixSrc, AnimeFlix, AnimePahe, Anikura, Anikoto, Enma, Tenies, Aether, Nima4K, UHDMovies, CineFreak, MoviesEQ, Miruro, AniWaves, AniWave, AcerMovies, MkvDrama, StreamXTV, PrimeShows, HiAnime, FlixHQ)`);
 });
 
 process.on('SIGTERM', () => process.exit(0));
