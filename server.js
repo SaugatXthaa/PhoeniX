@@ -195,7 +195,11 @@ const pendingResolves = new Map();
 const EXPIRING_URL_PATTERNS = ['video-downloads.googleusercontent.com', 'gpdl.hubcloud', 'drive.google.com'];
 
 // CDNs that require specific Referer/Range headers — must be proxied, not redirected
-const PROXY_REQUIRED_HOSTS = ['workers.dev', 'fileshubcdn', 'vmpx.online', 'vmwesa.online'];
+// NOTE: workers.dev is NOT proxied because the CDN blocks datacenter IPs (Render).
+// If proxied through Render, it returns 403. Instead, 302-redirect to the workers.dev
+// URL so the player requests it directly from the user's residential IP (which is allowed).
+// Only proxy CDNs that genuinely need Referer and don't block by IP.
+const PROXY_REQUIRED_HOSTS = ['vmpx.online', 'vmwesa.online'];
 
 // CDNs and their required Referer headers
 const CDN_REFERERS = {
