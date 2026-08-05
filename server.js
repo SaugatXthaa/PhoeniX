@@ -187,6 +187,18 @@ const pendingResolves = new Map();
 // URLs containing these patterns expire quickly (Google Drive download tokens ~3 min)
 const EXPIRING_URL_PATTERNS = ['video-downloads.googleusercontent.com', 'gpdl.hubcloud', 'drive.google.com'];
 
+// CDNs that require specific Referer/Range headers — must be proxied, not redirected
+const PROXY_REQUIRED_HOSTS = ['workers.dev', 'fileshubcdn', 'vmpx.online', 'vmwesa.online'];
+
+// CDNs and their required Referer headers
+const CDN_REFERERS = {
+    'workers.dev': 'https://gamerxyt.com/',
+    'fileshubcdn': 'https://gamerxyt.com/',
+    'vmpx.online': 'https://gamerxyt.com/',
+    'vmwesa.online': 'https://gamerxyt.com/',
+    'hubcdn.fans': 'https://hubcloud.ist/',
+};
+
 function isExpiringUrl(url) {
     if (!url) return false;
     const lower = url.toLowerCase();
@@ -195,6 +207,84 @@ function isExpiringUrl(url) {
 
 function getResolveCacheTtl(url) {
     return isExpiringUrl(url) ? RESOLVE_CACHE_TTL_SHORT_MS : RESOLVE_CACHE_TTL_MS;
+}
+
+function needsProxy(url) {
+    if (!url) return false;
+    const lower = url.toLowerCase();
+    return PROXY_REQUIRED_HOSTS.some(h => lower.includes(h));
+}
+
+function getRefererForUrl(url) {
+    if (!url) return null;
+    const lower = url.toLowerCase();
+    for (const [host, referer] of Object.entries(CDN_REFERERS)) {
+        if (lower.includes(host)) return referer;
+    }
+    return null;
+}
+
+/**
+ * Proxy a video stream through the server with proper headers.
+ * Used for CDNs that require Referer/Range headers (workers.dev, etc.)
+ * Supports Range requests for seeking.
+ */
+function proxyVideoStream(targetUrl, req, res) {
+    const referer = getRefererForUrl(targetUrl);
+    const proxyHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+    };
+    if (referer) proxyHeaders['Referer'] = referer;
+    // Forward Range header for seeking
+    if (req.headers.range) {
+        proxyHeaders['Range'] = req.headers.range;
+    } else {
+        proxyHeaders['Range'] = 'bytes=0-';
+    }
+
+    const protocol = targetUrl.startsWith('https:') ? https : http;
+    const proxyReq = protocol.request(targetUrl, {
+        method: 'GET',
+        headers: proxyHeaders,
+        timeout: 30000,
+    }, (proxyRes) => {
+        // If we get a redirect, follow it
+        if ([301, 302, 307, 308].includes(proxyRes.statusCode) && proxyRes.headers.location) {
+            proxyRes.destroy();
+            const redirectUrl = new URL(proxyRes.headers.location, targetUrl).toString();
+            return proxyVideoStream(redirectUrl, req, res);
+        }
+
+        // Forward status and headers to client
+        const forwardHeaders = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control'];
+        res.writeHead(proxyRes.statusCode, Object.fromEntries(
+            Object.entries(proxyRes.headers).filter(([k]) => forwardHeaders.includes(k.toLowerCase()))
+        ));
+        proxyRes.pipe(res);
+    });
+
+    proxyReq.on('error', (err) => {
+        console.error(`[proxy] error: ${err.message}`);
+        if (!res.headersSent) {
+            res.status(502).send('Proxy error');
+        }
+        proxyReq.destroy();
+    });
+
+    proxyReq.on('timeout', () => {
+        console.error(`[proxy] timeout`);
+        if (!res.headersSent) {
+            res.status(504).send('Proxy timeout');
+        }
+        proxyReq.destroy();
+    });
+
+    req.on('close', () => {
+        proxyReq.destroy();
+    });
+
+    proxyReq.end();
 }
 
 app.get('/resolve/httpstreaming/:url(*)', async (req, res) => {
@@ -214,6 +304,11 @@ app.get('/resolve/httpstreaming/:url(*)', async (req, res) => {
         const ttl = getResolveCacheTtl(cached.url);
         if (Date.now() - cached.ts < ttl) {
             console.log(`[resolver] cache HIT (TTL=${Math.round(ttl/1000)}s, expiring=${isExpiringUrl(cached.url)}, age=${Math.round((Date.now()-cached.ts)/1000)}s)`);
+            // If the resolved URL needs proxy (workers.dev etc.), proxy it instead of redirecting
+            if (needsProxy(cached.url)) {
+                console.log(`[resolver] proxying cached URL (requires headers)`);
+                return proxyVideoStream(cached.url, req, res);
+            }
             const redirectUrl = encodeUrlForStreaming(cached.url);
             return res.redirect(302, redirectUrl);
         }
@@ -227,6 +322,10 @@ app.get('/resolve/httpstreaming/:url(*)', async (req, res) => {
         try {
             const finalUrl = await pendingResolves.get(cacheKey);
             if (finalUrl) {
+                if (needsProxy(finalUrl)) {
+                    console.log(`[resolver] proxying in-flight URL (requires headers)`);
+                    return proxyVideoStream(finalUrl, req, res);
+                }
                 const redirectUrl = encodeUrlForStreaming(finalUrl);
                 return res.redirect(302, redirectUrl);
             }
@@ -242,12 +341,13 @@ app.get('/resolve/httpstreaming/:url(*)', async (req, res) => {
             if (finalUrl) {
                 return finalUrl;
             }
-            // Fallback: return the original URL (Nuvio's player may still handle it)
-            console.log(`[resolver] resolveHttpStreamUrl returned null, falling back to original URL`);
-            return targetUrl;
+            // Fallback: return null — do NOT return the original URL (it's an HTML page,
+            // not a video, which causes "fully watched" / "unrecognized format" errors)
+            console.log(`[resolver] resolveHttpStreamUrl returned null, no fallback`);
+            return null;
         } catch (e) {
             console.error(`[resolver] error: ${e.message}`);
-            return targetUrl;
+            return null;
         }
     })();
 
@@ -256,16 +356,24 @@ app.get('/resolve/httpstreaming/:url(*)', async (req, res) => {
         const finalUrl = await resolvePromise;
         if (finalUrl) {
             resolvedUrlCache.set(cacheKey, { url: finalUrl, ts: Date.now() });
+            // If the resolved URL needs proxy (workers.dev etc.), proxy it
+            if (needsProxy(finalUrl)) {
+                console.log(`[resolver] proxying resolved URL (requires headers)`);
+                return proxyVideoStream(finalUrl, req, res);
+            }
             const redirectUrl = encodeUrlForStreaming(finalUrl);
             return res.redirect(302, redirectUrl);
+        } else {
+            // Resolution failed — return 404 so player shows "no stream" instead of
+            // trying to play an HTML page
+            return res.status(404).send('Stream not found');
         }
     } catch (e) {
         console.error(`[resolver] final error: ${e.message}`);
+        return res.status(502).send('Resolution error');
     } finally {
         pendingResolves.delete(cacheKey);
     }
-
-    return res.redirect(302, targetUrl);
 });
 
 // ============== LANDING PAGE ==============
