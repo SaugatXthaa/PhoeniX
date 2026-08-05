@@ -67,7 +67,7 @@ app.get('/stream/:type/:id.json', async (req, res) => {
     hostUrl: new URL(`https://${req.headers.host}`),
     id: req.headers['x-request-id'] || '',
     ip: req.ip,
-    config: { multi: 'on', en: 'on', includeExternalUrls: 'on' },
+    config: { multi: 'on', en: 'on' },
   };
 
   logger.log(`[${ADDON_NAME}] stream ${type} ${id}`);
