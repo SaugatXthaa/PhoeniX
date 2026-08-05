@@ -50,12 +50,13 @@ function enrichCacheParams(hasResults = true) {
     if (!hasResults) {
         return { cacheMaxAge: 0, staleRevalidate: 0, staleError: 0 };
     }
-    // Short cache: 5 min max-age, 15 min stale. This ensures Nuvio doesn't
-    // serve stale stream lists for too long after a provider fix is deployed.
+    // Cache for 30 minutes — matches the internal stream result cache.
+    // This ensures Nuvio's client-side cache and the server-side cache
+    // expire at the same time, so users always get fresh results together.
     return {
-        cacheMaxAge: 5 * 60,
-        staleRevalidate: 15 * 60,
-        staleError: 30 * 60
+        cacheMaxAge: 30 * 60,
+        staleRevalidate: 60 * 60,
+        staleError: 2 * 60 * 60
     };
 }
 
