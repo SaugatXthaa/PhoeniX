@@ -12,6 +12,7 @@
     "dev": "node server.js"
   },
   "dependencies": {
+    "@movie-web/providers": "^2.4.13",
     "axios": "^1.7.9",
     "axios-cookiejar-support": "^6.0.4",
     "cheerio": "^1.1.2",
