@@ -479,3 +479,16 @@ app.listen(PORT, HOST, () => {
 
 process.on('SIGTERM', () => process.exit(0));
 process.on('SIGINT', () => process.exit(0));
+
+// ============== KEEP-ALIVE (prevent Render free tier spin-down) ==============
+// Render free tier spins down after 15 min of inactivity. When a request
+// comes in on a spun-down server, it takes 30s+ to spin up — causing Nuvio
+// to timeout and show 0 streams. This self-ping keeps the server warm.
+const KEEP_ALIVE_URL = process.env.RENDER_EXTERNAL_URL || `https://phoenix-e9au.onrender.com`;
+const KEEP_ALIVE_INTERVAL = 5 * 60 * 1000; // 5 minutes
+setInterval(() => {
+    fetch(`${KEEP_ALIVE_URL}/health`)
+        .then(() => console.log(`[keep-alive] pinged ${KEEP_ALIVE_URL}/health`))
+        .catch(err => console.log(`[keep-alive] failed: ${err.message}`));
+}, KEEP_ALIVE_INTERVAL);
+console.log(`[${ADDON_NAME}] Keep-alive enabled: pinging every ${KEEP_ALIVE_INTERVAL / 1000}s`);
