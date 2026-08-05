@@ -170,10 +170,31 @@ app.get('/:apiKey/stream/:type/:id.json', streamHandler);
 
 // ============== LAZY URL RESOLVER ==============
 // /resolve/httpstreaming/<encoded-url> → 302 redirect to actual stream URL
-const RESOLVE_CACHE_TTL_MS = parseInt(process.env.RESOLVE_CACHE_TTL_MS || '900000', 10); // 15 min
+//
+// Two-tier cache TTL:
+//   - Short (2 min) for URLs that expire: Google UserContent tokens, gpdl.hubcloud redirects
+//   - Long  (10 min) for stable CDN URLs: workers.dev, fileshubcdn, pixeldrain
+//
+// This prevents the "403 on replay" issue where a cached Google Drive token URL
+// expires before the user replays the stream.
+const RESOLVE_CACHE_TTL_MS = parseInt(process.env.RESOLVE_CACHE_TTL_MS || '600000', 10); // 10 min default
+const RESOLVE_CACHE_TTL_SHORT_MS = parseInt(process.env.RESOLVE_CACHE_TTL_SHORT_MS || '120000', 10); // 2 min for expiring URLs
 const HTTP_RESOLVE_TIMEOUT = parseInt(process.env.HTTP_RESOLVE_TIMEOUT || '15000', 10);
 const resolvedUrlCache = new Map();
 const pendingResolves = new Map();
+
+// URLs containing these patterns expire quickly (Google Drive download tokens ~3 min)
+const EXPIRING_URL_PATTERNS = ['video-downloads.googleusercontent.com', 'gpdl.hubcloud', 'drive.google.com'];
+
+function isExpiringUrl(url) {
+    if (!url) return false;
+    const lower = url.toLowerCase();
+    return EXPIRING_URL_PATTERNS.some(p => lower.includes(p));
+}
+
+function getResolveCacheTtl(url) {
+    return isExpiringUrl(url) ? RESOLVE_CACHE_TTL_SHORT_MS : RESOLVE_CACHE_TTL_MS;
+}
 
 app.get('/resolve/httpstreaming/:url(*)', async (req, res) => {
     const encodedUrl = req.params.url;
@@ -186,11 +207,18 @@ app.get('/resolve/httpstreaming/:url(*)', async (req, res) => {
 
     const cacheKey = crypto.createHash('md5').update(targetUrl).digest('hex');
 
-    // Check cache
+    // Check cache — use URL-specific TTL (short for expiring URLs like Google UserContent)
     const cached = resolvedUrlCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < RESOLVE_CACHE_TTL_MS) {
-        const redirectUrl = encodeUrlForStreaming(cached.url);
-        return res.redirect(302, redirectUrl);
+    if (cached && cached.url) {
+        const ttl = getResolveCacheTtl(cached.url);
+        if (Date.now() - cached.ts < ttl) {
+            console.log(`[resolver] cache HIT (TTL=${Math.round(ttl/1000)}s, expiring=${isExpiringUrl(cached.url)}, age=${Math.round((Date.now()-cached.ts)/1000)}s)`);
+            const redirectUrl = encodeUrlForStreaming(cached.url);
+            return res.redirect(302, redirectUrl);
+        }
+        // Cache expired — evict so we re-resolve on next request
+        console.log(`[resolver] cache EXPIRED (age=${Math.round((Date.now()-cached.ts)/1000)}s, ttl=${Math.round(ttl/1000)}s) — re-resolving`);
+        resolvedUrlCache.delete(cacheKey);
     }
 
     // In-flight dedup
