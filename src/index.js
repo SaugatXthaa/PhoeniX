@@ -2,15 +2,22 @@
 
 import express from 'express';
 import cors from 'cors';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { readFileSync } from 'fs';
 import { Fetcher } from './utils/Fetcher.js';
 import { createSources } from './source/index.js';
 import { createExtractors, ExtractorRegistry } from './extractor/index.js';
 import { StreamResolver } from './utils/StreamResolver.js';
 import { ImdbId, TmdbId } from './utils/id.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 const PORT = process.env.PORT || 7000;
 const HOST = process.env.HOST || '0.0.0.0';
 const ADDON_NAME = process.env.ADDON_NAME || 'PhoeniX';
+const VERSION = '4.0.0';
 
 const logger = console;
 
@@ -24,16 +31,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Serve static files (logo)
+app.use('/public', express.static(join(__dirname, '..', 'public')));
+
 // ============== MANIFEST ==============
 app.get('/manifest.json', (req, res) => {
+  const hostUrl = `https://${req.headers.host}`;
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.json({
     id: 'community.phoenix.addon',
-    version: '4.0.0',
+    version: VERSION,
     name: ADDON_NAME,
-    description: 'PhoeniX — Nuvio/Stremio streaming addon with direct HTTP streams from multiple sources. No external browser needed.',
-    logo: 'https://i.imgur.com/mDU8KgH.png',
+    description: 'Stream movies, series and anime in HD.',
+    logo: `${hostUrl}/public/logo.png`,
     resources: ['stream'],
     types: ['movie', 'series'],
     idPrefixes: ['tt', 'tmdb:'],
@@ -137,17 +148,103 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     name: ADDON_NAME,
-    version: '4.0.0',
+    version: VERSION,
     uptime: process.uptime(),
     sources: sources.map(s => s.id),
     extractors: extractors.map(e => e.id),
   });
 });
 
-// ============== LANDING ==============
+// ============== LANDING PAGE ==============
 app.get('/', (req, res) => {
+  const hostUrl = `https://${req.headers.host}`;
+  const manifestUrl = `${hostUrl}/manifest.json`;
   res.setHeader('Content-Type', 'text/html');
-  res.send(`<!DOCTYPE html><html><head><title>${ADDON_NAME}</title></head><body style="background:#0a0e1a;color:#e6e9f5;font-family:sans-serif;padding:2rem"><h1>🔥 ${ADDON_NAME} v4.0.0</h1><p>WebStreamrMBG-based streaming addon with ${sources.length} sources and ${extractors.length} extractors.</p><p><a href="/manifest.json" style="color:#ffca28">Install in Nuvio / Stremio</a></p><p>Sources: ${sources.map(s => s.label).join(', ')}</p></body></html>`);
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhoeniX</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #0a0a0f 0%, #1a0a1a 30%, #0f0a15 50%, #1a0a0f 70%, #0a0a0f 100%);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .phoenix-bg {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80vmin;
+    height: 80vmin;
+    opacity: 0.06;
+    background-image: url('${hostUrl}/public/logo.svg');
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    filter: drop-shadow(0 0 60px rgba(255, 100, 0, 0.3));
+    animation: glow 4s ease-in-out infinite alternate;
+  }
+  @keyframes glow {
+    from { opacity: 0.04; filter: drop-shadow(0 0 40px rgba(255, 80, 0, 0.2)); }
+    to { opacity: 0.08; filter: drop-shadow(0 0 80px rgba(255, 120, 0, 0.4)); }
+  }
+  .ember {
+    position: fixed;
+    bottom: -10px;
+    width: 4px;
+    height: 4px;
+    background: rgba(255, 140, 0, 0.6);
+    border-radius: 50%;
+    animation: rise 3s linear infinite;
+    pointer-events: none;
+  }
+  @keyframes rise {
+    to { transform: translateY(-100vh) translateX(20px); opacity: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="phoenix-bg"></div>
+<div id="embers"></div>
+<div class="relative z-10 flex flex-col items-center px-6 w-full max-w-md">
+  <img src="${hostUrl}/public/logo.svg" alt="PhoeniX" class="w-20 h-20 mb-3 drop-shadow-[0_0_25px_rgba(255,100,0,0.5)]">
+  <h1 class="text-5xl font-black text-white tracking-tight mb-1">PhoeniX</h1>
+  <p class="text-sm text-orange-400/70 font-medium mb-8 tracking-wider uppercase">Stream movies, series & anime in HD</p>
+  <div class="w-full rounded-3xl border border-white/10 p-6" style="background: rgba(15,15,20,0.6); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);">
+    <a href="stremio://${hostUrl.replace('https://','')}/manifest.json" class="flex items-center justify-center w-full py-3.5 rounded-2xl text-white font-bold text-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]" style="background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); box-shadow: 0 8px 30px rgba(124,58,237,0.4);">
+      <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10 0C4.477 0 0 4.477 0 10c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.014-1.699-2.782.602-3.369-1.34-3.369-1.34-.455-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.071 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.57 9.57 0 0110 4.836a9.59 9.59 0 012.504.336c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.579.688.481A10.001 10.001 0 0020 10c0-5.523-4.477-10-10-10z"/></svg>
+      Install in Stremio
+    </a>
+    <button onclick="navigator.clipboard.writeText('${manifestUrl}').then(()=>{this.innerText='Copied!';setTimeout(()=>this.innerText='Copy Manifest URL',2000)})" class="mt-3 flex items-center justify-center w-full py-3 rounded-2xl text-gray-300 font-medium text-sm transition-all duration-300 hover:text-white hover:bg-white/5 border border-white/10">
+      <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+      Copy Manifest URL
+    </button>
+  </div>
+</div>
+<script>
+  // Ember particles
+  const embers = document.getElementById('embers');
+  for(let i=0;i<15;i++){
+    const e=document.createElement('div');
+    e.className='ember';
+    e.style.left=Math.random()*100+'vw';
+    e.style.animationDuration=(2+Math.random()*3)+'s';
+    e.style.animationDelay=Math.random()*3+'s';
+    e.style.width=e.style.height=(2+Math.random()*4)+'px';
+    embers.appendChild(e);
+  }
+</script>
+</body>
+</html>`);
 });
 
 // ============== START ==============
