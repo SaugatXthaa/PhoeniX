@@ -3,6 +3,7 @@
 
 import { CineHDPlus } from './CineHDPlus.js';
 import { CineWave } from './CineWave.js';
+import { AnimeFlix } from './AnimeFlix.js';
 import { Cuevana } from './Cuevana.js';
 import { Einschalten } from './Einschalten.js';
 import { Eurostreaming } from './Eurostreaming.js';
@@ -45,6 +46,7 @@ export const createSources = (fetcher) => {
     // anime
     new NineAnime(fetcher),
     new HiAnime(fetcher),
+    new AnimeFlix(fetcher),
     // AL
     new Kokoshka(fetcher),
     // ES / MX
