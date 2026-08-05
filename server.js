@@ -50,10 +50,12 @@ function enrichCacheParams(hasResults = true) {
     if (!hasResults) {
         return { cacheMaxAge: 0, staleRevalidate: 0, staleError: 0 };
     }
+    // Short cache: 5 min max-age, 15 min stale. This ensures Nuvio doesn't
+    // serve stale stream lists for too long after a provider fix is deployed.
     return {
-        cacheMaxAge: 60 * 60,
-        staleRevalidate: 4 * 60 * 60,
-        staleError: 7 * 24 * 60 * 60
+        cacheMaxAge: 5 * 60,
+        staleRevalidate: 15 * 60,
+        staleError: 30 * 60
     };
 }
 
@@ -65,8 +67,9 @@ builder.defineStreamHandler(args => {
         }
         const config = args.config || {};
         // Inject host URL (for /resolve/httpstreaming lazy resolver)
+        // Always use https:// — Render terminates TLS at the proxy
         config.host = `${args.config?.host || ''}`.replace(/\/$/, '') ||
-            `http://${HOST}:${PORT}`;
+            `https://${HOST}:${PORT}`;
 
         const type = args.type;
         const id = args.id;
@@ -137,7 +140,10 @@ app.get('/:apiKey?/manifest.json', (req, res) => {
 const streamHandler = async (req, res) => {
     const { type, id } = req.params;
     const apiKey = req.params.apiKey;
-    const host = `${req.protocol}://${req.headers.host}`;
+    // Always use https:// for the host URL — Render terminates TLS at the proxy,
+    // so req.protocol may report 'http' even when the client connects via HTTPS.
+    // Using http:// causes a 301 redirect that breaks the resolver's URL encoding.
+    const host = `https://${req.headers.host}`;
 
     if (type !== 'movie' && type !== 'series') {
         return res.json({ streams: [] });
