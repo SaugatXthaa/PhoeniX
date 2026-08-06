@@ -228,6 +228,12 @@ export class VidKing extends Extractor {
 
         const format = formatFromUrl(streamUrl);
 
+        // Some speedracelight CDNs (ironwallnet.net, vimeos.net, etc.) return
+        // 403 without a Referer. Add the vidking.net Referer so Stremio's proxy
+        // injects it. Hosts like rivermagnet.site work without Referer, but
+        // adding it doesn't break them — so we add it for all streams.
+        const requestHeaders = { Referer: 'https://www.vidking.net/' };
+
         const titleBits = [];
         if (meta2.title) titleBits.push(meta2.title);
         if (season) titleBits.push(TmdbId.formatSeasonAndEpisode(tmdbIdObj));
@@ -238,6 +244,7 @@ export class VidKing extends Extractor {
           url: streamUrl,
           format,
           label: `${provider.name}`,
+          requestHeaders,
           meta: {
             ...meta,
             ...meta2,
