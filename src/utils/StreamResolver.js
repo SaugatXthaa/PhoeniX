@@ -42,7 +42,8 @@ export class StreamResolver {
           sourceResults.map(({ url, meta }) =>
             this.extractorRegistry.handle(ctx, url, { sourceLabel: source.label, sourceId: source.id, priority: source.priority, ...meta }, true)
               .catch(e => {
-                this.logger.warn(`Extractor for ${source.id} ${url.href} error: ${e.message}`);
+                const msg = e?.message || e?.constructor?.name || String(e);
+                this.logger.warn(`Extractor for ${source.id} ${url.href} error: ${msg}`);
                 return [];
               })
           )
@@ -50,7 +51,9 @@ export class StreamResolver {
         urlResults.push(...sourceUrlResults.flat());
       } catch (error) {
         sourceErrorCount++;
-        this.logger.warn(`Source ${source.id} error: ${error.message}`);
+        // Some errors (NotFoundError, etc.) have empty .message — include constructor name for diagnostics
+        const msg = error?.message || error?.constructor?.name || String(error);
+        this.logger.warn(`Source ${source.id} error: ${msg}`);
       }
     };
 

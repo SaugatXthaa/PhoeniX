@@ -79,6 +79,13 @@ export class VidKing extends Extractor {
     this.label = 'VidKing';
     this.ttl = 900_000; // 15min — streams are short-lived (seed TTL ~30s, but Stremio caches the resolved URL)
     this.cacheVersion = 1;
+    // Per-tmdbId result cache + in-flight dedup. When CineWave returns 16 embed
+    // URLs for the same tmdbId, only the first call hits the speedracelight API;
+    // the other 15 return cached results. Without this, 16 parallel calls × 9
+    // providers = 144 API hits → rate-limited → all fail.
+    this.tmdbCache = new Map();      // key: `${tmdbId}_${season}_${episode}` → { streams, ts }
+    this.tmdbInFlight = new Map();   // key → Promise
+    this.TMDB_CACHE_TTL = 8 * 60 * 1000; // 8 min (speedracelight seed TTL is ~30s, but resolved stream URLs live longer)
   }
 
   // Only matches vidking.net embed URLs directly. For other URLs, the
@@ -114,6 +121,39 @@ export class VidKing extends Extractor {
       episode = parsed.episode;
     }
 
+    // Cache key by tmdbId + season + episode — NOT by URL.
+    // Multiple embed URLs for the same tmdbId (CineWave's 16 sources, PrimeShows' 6 servers)
+    // all resolve to the same speedracelight API call, so we dedupe here.
+    const cacheKey = `${tmdbId}_${season ?? 0}_${episode ?? 0}`;
+
+    // Return cached result if fresh
+    const cached = this.tmdbCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < this.TMDB_CACHE_TTL) {
+      this.logger?.info?.(`VidKing: cache hit for tmdb=${tmdbId} (${cached.streams.length} streams)`);
+      return cached.streams;
+    }
+
+    // Dedupe in-flight calls — if another call for the same tmdbId is already
+    // running, wait for it instead of firing a duplicate API request.
+    const existing = this.tmdbInFlight.get(cacheKey);
+    if (existing) {
+      this.logger?.info?.(`VidKing: deduping in-flight call for tmdb=${tmdbId}`);
+      return existing;
+    }
+
+    const promise = this._extractUncached(ctx, url, meta, preloaded, type, tmdbId, season, episode);
+    this.tmdbInFlight.set(cacheKey, promise);
+
+    try {
+      const streams = await promise;
+      this.tmdbCache.set(cacheKey, { streams, ts: Date.now() });
+      return streams;
+    } finally {
+      this.tmdbInFlight.delete(cacheKey);
+    }
+  }
+
+  async _extractUncached(ctx, url, meta, preloaded, type, tmdbId, season, episode) {
     // Build a TmdbId object for our utility functions
     const tmdbIdObj = {
       id: tmdbId,
