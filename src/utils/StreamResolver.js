@@ -92,6 +92,13 @@ export class StreamResolver {
             proxyHeaders: { request: urlResult.requestHeaders },
           }),
           ...(urlResult.meta?.bytes && { videoSize: urlResult.meta.bytes }),
+          // Make direct CDN streams seekable: bypass Stremio's proxy for any
+          // stream that doesn't need custom request headers. The CDN's native
+          // HTTP Range / Accept-Ranges support then enables full seeking in the
+          // player. Streams WITH requestHeaders stay proxied (they need the
+          // proxy to inject Referer/Origin headers). Additive — overrides any
+          // earlier notWebReady:true for headerless streams only.
+          ...(!urlResult.requestHeaders && urlResult.notWebReady !== true && { notWebReady: false }),
         },
       };
       streams.push(stream);
