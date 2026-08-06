@@ -18,7 +18,7 @@ export class Movix extends Source {
 
   async handleInternal(ctx, _type, id) {
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
-    const [, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
+    const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
 
     const apiUrl = tmdbId.season
       ? new URL(`/api/tmdb/tv/${tmdbId.id}?season=${tmdbId.season}&episode=${tmdbId.episode}`, this.baseUrl)
@@ -42,6 +42,13 @@ export class Movix extends Source {
       ? `${json['tmdb_details']?.['title'] ?? 'Unknown'} ${tmdbId.formatSeasonAndEpisode()}`
       : `${json['tmdb_details']?.['title'] ?? 'Unknown'} (${year})`;
 
-    return urls.map(url => ({ url, meta: { countryCodes: [CountryCode.fr], referer: data.iframe_src, title } }));
+    const vidkingMeta = {
+      name,
+      year,
+      tmdbId: tmdbId.id,
+      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
+    };
+
+    return urls.map(url => ({ url, meta: { countryCodes: [CountryCode.fr], referer: data.iframe_src, title, vidking: vidkingMeta } }));
   }
 }

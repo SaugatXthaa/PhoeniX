@@ -33,6 +33,13 @@ export class Eurostreaming extends Source {
 
     const title = `${name} ${tmdbId.formatSeasonAndEpisode()}`;
 
+    const vidkingMeta = {
+      name,
+      year: undefined,
+      tmdbId: tmdbId.id,
+      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
+    };
+
     return Promise.all(
       $(`[data-num="${tmdbId.season}x${tmdbId.episode}"]`)
         .siblings('.mirrors')
@@ -40,7 +47,7 @@ export class Eurostreaming extends Source {
         .map((_i, el) => new URL($(el).attr('data-link')))
         .toArray()
         .filter(url => !url.host.match(/eurostreaming/))
-        .map(url => ({ url, meta: { countryCodes: [CountryCode.it], referer: seriesPageUrl.href, title } })),
+        .map(url => ({ url, meta: { countryCodes: [CountryCode.it], referer: seriesPageUrl.href, title, vidking: vidkingMeta } })),
     );
   }
 

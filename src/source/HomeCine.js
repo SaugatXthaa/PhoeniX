@@ -45,6 +45,13 @@ export class HomeCine extends Source {
 
     const title = tmdbId.season ? `${name} ${tmdbId.formatSeasonAndEpisode()}` : `${name} (${year})`;
 
+    const vidkingMeta = {
+      name,
+      year,
+      tmdbId: tmdbId.id,
+      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
+    };
+
     const $ = cheerio.load(pageHtml);
 
     return $('.les-content a')
@@ -58,7 +65,10 @@ export class HomeCine extends Source {
           return [];
         }
 
-        return { url: new URL($('iframe', $(el).attr('href')).attr('src')), meta: { countryCodes, referer: pageUrl.href, title } };
+        return {
+          url: new URL($('iframe', $(el).attr('href')).attr('src')),
+          meta: { countryCodes, referer: pageUrl.href, title, vidking: vidkingMeta },
+        };
       }).toArray();
   }
 

@@ -20,6 +20,7 @@ export class Kokoshka extends Source {
 
   async handleInternal(ctx, _type, id) {
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
+    const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
 
     let pageUrl = await this.fetchPageUrl(ctx, tmdbId, 'sq');
     if (!pageUrl) {
@@ -42,6 +43,13 @@ export class Kokoshka extends Source {
 
     const title = $('title').first().text().trim();
 
+    const vidkingMeta = {
+      name,
+      year,
+      tmdbId: tmdbId.id,
+      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
+    };
+
     return Promise.all(
       $('.dooplay_player_option:not(#player-option-trailer)')
         .map(async (_i, el) => {
@@ -58,6 +66,7 @@ export class Kokoshka extends Source {
               countryCodes: [CountryCode.al],
               referer: pageUrl.href,
               title,
+              vidking: vidkingMeta,
             },
           };
         })

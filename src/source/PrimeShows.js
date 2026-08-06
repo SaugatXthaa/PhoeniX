@@ -40,6 +40,13 @@ export class PrimeShows extends Source {
       : `/watch/movie/${tmdbId.id}`;
 
     const results = [];
+    const vidkingMeta = {
+      name,
+      year,
+      tmdbId: tmdbId.id,
+      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
+    };
+
     for (const server of SERVERS) {
       const watchUrl = new URL(`${watchPath}?server=${server.key}`, this.baseUrl);
       try {
@@ -51,7 +58,11 @@ export class PrimeShows extends Source {
         if (iframeMatch && iframeMatch[1]) {
           results.push({
             url: new URL(iframeMatch[1].replace(/&amp;/g, '&')),
-            meta: { countryCodes: [CountryCode.multi], title: `${title} (${server.label})` },
+            meta: {
+              countryCodes: [CountryCode.multi],
+              title: `${title} (${server.label})`,
+              vidking: vidkingMeta,
+            },
           });
         }
       } catch { /* skip failed server */ }

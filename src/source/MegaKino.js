@@ -4,7 +4,7 @@
 import * as cheerio from 'cheerio';
 import { Cookie } from 'tough-cookie';
 import { CountryCode } from '../types.js';
-import { getImdbId } from '../utils/index.js';
+import { getImdbId, getTmdbId, getTmdbNameAndYear } from '../utils/index.js';
 import { Source } from './Source.js';
 
 export class MegaKino extends Source {
@@ -24,6 +24,20 @@ export class MegaKino extends Source {
 
   async handleInternal(ctx, _type, id) {
     const imdbId = await getImdbId(this.fetcher, ctx, id);
+
+    // Also resolve TMDB info for the VidKing fallback
+    const tmdbId = await getTmdbId(this.fetcher, ctx, id);
+    let name, year;
+    try {
+      [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
+    } catch { /* best-effort */ }
+
+    const vidkingMeta = {
+      ...(name && { name }),
+      ...(year && { year }),
+      tmdbId: tmdbId.id,
+      imdbId: imdbId.id,
+    };
 
     const tokenResponse = await this.fetcher.fetch(ctx, new URL('/?yg=token', await this.getBaseUrl(ctx)), { method: 'HEAD' });
 
@@ -61,6 +75,7 @@ export class MegaKino extends Source {
           countryCodes: [CountryCode.de],
           referer: pageUrl.href,
           title,
+          vidking: vidkingMeta,
         },
       }));
   }

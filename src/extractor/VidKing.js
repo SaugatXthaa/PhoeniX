@@ -4,13 +4,22 @@
 // The vidking.net embed page (https://www.vidking.net/embed/movie/{tmdbId}) is a
 // React SPA that fetches its streams from a backend API at api.speedracelight.com.
 // That API encrypts its responses with a per-media seed + XOR keystream.
+//
 // We replicate the flow here:
-//   1. Parse the embed URL to get tmdbId (and season/episode for TV)
-//   2. Look up title/year/imdb_id via our TMDB utility
+//   1. Determine the TMDB ID (and season/episode for TV) — from meta.vidking
+//      (preferred, passed by the source) or by parsing the vidking.net embed URL
+//   2. Look up title/year/imdb_id via our TMDB utility (or use preloaded values)
 //   3. Fetch the seed from /seed?mediaId={tmdbId}
 //   4. Hit each provider endpoint (/cdn/sources-with-title, /vsrc/sources-with-title, ...)
 //   5. Decrypt each response and parse out { sources: [{ url, quality }] }
 //   6. Return each playable URL as a separate stream result
+//
+// IMPORTANT: This extractor also serves as a FALLBACK for sources whose embed
+// URLs have no dedicated extractor. When `meta.vidking` is present (with at
+// least `tmdbId`), the ExtractorRegistry routes the URL here regardless of the
+// URL's host. This lets sources like CineWave, PrimeShows, Kokoshka, etc.
+// produce playable streams from speedracelight's API even though their own
+// embed URLs can't be parsed server-side.
 
 import { CountryCode, Format } from '../types.js';
 import { NotFoundError } from '../error/index.js';
@@ -49,7 +58,7 @@ function formatFromUrl(url) {
   return Format.unknown;
 }
 
-// Parse embed URL → { type, tmdbId, season, episode }
+// Parse vidking.net embed URL → { type, tmdbId, season, episode }
 //   /embed/movie/{tmdbId}
 //   /embed/tv/{tmdbId}/{season}/{episode}
 function parseEmbedUrl(url) {
@@ -72,6 +81,8 @@ export class VidKing extends Extractor {
     this.cacheVersion = 1;
   }
 
+  // Only matches vidking.net embed URLs directly. For other URLs, the
+  // ExtractorRegistry routes here via the meta.vidking fallback.
   supports(_ctx, url) {
     return VIDKING_HOST_PATTERN.test(url.hostname) && /\/embed\/(movie|tv)\//.test(url.pathname);
   }
@@ -84,18 +95,33 @@ export class VidKing extends Extractor {
   }
 
   async extractInternal(ctx, url, meta) {
-    const parsed = parseEmbedUrl(url);
-    if (!parsed) return [];
+    // Determine TMDB ID / type / season / episode.
+    // Priority: meta.vidking (passed by source) > parseEmbedUrl (vidking.net URL)
+    const preloaded = meta?.vidking;
+    let type, tmdbId, season, episode;
 
-    // Build a TmdbId for our utility functions
+    if (preloaded?.tmdbId) {
+      type = preloaded.season ? 'tv' : 'movie';
+      tmdbId = preloaded.tmdbId;
+      season = preloaded.season;
+      episode = preloaded.episode;
+    } else {
+      const parsed = parseEmbedUrl(url);
+      if (!parsed) return [];
+      type = parsed.type;
+      tmdbId = parsed.tmdbId;
+      season = parsed.season;
+      episode = parsed.episode;
+    }
+
+    // Build a TmdbId object for our utility functions
     const tmdbIdObj = {
-      id: parsed.tmdbId,
-      ...(parsed.season && { season: parsed.season, episode: parsed.episode }),
+      id: tmdbId,
+      ...(season && { season, episode }),
     };
 
-    // Prefer metadata pre-resolved by the VidKing source (saves a duplicate
-    // TMDB round-trip). Fall back to our own lookup if missing.
-    const preloaded = meta?.vidking;
+    // Resolve title/year/imdb_id (needed by the speedracelight API).
+    // Prefer preloaded values from the source to avoid a duplicate TMDB call.
     let meta2;
     if (preloaded?.name && preloaded?.year) {
       meta2 = { title: preloaded.name, year: preloaded.year, imdbId: preloaded.imdbId };
@@ -109,7 +135,7 @@ export class VidKing extends Extractor {
         } catch { /* imdb lookup is best-effort */ }
         meta2 = { title: name, year, imdbId };
       } catch (e) {
-        this.logger?.warn?.(`VidKing: failed to look up TMDB metadata for ${parsed.tmdbId}: ${e.message}`);
+        this.logger?.warn?.(`VidKing: failed to look up TMDB metadata for ${tmdbId}: ${e.message}`);
         return [];
       }
     }
@@ -117,10 +143,10 @@ export class VidKing extends Extractor {
     // Fetch all providers in parallel
     const results = await fetchAllProviders(this.fetcher, ctx, {
       meta: meta2,
-      type: parsed.type,
-      tmdbId: parsed.tmdbId,
-      seasonId: parsed.season,
-      episodeId: parsed.episode,
+      type,
+      tmdbId,
+      seasonId: season,
+      episodeId: episode,
     });
 
     // Build stream results — one per (provider, source)
@@ -154,7 +180,7 @@ export class VidKing extends Extractor {
 
         const titleBits = [];
         if (meta2.title) titleBits.push(meta2.title);
-        if (parsed.season) titleBits.push(TmdbId.formatSeasonAndEpisode(tmdbIdObj));
+        if (season) titleBits.push(TmdbId.formatSeasonAndEpisode(tmdbIdObj));
         if (source.quality) titleBits.push(source.quality);
         const streamTitle = titleBits.join(' — ');
 
@@ -178,9 +204,9 @@ export class VidKing extends Extractor {
     }
 
     if (streams.length === 0) {
-      this.logger?.info?.(`VidKing: no playable sources from any provider for tmdb=${parsed.tmdbId}`);
+      this.logger?.info?.(`VidKing: no playable sources from any provider for tmdb=${tmdbId}`);
     } else {
-      this.logger?.info?.(`VidKing: ${streams.length} streams for tmdb=${parsed.tmdbId}`);
+      this.logger?.info?.(`VidKing: ${streams.length} streams for tmdb=${tmdbId}`);
     }
     return streams;
   }

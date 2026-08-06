@@ -3,7 +3,7 @@
 
 import * as cheerio from 'cheerio';
 import { CountryCode } from '../types.js';
-import { getImdbId } from '../utils/index.js';
+import { getImdbId, getTmdbId, getTmdbNameAndYear } from '../utils/index.js';
 import { Source } from './Source.js';
 
 export class VerHdLink extends Source {
@@ -19,6 +19,20 @@ export class VerHdLink extends Source {
 
   async handleInternal(ctx, _type, id) {
     const imdbId = await getImdbId(this.fetcher, ctx, id);
+
+    // Also resolve TMDB info for the VidKing fallback
+    const tmdbId = await getTmdbId(this.fetcher, ctx, id);
+    let name, year;
+    try {
+      [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
+    } catch { /* best-effort */ }
+
+    const vidkingMeta = {
+      ...(name && { name }),
+      ...(year && { year }),
+      tmdbId: tmdbId.id,
+      imdbId: imdbId.id,
+    };
 
     const pageUrl = new URL(`/movie/${imdbId.id}`, this.baseUrl);
     const html = await this.fetcher.text(ctx, pageUrl);
@@ -40,7 +54,7 @@ export class VerHdLink extends Source {
           .map((_i, el) => new URL(($(el).attr('data-link')).replace(/^(https:)?\/\//, 'https://')))
           .toArray()
           .filter(url => !url.host.match(/verhdlink/))
-          .map(url => ({ url, meta: { countryCodes, referer: this.baseUrl } }));
+          .map(url => ({ url, meta: { countryCodes, referer: this.baseUrl, vidking: vidkingMeta } }));
       }).toArray();
   }
 }

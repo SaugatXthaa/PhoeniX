@@ -68,6 +68,8 @@ export class HiAnime extends Source {
     const results = [];
     const seenUrls = new Set();
 
+    const vidkingMeta = { name, year, tmdbId: tmdbId.id, ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }) };
+
     $ep('.item.server-item').each((_i, el) => {
       const type = $ep(el).attr('data-type') || 'sub';
       const url = $ep(el).attr('data-url');
@@ -80,6 +82,7 @@ export class HiAnime extends Source {
         meta: {
           countryCodes: [CountryCode.multi, CountryCode.ja],
           title: `${title} (${langLabel})`,
+          vidking: vidkingMeta,
         },
       });
     });

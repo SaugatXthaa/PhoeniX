@@ -60,13 +60,19 @@ export class AnimeFlix extends Source {
     if (directIframe) {
       return [{
         url: new URL(directIframe),
-        meta: { countryCodes: [CountryCode.multi, CountryCode.ja], title },
+        meta: {
+          countryCodes: [CountryCode.multi, CountryCode.ja],
+          title,
+          vidking: { name, year, tmdbId: tmdbId.id, ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }) },
+        },
       }];
     }
 
     // Try data-hash attributes (base64-encoded iframe HTML)
     const results = [];
     const seenUrls = new Set();
+
+    const vidkingMeta = { name, year, tmdbId: tmdbId.id, ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }) };
 
     $ep('.server-item a[data-hash]').each((_i, el) => {
       const hash = $ep(el).attr('data-hash');
@@ -80,7 +86,7 @@ export class AnimeFlix extends Source {
           seenUrls.add(url);
           results.push({
             url: new URL(url),
-            meta: { countryCodes: [CountryCode.multi, CountryCode.ja], title },
+            meta: { countryCodes: [CountryCode.multi, CountryCode.ja], title, vidking: vidkingMeta },
           });
         }
       } catch { /* skip invalid base64 */ }

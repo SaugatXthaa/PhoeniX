@@ -20,9 +20,9 @@ export class CineHDPlus extends Source {
   async handleInternal(ctx, _type, id) {
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
 
-    let name;
+    let name, year;
     try {
-      [name] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId, 'es');
+      [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId, 'es');
     } catch {
       return [];
     }
@@ -40,6 +40,13 @@ export class CineHDPlus extends Source {
 
     const title = `${($('meta[property="og:title"]').attr('content')).trim()} ${tmdbId.formatSeasonAndEpisode()}`;
 
+    const vidkingMeta = {
+      name,
+      year,
+      tmdbId: tmdbId.id,
+      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
+    };
+
     return Promise.all(
       $(`[data-num="${tmdbId.season}x${tmdbId.episode}"]`)
         .siblings('.mirrors')
@@ -47,7 +54,7 @@ export class CineHDPlus extends Source {
         .map((_i, el) => new URL(($(el).attr('data-link')).replace(/^(https:)?\/\//, 'https://')))
         .toArray()
         .filter(url => !url.host.match(/cinehdplus/))
-        .map(url => ({ url, meta: { countryCodes, referer: seriesPageUrl.href, title } })),
+        .map(url => ({ url, meta: { countryCodes, referer: seriesPageUrl.href, title, vidking: vidkingMeta } })),
     );
   }
 

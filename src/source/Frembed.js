@@ -22,7 +22,7 @@ export class Frembed extends Source {
 
   async handleInternal(ctx, _type, id) {
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
-    const [, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
+    const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
 
     const baseUrl = await this.getBaseUrl(ctx);
 
@@ -47,7 +47,14 @@ export class Frembed extends Source {
       ? `${json['title']} ${tmdbId.formatSeasonAndEpisode()}`
       : `${json['title']} (${year})`;
 
-    return urls.map(url => ({ url, meta: { countryCodes: [CountryCode.fr], referer: baseUrl.origin, title } }));
+    const vidkingMeta = {
+      name,
+      year,
+      tmdbId: tmdbId.id,
+      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
+    };
+
+    return urls.map(url => ({ url, meta: { countryCodes: [CountryCode.fr], referer: baseUrl.origin, title, vidking: vidkingMeta } }));
   }
 
   async getBaseUrl(ctx) {

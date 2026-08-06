@@ -12,7 +12,16 @@ export class ExtractorRegistry {
   }
 
   async handle(ctx, url, meta = {}, allowLazy = false) {
-    const extractor = this.extractors.find(e => e.supports(ctx, url));
+    let extractor = this.extractors.find(e => e.supports(ctx, url));
+
+    // Fallback: if no URL-matched extractor but meta.vidking is present
+    // (with a TMDB ID), route to the VidKing extractor. This lets sources
+    // whose embed URLs have no dedicated extractor still produce playable
+    // streams via speedracelight's TMDB-based API.
+    if (!extractor && meta?.vidking?.tmdbId) {
+      extractor = this.extractors.find(e => e.id === 'vidking');
+    }
+
     if (!extractor) return [];
 
     const normalizedUrl = extractor.normalize(url);

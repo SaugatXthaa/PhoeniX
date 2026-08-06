@@ -43,6 +43,13 @@ export class Cuevana extends Source {
     const html = await this.fetcher.text(ctx, pageUrl);
     const $ = cheerio.load(html);
 
+    const vidkingMeta = {
+      name,
+      year,
+      tmdbId: tmdbId.id,
+      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
+    };
+
     const urlResults = $('.open_submenu')
       .map((_i, el) => {
         const elText = $(el).text();
@@ -54,7 +61,7 @@ export class Cuevana extends Source {
           return $('[data-tr], [data-video]', el)
             .map((_i, el) => ({
               url: new URL($(el).attr('data-tr') ?? $(el).attr('data-video')),
-              meta: { countryCodes: [CountryCode.mx], referer: pageUrl.href, title },
+              meta: { countryCodes: [CountryCode.mx], referer: pageUrl.href, title, vidking: vidkingMeta },
             }))
             .toArray();
         }
@@ -62,7 +69,7 @@ export class Cuevana extends Source {
         return $('[data-tr], [data-video]', el)
           .map((_i, el) => ({
             url: new URL($(el).attr('data-tr') ?? $(el).attr('data-video')),
-            meta: { countryCodes: [CountryCode.es], referer: pageUrl.href, title },
+            meta: { countryCodes: [CountryCode.es], referer: pageUrl.href, title, vidking: vidkingMeta },
           }))
           .toArray();
       })

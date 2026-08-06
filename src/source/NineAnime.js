@@ -60,12 +60,17 @@ export class NineAnime extends Source {
     if (directIframe) {
       return [{
         url: new URL(directIframe),
-        meta: { countryCodes: [CountryCode.multi, CountryCode.ja], title },
+        meta: {
+          countryCodes: [CountryCode.multi, CountryCode.ja],
+          title,
+          vidking: { name, year, tmdbId: tmdbId.id, ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }) },
+        },
       }];
     }
 
     // Try data-hash attributes (base64-encoded iframe HTML)
     const results = [];
+    const vidkingMeta = { name, year, tmdbId: tmdbId.id, ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }) };
     $ep('.server-item a[data-hash]').each((_i, el) => {
       const hash = $ep(el).attr('data-hash');
       if (!hash) return;
@@ -75,7 +80,7 @@ export class NineAnime extends Source {
         if (iframeMatch && iframeMatch[1]) {
           results.push({
             url: new URL(iframeMatch[1]),
-            meta: { countryCodes: [CountryCode.multi, CountryCode.ja], title },
+            meta: { countryCodes: [CountryCode.multi, CountryCode.ja], title, vidking: vidkingMeta },
           });
         }
       } catch { /* skip invalid base64 */ }

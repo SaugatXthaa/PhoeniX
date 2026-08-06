@@ -106,6 +106,15 @@ export class CineWave extends Source {
     } catch { /* HdHub API failed — continue to embed sources */ }
 
     // Source 2: Embed sources (same as CineWave website)
+    // All embed URLs get meta.vidking so the VidKing extractor can resolve
+    // them via speedracelight's API (most have no dedicated extractor).
+    const vidkingMeta = {
+      name,
+      year,
+      tmdbId: tmdbId.id,
+      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
+    };
+
     for (const source of EMBED_SOURCES) {
       const url = tmdbId.season
         ? source.tv.replace('{id}', tmdbId.id).replace('{s}', tmdbId.season).replace('{e}', tmdbId.episode)
@@ -116,6 +125,7 @@ export class CineWave extends Source {
         meta: {
           countryCodes: [CountryCode.multi],
           title: `${title} (${source.label})`,
+          vidking: vidkingMeta,
         },
       });
     }
