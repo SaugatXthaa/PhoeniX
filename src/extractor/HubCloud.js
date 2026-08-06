@@ -16,9 +16,11 @@ const SERVER_CATEGORIES = [
   { buttonIncludes: '10Gbps', buttonExcludes: '', label: 'HubCloud (10Gbps)', extractorId: 'hubcloud_fast', priority: 2, seekable: false },
   { buttonIncludes: 'PixelServer', buttonExcludes: '', label: 'HubCloud (PxlSrv)', extractorId: 'hubcloud_pixelserver', priority: 3, seekable: true },
   { buttonIncludes: 'PDL', buttonExcludes: '', label: 'HubCloud (PDL)', extractorId: 'hubcloud_pdl', priority: 1, seekable: false },
-  // 'Download File' (DF) category removed — these are Cloudflare Workers download
-  // proxies (*.workers.dev, workers.telegramcdn.workers.dev) that return 403
-  // for streaming Range requests. They only work for full downloads, not playback.
+  // (DL) download streams — direct download links. Some CDNs (non-telegramcdn)
+  // support Range requests and play fine; others may 403. Marked not-seekable
+  // so Stremio handles them as download-style streams. Lowest priority so
+  // seekable FSL/FSLv2 streams are preferred when available.
+  { buttonIncludes: 'Download', buttonExcludes: '', label: 'HubCloud (DL)', extractorId: 'hubcloud_dl', priority: 0, seekable: false },
 ];
 
 const LABEL_TO_SEEKABLE = new Map(
