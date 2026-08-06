@@ -172,9 +172,15 @@ export class VidKing extends Extractor {
 
     // Resolve title/year/imdb_id (needed by the speedracelight API).
     // Prefer preloaded values from the source to avoid a duplicate TMDB call.
+    // Use preloaded.name whenever available — year may be missing for some
+    // anime/TV titles, but the name is what matters for display + API matching.
     let meta2;
-    if (preloaded?.name && preloaded?.year) {
-      meta2 = { title: preloaded.name, year: preloaded.year, imdbId: preloaded.imdbId };
+    if (preloaded?.name) {
+      meta2 = {
+        title: preloaded.name,
+        ...(preloaded.year && { year: preloaded.year }),
+        ...(preloaded.imdbId && { imdbId: preloaded.imdbId }),
+      };
     } else {
       try {
         const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbIdObj);
@@ -183,7 +189,7 @@ export class VidKing extends Extractor {
           const imdb = await getImdbId(this.fetcher, ctx, tmdbIdObj);
           imdbId = imdb.id;
         } catch { /* imdb lookup is best-effort */ }
-        meta2 = { title: name, year, imdbId };
+        meta2 = { title: name, ...(year && { year }), imdbId };
       } catch (e) {
         this.logger?.warn?.(`VidKing: failed to look up TMDB metadata for ${tmdbId}: ${e.message}`);
         return [];
