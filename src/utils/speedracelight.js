@@ -140,10 +140,12 @@ export function decryptPayload(payload, seed, tmdbIdInt) {
 }
 
 // === Provider registry (same as bundle's Vr) ===
+// NOTE: Cypher (downloader2) and Breach (m4uhd) removed — their CDN URLs
+// (ironwallnet.net) return 403 from server environments. These are token/
+// IP-bound URLs that only play in a browser. Yoru provides the same content
+// as direct MP4s (2160p/1080p/720p/480p) and works perfectly in Stremio.
 export const PROVIDERS = [
   { name: 'Yoru',   endpoint: 'cdn/sources-with-title',         countryCodes: ['multi'] },
-  { name: 'Cypher', endpoint: 'downloader2/sources-with-title', countryCodes: ['multi'] },
-  { name: 'Breach', endpoint: 'm4uhd/sources-with-title',       countryCodes: ['multi'] },
   { name: 'Neon',   endpoint: 'vsrc/sources-with-title',        countryCodes: ['multi'] },
   { name: 'Vyse',   endpoint: 'hdmovie/sources-with-title',     countryCodes: ['multi'], qualityFilter: 'English' },
   { name: 'Killjoy',endpoint: 'meine/sources-with-title',       countryCodes: ['de'],    params: { language: 'german' } },

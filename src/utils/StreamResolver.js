@@ -112,6 +112,11 @@ export class StreamResolver {
     const flags = urlResult.meta?.countryCodes?.map(cc => flagFromCountryCode(cc)).join(' ');
     if (flags) lines.push(flags);
     if (urlResult.meta?.height) lines.push(getClosestResolution(urlResult.meta.height));
+    // Download indicator for file-hosting sources (4KHDHub, MoviesDrive) —
+    // these are direct MP4 download-style links, not HLS streams
+    if (['4khdhub', 'moviesdrive'].includes(urlResult.meta?.sourceId)) {
+      lines.push('📥');
+    }
     if (urlResult.isExternal) lines.push('⚠️ external');
     return lines.join('\n');
   }
