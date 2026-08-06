@@ -4,7 +4,7 @@
 // When HdHub API returns donation-only, falls back to other embed sources.
 
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear, TmdbId, findCountryCodes } from '../utils/index.js';
+import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 // All embed sources used by CineWave (from JS bundle analysis)
@@ -27,14 +27,6 @@ const EMBED_SOURCES = [
   { label: '111Movies', movie: 'https://111movies.net/movie/{id}', tv: 'https://111movies.net/tv/{id}?s={s}&e={e}' },
 ];
 
-// HdHub API (Stremio addon format)
-const CINEWAVE_API_BASE = 'https://hdhub.thevolecitor.qzz.io';
-const CINEWAVE_CONFIG = Buffer.from(JSON.stringify({
-  torbox: 'unset',
-  qualities: '2160p,1080p,720p',
-  sort: 'desc',
-})).toString('base64');
-
 export class CineWave extends Source {
   constructor(fetcher) {
     super();
@@ -51,61 +43,13 @@ export class CineWave extends Source {
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
 
-    const mediaType = tmdbId.season ? 'tv' : 'movie';
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    const results = [];
+    // HdHub API removed — it's donation-gated and only returns "Donation needed"
+    // streams. CineWave now relies entirely on embed sources below, all of which
+    // resolve via the VidKing extractor's speedracelight API fallback.
 
-    // Source 1: HdHub API (Stremio addon format)
-    try {
-      const apiUrl = new URL(`/${CINEWAVE_CONFIG}/stream/${mediaType === 'tv' ? 'series' : 'movie'}/${tmdbId.season ? `${id.id}:${tmdbId.season}:${tmdbId.episode}` : tmdbId.id}.json`, CINEWAVE_API_BASE);
-      const response = await this.fetcher.json(ctx, apiUrl, {
-        headers: {
-          'Referer': 'https://watch.cinewave.qzz.io/',
-          'Accept': 'application/json',
-        },
-        timeout: 10000,
-      });
-
-      if (response && response.streams && Array.isArray(response.streams)) {
-        for (const stream of response.streams) {
-          // Skip donation streams
-          if (stream.name && /donation|donate/i.test(stream.name)) continue;
-          if (stream.description && /donation|donate/i.test(stream.description)) continue;
-
-          const url = stream.url || stream.externalUrl;
-          if (!url) continue;
-
-          const nameTitle = `${stream.name || ''} ${stream.description || ''}`;
-          const heightMatch = nameTitle.match(/(\d{3,})p/i);
-          const height = heightMatch ? parseInt(heightMatch[1]) : undefined;
-
-          let fileSize = undefined;
-          if (stream.behaviorHints?.videoSize) {
-            fileSize = stream.behaviorHints.videoSize;
-          } else {
-            const sizeMatch = nameTitle.match(/([\d.]+)\s*(GB|MB)/i);
-            if (sizeMatch) {
-              const val = parseFloat(sizeMatch[1]);
-              const unit = sizeMatch[2].toUpperCase();
-              fileSize = unit === 'GB' ? val * 1024 * 1024 * 1024 : val * 1024 * 1024;
-            }
-          }
-
-          results.push({
-            url: new URL(url),
-            meta: {
-              countryCodes: [CountryCode.multi, ...findCountryCodes(nameTitle)],
-              title: stream.title || stream.name || title,
-              ...(height && { height }),
-              ...(fileSize && { bytes: fileSize }),
-            },
-          });
-        }
-      }
-    } catch { /* HdHub API failed — continue to embed sources */ }
-
-    // Source 2: Embed sources (same as CineWave website)
+    // Embed sources (same as CineWave website)
     // All embed URLs get meta.vidking so the VidKing extractor can resolve
     // them via speedracelight's API (most have no dedicated extractor).
     const vidkingMeta = {
@@ -115,6 +59,7 @@ export class CineWave extends Source {
       ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
     };
 
+    const results = [];
     for (const source of EMBED_SOURCES) {
       const url = tmdbId.season
         ? source.tv.replace('{id}', tmdbId.id).replace('{s}', tmdbId.season).replace('{e}', tmdbId.episode)

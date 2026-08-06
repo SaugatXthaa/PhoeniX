@@ -146,7 +146,17 @@ export class VidKing extends Extractor {
 
     try {
       const streams = await promise;
-      this.tmdbCache.set(cacheKey, { streams, ts: Date.now() });
+      // Only cache NON-EMPTY results. Empty results (429, timeout, no sources)
+      // must NOT be cached — otherwise the first failure blocks all 16 CineWave
+      // embed URLs from retrying for 8 minutes. A short retry cooldown (10s)
+      // prevents hammering the API when it's down.
+      if (streams.length > 0) {
+        this.tmdbCache.set(cacheKey, { streams, ts: Date.now() });
+      } else {
+        // Short negative cache — prevents 16 simultaneous calls from all
+        // hitting the API, but allows the next user request to retry.
+        this.tmdbCache.set(cacheKey, { streams, ts: Date.now() - this.TMDB_CACHE_TTL + 10_000 });
+      }
       return streams;
     } finally {
       this.tmdbInFlight.delete(cacheKey);
