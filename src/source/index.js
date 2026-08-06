@@ -25,6 +25,7 @@ import { NineAnime } from './NineAnime.js';
 import { PrimeShows } from './PrimeShows.js';
 import { VerHdLink } from './VerHdLink.js';
 import { VidSrc } from './VidSrc.js';
+import { VidKing } from './VidKing.js';
 import { Vidzee } from './Vidzee.js';
 import { VixSrc } from './VixSrc.js';
 
@@ -42,6 +43,7 @@ export const createSources = (fetcher) => {
     new Vidzee(fetcher),
     new MovieBox(fetcher),
     new CineWave(fetcher),
+    new VidKing(fetcher),
     new PrimeShows(fetcher),
     // anime
     new NineAnime(fetcher),
