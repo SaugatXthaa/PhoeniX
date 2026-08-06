@@ -74,6 +74,40 @@ export class Fetcher {
     }
   }
 
+  handleErrorResponse(res, url, resolve, reject, options) {
+    // Handle non-CF error responses
+    if (res.statusCode === 404) {
+      res.destroy();
+      reject(new NotFoundError());
+      return;
+    }
+    if (res.statusCode === 429) {
+      const retryAfter = parseInt(res.headers['retry-after'] || '0') * 1000;
+      res.destroy();
+      reject(new TooManyRequestsError(url, retryAfter));
+      return;
+    }
+    if (res.statusCode >= 400) {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        reject(new HttpError(url, res.statusCode, res.statusMessage, res.headers));
+      });
+      return;
+    }
+    // Success (shouldn't reach here normally)
+    const chunks = [];
+    res.on('data', c => chunks.push(c));
+    res.on('end', () => {
+      resolve({
+        status: res.statusCode,
+        statusText: res.statusMessage,
+        headers: res.headers,
+        data: Buffer.concat(chunks).toString('utf8'),
+      });
+    });
+  }
+
   async fetchWithTimeout(ctx, url, options = {}) {
     const timeout = options.timeout ?? this.DEFAULT_TIMEOUT;
     const cfDetectedAt = this.cfProtectedDomains.get(url.hostname);
@@ -113,9 +147,51 @@ export class Fetcher {
           return;
         }
 
-        // Cloudflare detection
+        // Cloudflare detection — try got-scraping fallback for 403
         if (res.headers['cf-mitigated'] === 'challenge' || res.statusCode === 403) {
           this.cfProtectedDomains.set(url.hostname, Date.now());
+
+          // Try got-scraping fallback (bypasses some CF challenges)
+          if (!options.method || options.method === 'GET') {
+            // Import dynamically and handle async
+            import('got-scraping').then(async ({ gotScraping }) => {
+              const cookieString = this.cookieJar.getCookieStringSync(url.href);
+              try {
+                const resp = await gotScraping.get(url.href, {
+                  headers: {
+                    ...(cookieString && { Cookie: cookieString }),
+                    ...(options.headers || {}),
+                  },
+                  timeout: { request: options.timeout ?? this.DEFAULT_TIMEOUT },
+                  throwHttpErrors: false,
+                });
+
+                if (resp.statusCode >= 200 && resp.statusCode <= 399) {
+                  const setCookies = resp.headers['set-cookie'];
+                  if (setCookies) {
+                    const cookies = Array.isArray(setCookies) ? setCookies : [setCookies];
+                    for (const c of cookies) {
+                      try { this.cookieJar.setCookieSync(c, url.href); } catch {}
+                    }
+                  }
+                  resolve({
+                    status: resp.statusCode,
+                    statusText: resp.statusMessage || '',
+                    headers: resp.headers,
+                    data: resp.body,
+                  });
+                  return;
+                }
+              } catch (e) {
+                // got-scraping also failed
+              }
+              // Fall through to normal error handling below
+              this.handleErrorResponse(res, url, resolve, reject, options);
+            }).catch(() => {
+              this.handleErrorResponse(res, url, resolve, reject, options);
+            });
+            return; // Don't continue processing — async handler above will resolve/reject
+          }
         }
 
         // 404
