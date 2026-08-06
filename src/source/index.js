@@ -8,6 +8,7 @@ import { Cuevana } from './Cuevana.js';
 import { Einschalten } from './Einschalten.js';
 import { Eurostreaming } from './Eurostreaming.js';
 import { FilmpalastTO } from './FilmpalastTO.js';
+import { Fmovies } from './Fmovies.js';
 import { FourKHDHub } from './FourKHDHub.js';
 import { Frembed } from './Frembed.js';
 import { FrenchCloud } from './FrenchCloud.js';
@@ -47,6 +48,7 @@ export const createSources = (fetcher) => {
     new Vidzee(fetcher),
     new MovieBox(fetcher),
     new Movie4kTo(fetcher),
+    new Fmovies(fetcher),
     new CineWave(fetcher),
     new MoviesDrive(fetcher),
     new VidKing(fetcher),
