@@ -1,11 +1,31 @@
 // src/source/CineWave.js
-// CineWave (watch.cinewave.qzz.io) — movies/series/anime
-// Uses 16+ embed sources with TMDB IDs, same as the CineWave website.
-// When HdHub API returns donation-only, falls back to other embed sources.
+// CineWave (watch.cinewave.qzz.io) — movies/series/anime/K-drama
+//
+// Two layers of stream resolution:
+//   1. HdHub API (hdhub.thevolecitor.qzz.io) — FREE, no auth required.
+//      Uses IMDB IDs (tt...). Returns direct CDN URLs from:
+//      - FSL/FSL2 (fileshub.jiocloud3.workers.dev, files.jiomovies.workers.dev)
+//      - Pixeldrain (pixeldrain.dev)
+//      - Cloudflare R2 (*.r2.cloudflarestorage.com, *.r2.dev)
+//      - HubCDN (video-downloads.googleusercontent.com — GDrive proxy)
+//      - Jio workers (index.jioservers.workers.dev, etc.)
+//      The "🌟 Donation needed." stream is just 1 of ~35 streams — skip it.
+//      DO NOT use TMDB IDs with this API — it returns only the donation stream.
+//
+//   2. Embed sources (16 fallback embeds) — resolved via VidKing extractor's
+//      speedracelight API fallback (meta.vidking).
 
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
+import { getImdbId, getTmdbId, getTmdbNameAndYear, TmdbId, findCountryCodes } from '../utils/index.js';
 import { Source } from './Source.js';
+
+// HdHub API (Stremio addon format) — FREE, no auth
+const CINEWAVE_API_BASE = 'https://hdhub.thevolecitor.qzz.io';
+const CINEWAVE_CONFIG = Buffer.from(JSON.stringify({
+  torbox: 'unset',
+  qualities: '2160p,1080p,720p',
+  sort: 'desc',
+})).toString('base64');
 
 // All embed sources used by CineWave (from JS bundle analysis)
 const EMBED_SOURCES = [
@@ -42,14 +62,72 @@ export class CineWave extends Source {
   async handleInternal(ctx, _type, id) {
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
+    const imdbId = await getImdbId(this.fetcher, ctx, tmdbId);
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // HdHub API removed — it's donation-gated and only returns "Donation needed"
-    // streams. CineWave now relies entirely on embed sources below, all of which
-    // resolve via the VidKing extractor's speedracelight API fallback.
+    const results = [];
 
-    // Embed sources (same as CineWave website)
+    // === Layer 1: HdHub API (IMDB IDs) ===
+    // FREE, no auth. Returns ~35 direct CDN streams (FSL, Pixeldrain, R2, HubCDN).
+    // Skip the single "Donation needed" stream — it's just 1 of many.
+    try {
+      const imdbStreamId = tmdbId.season
+        ? `${imdbId.id}:${tmdbId.season}:${tmdbId.episode}`
+        : imdbId.id;
+      const mediaType = tmdbId.season ? 'series' : 'movie';
+      const apiUrl = new URL(`/${CINEWAVE_CONFIG}/stream/${mediaType}/${imdbStreamId}.json`, CINEWAVE_API_BASE);
+
+      const response = await this.fetcher.json(ctx, apiUrl, {
+        headers: {
+          'Referer': 'https://watch.cinewave.qzz.io/',
+          'Accept': 'application/json',
+        },
+        timeout: 10000,
+      });
+
+      if (response && response.streams && Array.isArray(response.streams)) {
+        for (const stream of response.streams) {
+          // Skip donation streams — they're not real content
+          if (stream.name && /donation|donate/i.test(stream.name)) continue;
+          if (stream.description && /donation|donate/i.test(stream.description)) continue;
+
+          const url = stream.url || stream.externalUrl;
+          if (!url) continue;
+
+          const nameTitle = `${stream.name || ''} ${stream.description || ''}`;
+          const heightMatch = nameTitle.match(/(\d{3,})p/i);
+          const height = heightMatch ? parseInt(heightMatch[1]) : undefined;
+
+          let fileSize = undefined;
+          if (stream.behaviorHints?.videoSize) {
+            fileSize = stream.behaviorHints.videoSize;
+          } else {
+            const sizeMatch = nameTitle.match(/([\d.]+)\s*(GB|MB)/i);
+            if (sizeMatch) {
+              const val = parseFloat(sizeMatch[1]);
+              const unit = sizeMatch[2].toUpperCase();
+              fileSize = unit === 'GB' ? val * 1024 * 1024 * 1024 : val * 1024 * 1024;
+            }
+          }
+
+          results.push({
+            url: new URL(url),
+            meta: {
+              countryCodes: [CountryCode.multi, ...findCountryCodes(nameTitle)],
+              title: stream.title || nameTitle.trim() || title,
+              ...(height && { height }),
+              ...(fileSize && { bytes: fileSize }),
+              // Tag as HdHub source so download label is applied
+              sourceId: 'cinewave',
+              sourceLabel: 'CineWave',
+            },
+          });
+        }
+      }
+    } catch { /* HdHub API failed — continue to embed sources */ }
+
+    // === Layer 2: Embed sources (fallback) ===
     // All embed URLs get meta.vidking so the VidKing extractor can resolve
     // them via speedracelight's API (most have no dedicated extractor).
     const vidkingMeta = {
@@ -59,7 +137,6 @@ export class CineWave extends Source {
       ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
     };
 
-    const results = [];
     for (const source of EMBED_SOURCES) {
       const url = tmdbId.season
         ? source.tv.replace('{id}', tmdbId.id).replace('{s}', tmdbId.season).replace('{e}', tmdbId.episode)
