@@ -19,6 +19,7 @@ import { Kokoshka } from './Kokoshka.js';
 import { MegaKino } from './MegaKino.js';
 import { MeineCloud } from './MeineCloud.js';
 import { MostraGuarda } from './MostraGuarda.js';
+import { MoviesDrive } from './MoviesDrive.js';
 import { MovieBox } from './MovieBox.js';
 import { Movix } from './Movix.js';
 import { NineAnime } from './NineAnime.js';
@@ -43,6 +44,7 @@ export const createSources = (fetcher) => {
     new Vidzee(fetcher),
     new MovieBox(fetcher),
     new CineWave(fetcher),
+    new MoviesDrive(fetcher),
     new VidKing(fetcher),
     new PrimeShows(fetcher),
     // anime

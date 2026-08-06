@@ -136,6 +136,7 @@ export class Fetcher {
         method: options.method || 'GET',
         timeout,
         headers,
+        family: 4, // Force IPv4 to avoid IPv6 ENETUNREACH errors
       };
 
       const req = protocol.request(reqOptions, (res) => {
