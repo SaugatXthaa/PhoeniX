@@ -3,7 +3,7 @@
 
 import * as cheerio from 'cheerio';
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear } from '../utils/index.js';
+import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 export class Cuevana extends Source {
@@ -30,7 +30,7 @@ export class Cuevana extends Source {
     let title = name;
 
     if (tmdbId.season) {
-      title += ` ${tmdbId.formatSeasonAndEpisode()}`;
+      title += ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}`;
 
       pageUrl = await this.fetchEpisodeUrl(ctx, pageUrl, tmdbId);
       if (!pageUrl) {

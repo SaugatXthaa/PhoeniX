@@ -2,7 +2,7 @@
 // Ported from research/webstreamr-mbg/src/source/MovieBox.ts
 
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear } from '../utils/index.js';
+import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 const SEARCH_PATH = '/wefeed-h5api-bff/subject/search';
@@ -52,7 +52,7 @@ export class MovieBox extends Source {
 
     let title = name;
     if (tmdbId.season) {
-      title += ` ${tmdbId.formatSeasonAndEpisode()}`;
+      title += ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}`;
     } else {
       title += ` (${year})`;
     }

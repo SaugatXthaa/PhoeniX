@@ -3,7 +3,7 @@
 
 import * as cheerio from 'cheerio';
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear } from '../utils/index.js';
+import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 export class CineHDPlus extends Source {
@@ -38,7 +38,7 @@ export class CineHDPlus extends Source {
 
     const countryCodes = [($('.details__langs').html()).includes('Latino') ? CountryCode.mx : CountryCode.es];
 
-    const title = `${($('meta[property="og:title"]').attr('content')).trim()} ${tmdbId.formatSeasonAndEpisode()}`;
+    const title = `${($('meta[property="og:title"]').attr('content')).trim()} ${TmdbId.formatSeasonAndEpisode(tmdbId)}`;
 
     const vidkingMeta = {
       name,

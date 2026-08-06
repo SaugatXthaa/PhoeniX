@@ -20,13 +20,31 @@ export class StreamResolver {
     const urlResults = [];
     let sourceErrorCount = 0;
 
+    // Per-source timeout — ensures one slow source can't make Stremio's entire
+    // request hang. Sources that haven't returned within SOURCE_TIMEOUT_MS are
+    // abandoned (their partial results, if any, are still collected).
+    const SOURCE_TIMEOUT_MS = 20_000;
+
+    const withTimeout = (promise, ms, sourceId) => {
+      let timer;
+      const timeout = new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`source ${sourceId} timed out after ${ms}ms`)), ms);
+      });
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    };
+
     const handleSource = async (source) => {
       try {
-        const sourceResults = await source.handle(ctx, type, id);
+        const sourceResults = await withTimeout(source.handle(ctx, type, id), SOURCE_TIMEOUT_MS, source.id);
         this.logger.info(`Source ${source.id} returned ${sourceResults.length} results`);
+        // Extractor phase — also bounded by the same timeout (reset per source)
         const sourceUrlResults = await Promise.all(
           sourceResults.map(({ url, meta }) =>
             this.extractorRegistry.handle(ctx, url, { sourceLabel: source.label, sourceId: source.id, priority: source.priority, ...meta }, true)
+              .catch(e => {
+                this.logger.warn(`Extractor for ${source.id} ${url.href} error: ${e.message}`);
+                return [];
+              })
           )
         );
         urlResults.push(...sourceUrlResults.flat());
@@ -36,7 +54,7 @@ export class StreamResolver {
       }
     };
 
-    // Run all sources in parallel
+    // Run all sources in parallel — total wall time bounded by SOURCE_TIMEOUT_MS
     await Promise.all(sources.map(s => handleSource(s)));
 
     // Sort: errors first, then by height desc, then bytes desc, then priority

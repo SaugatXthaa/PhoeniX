@@ -2,7 +2,7 @@
 // Ported from research/webstreamr-mbg/src/source/Movix.ts
 
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear } from '../utils/index.js';
+import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 export class Movix extends Source {
@@ -39,7 +39,7 @@ export class Movix extends Source {
     const urls = data['player_links'].map(({ decoded_url }) => new URL(decoded_url));
 
     const title = tmdbId.season
-      ? `${json['tmdb_details']?.['title'] ?? 'Unknown'} ${tmdbId.formatSeasonAndEpisode()}`
+      ? `${json['tmdb_details']?.['title'] ?? 'Unknown'} ${TmdbId.formatSeasonAndEpisode(tmdbId)}`
       : `${json['tmdb_details']?.['title'] ?? 'Unknown'} (${year})`;
 
     const vidkingMeta = {

@@ -3,7 +3,7 @@
 
 import * as cheerio from 'cheerio';
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear } from '../utils/index.js';
+import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 const STREAMING_HOSTS = [
@@ -48,7 +48,7 @@ export class FilmpalastTO extends Source {
     }
 
     const title = tmdbId.season
-      ? `${name} ${tmdbId.formatSeasonAndEpisode()}`
+      ? `${name} ${TmdbId.formatSeasonAndEpisode(tmdbId)}`
       : `${name} (${year})`;
 
     const vidkingMeta = {

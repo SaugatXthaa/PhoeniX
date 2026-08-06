@@ -2,7 +2,7 @@
 // Ported from research/webstreamr-mbg/src/source/VixSrc.ts
 
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear, supportsMediaFlowProxy } from '../utils/index.js';
+import { getTmdbId, getTmdbNameAndYear, supportsMediaFlowProxy, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 export class VixSrc extends Source {
@@ -25,7 +25,7 @@ export class VixSrc extends Source {
 
     let title = name;
     if (tmdbId.season) {
-      title += ` ${tmdbId.formatSeasonAndEpisode()}`;
+      title += ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}`;
     } else {
       title += ` (${year})`;
     }

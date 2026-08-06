@@ -2,7 +2,7 @@
 // Ported from research/webstreamr-mbg/src/source/Frembed.ts
 
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear } from '../utils/index.js';
+import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 export class Frembed extends Source {
@@ -44,7 +44,7 @@ export class Frembed extends Source {
     }
 
     const title = tmdbId.season
-      ? `${json['title']} ${tmdbId.formatSeasonAndEpisode()}`
+      ? `${json['title']} ${TmdbId.formatSeasonAndEpisode(tmdbId)}`
       : `${json['title']} (${year})`;
 
     const vidkingMeta = {

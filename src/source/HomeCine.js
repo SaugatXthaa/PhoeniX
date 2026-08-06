@@ -4,7 +4,7 @@
 import * as cheerio from 'cheerio';
 import levenshtein from 'fast-levenshtein';
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear } from '../utils/index.js';
+import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 export class HomeCine extends Source {
@@ -43,7 +43,7 @@ export class HomeCine extends Source {
       pageHtml = await this.fetcher.text(ctx, pageUrl);
     }
 
-    const title = tmdbId.season ? `${name} ${tmdbId.formatSeasonAndEpisode()}` : `${name} (${year})`;
+    const title = tmdbId.season ? `${name} ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : `${name} (${year})`;
 
     const vidkingMeta = {
       name,

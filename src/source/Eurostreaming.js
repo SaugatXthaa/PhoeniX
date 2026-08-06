@@ -4,7 +4,7 @@
 import * as cheerio from 'cheerio';
 import levenshtein from 'fast-levenshtein';
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear } from '../utils/index.js';
+import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 export class Eurostreaming extends Source {
@@ -31,7 +31,7 @@ export class Eurostreaming extends Source {
 
     const $ = cheerio.load(html);
 
-    const title = `${name} ${tmdbId.formatSeasonAndEpisode()}`;
+    const title = `${name} ${TmdbId.formatSeasonAndEpisode(tmdbId)}`;
 
     const vidkingMeta = {
       name,
