@@ -150,8 +150,32 @@ export class HubCloud extends Extractor {
               // PixelServer link is dead — skip it
             }
           } else {
+            const streamUrl = new URL(href);
+
+            // Telegram CDN workers (workers.telegramcdn.workers.dev) have
+            // per-file download quotas. When exceeded, they return 403 with
+            // "The download quota for this file has been exceeded." These
+            // streams are dead and can't play — filter them out at extraction
+            // time so users don't see broken playback errors.
+            if (/telegramcdn\.workers\.dev/.test(streamUrl.hostname)) {
+              let quotaExceeded = false;
+              try {
+                await this.fetcher.head(ctx, streamUrl, {
+                  headers: { 'User-Agent': 'Mozilla/5.0' },
+                  timeout: 5000,
+                });
+              } catch (e) {
+                // HttpError with status 403 = quota exceeded
+                if (e?.status === 403) quotaExceeded = true;
+              }
+              if (quotaExceeded) {
+                this.logger?.info?.(`HubCloud: skipping dead telegramcdn stream (quota exceeded)`);
+                continue;
+              }
+            }
+
             classified.push({
-              url: new URL(href),
+              url: streamUrl,
               format: Format.unknown,
               ttl: HUBCLOUD_CACHE_TTL,
               label: category.label,
