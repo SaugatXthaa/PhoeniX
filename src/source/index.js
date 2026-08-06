@@ -21,6 +21,7 @@ import { MeineCloud } from './MeineCloud.js';
 import { MostraGuarda } from './MostraGuarda.js';
 import { MoviesDrive } from './MoviesDrive.js';
 import { MovieBox } from './MovieBox.js';
+import { Movie4kTo } from './Movie4kTo.js';
 import { Movix } from './Movix.js';
 import { NineAnime } from './NineAnime.js';
 import { PrimeShows } from './PrimeShows.js';
@@ -45,6 +46,7 @@ export const createSources = (fetcher) => {
     new VidSrc(),
     new Vidzee(fetcher),
     new MovieBox(fetcher),
+    new Movie4kTo(fetcher),
     new CineWave(fetcher),
     new MoviesDrive(fetcher),
     new VidKing(fetcher),
