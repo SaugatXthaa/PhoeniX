@@ -11,3 +11,4 @@ export { guessHeightFromPlaylist } from './height.js';
 export { unpackEval, extractUrlFromPacked } from './embed.js';
 export { supportsMediaFlowProxy, hasMultiEnabled, buildMediaFlowProxyExtractorRedirectUrl, buildMediaFlowProxyExtractorStreamUrl, buildMediaFlowProxyHlsUrl } from './media-flow-proxy.js';
 export { getDefaultConfig, showErrors, showExternalUrls, disableExtractorConfigKey, isExtractorDisabled, excludeResolutionConfigKey, isResolutionExcluded } from './config.js';
+export { SPEEDRACELIGHT_API_BASE, PROVIDERS as VIDKING_PROVIDERS, fetchSeed, fetchProvider, fetchAllProviders, decryptPayload, invalidateSeed } from './speedracelight.js';

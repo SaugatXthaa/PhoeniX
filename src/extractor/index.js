@@ -23,6 +23,7 @@ import { Vidsonic } from './Vidsonic.js';
 import { VidSrc } from './VidSrc.js';
 import { Vidzee } from './Vidzee.js';
 import { VixSrc } from './VixSrc.js';
+import { VidKing } from './VidKing.js';
 import { Voe } from './Voe.js';
 
 export { Extractor } from './Extractor.js';
@@ -68,6 +69,7 @@ export const createExtractors = (fetcher, logger) => {
       'vsrc.su',
     ]),
     new VixSrc(fetcher, logger),
+    new VidKing(fetcher, logger),
 
     // Fallback — must come last
     new ExternalUrl(fetcher, logger),
