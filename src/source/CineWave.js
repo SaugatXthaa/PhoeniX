@@ -1,4 +1,9 @@
 // src/source/CineWave.js
+// NOTE: The HdHub API (hdhub.thevolecitor.qzz.io) is now donation-gated.
+// It only returns "Donation needed" streams without a donation key.
+// The streams it used to provide are the SAME HubCloud streams that
+// 4KHDHub already provides via hubcloud.ist. This source is kept for
+// when the API becomes available again.
 // watch.cinewave.qzz.io — movies/series/anime via hdhub.thevolecitor.qzz.io API
 // API: GET https://hdhub.thevolecitor.qzz.io/{config_base64}/stream/{movie|series}/{tmdb_id}.json
 // Returns Stremio-format streams JSON with direct CDN URLs (workers.dev, pixeldrain, etc.)
