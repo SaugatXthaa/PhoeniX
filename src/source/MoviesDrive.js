@@ -104,7 +104,10 @@ export class MoviesDrive extends Source {
             for (const entry of entries) {
               if (tmdbId.season) {
                 const reqEp = tmdbId.episode || 1;
-                if (entry.episode && entry.episode !== reqEp) continue;
+                // Only include entries that explicitly match the requested episode.
+                // Skip null-episode entries (can't verify match) — prevents wrong
+                // episodes (E302, E342, S12E261) from showing when S1E1 is requested.
+                if (!entry.episode || entry.episode !== reqEp) continue;
               }
 
               // Build meta

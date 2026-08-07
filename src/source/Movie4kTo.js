@@ -40,11 +40,14 @@ export class Movie4kTo extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    const vidkingMeta = {
+    // Only use VidKing/speedracelight fallback for MOVIES.
+    // For series/anime, the speedracelight API returns wrong content
+    // (e.g. "Obsession" movie for Naruto anime requests). Series/anime
+    // rely on their own embed extractors (VidSrc, Vidzee, etc.) instead.
+    const vidkingMeta = tmdbId.season ? null : {
       name,
       year,
       tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
     };
 
     const results = [];
@@ -58,7 +61,7 @@ export class Movie4kTo extends Source {
         meta: {
           countryCodes: [CountryCode.multi],
           title: `${title} (${source.label})`,
-          vidking: vidkingMeta,
+          ...(vidkingMeta && { vidking: vidkingMeta }),
         },
       });
     }
