@@ -82,8 +82,6 @@ export const createSources = (fetcher) => {
     new Frembed(fetcher),
     new FrenchCloud(fetcher),
     new Movix(fetcher),
-    // IT
-    new Eurostreaming(fetcher),
-    new MostraGuarda(fetcher),
+    // IT — Eurostreaming and MostraGuarda removed (DNS dead)
   ].filter(source => !disabledSources.includes(source.id));
 };
