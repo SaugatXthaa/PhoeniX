@@ -32,6 +32,7 @@ import { NineAnime } from './NineAnime.js';
 import { PrimeShows } from './PrimeShows.js';
 import { VerHdLink } from './VerHdLink.js';
 import { VidSrc } from './VidSrc.js';
+import { VidSrcSbs } from './VidSrcSbs.js';
 import { WatchSeries } from './WatchSeries.js';
 import { ZinkMovies } from './ZinkMovies.js';
 import { VidKing } from './VidKing.js';
@@ -61,6 +62,7 @@ export const createSources = (fetcher) => {
     new ZinkMovies(fetcher),
     new WatchSeries(fetcher),
     new Necro(fetcher),
+    new VidSrcSbs(fetcher),
     new VidKing(fetcher),
     new VidFast(fetcher),
     new VegaMovies(fetcher),
