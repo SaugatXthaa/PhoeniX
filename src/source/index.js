@@ -37,6 +37,8 @@ import { WatchSeries } from './WatchSeries.js';
 import { ZinkMovies } from './ZinkMovies.js';
 import { VidKing } from './VidKing.js';
 import { VidFast } from './VidFast.js';
+import { VidLink } from './VidLink.js';
+import { VidSrcTo } from './VidSrcTo.js';
 import { VegaMovies } from './VegaMovies.js';
 import { Vidzee } from './Vidzee.js';
 import { VixSrc } from './VixSrc.js';
@@ -63,6 +65,8 @@ export const createSources = (fetcher) => {
     new WatchSeries(fetcher),
     new Necro(fetcher),
     new VidSrcSbs(fetcher),
+    new VidLink(fetcher),
+    new VidSrcTo(fetcher),
     new VidKing(fetcher),
     new VidFast(fetcher),
     new VegaMovies(fetcher),
