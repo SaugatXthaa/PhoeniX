@@ -26,11 +26,13 @@ import { MoviesDrive } from './MoviesDrive.js';
 import { MoviesHunt } from './MoviesHunt.js';
 import { MovieBox } from './MovieBox.js';
 import { Movie4kTo } from './Movie4kTo.js';
+import { Necro } from './Necro.js';
 import { Movix } from './Movix.js';
 import { NineAnime } from './NineAnime.js';
 import { PrimeShows } from './PrimeShows.js';
 import { VerHdLink } from './VerHdLink.js';
 import { VidSrc } from './VidSrc.js';
+import { WatchSeries } from './WatchSeries.js';
 import { ZinkMovies } from './ZinkMovies.js';
 import { VidKing } from './VidKing.js';
 import { VidFast } from './VidFast.js';
@@ -57,6 +59,8 @@ export const createSources = (fetcher) => {
     new MoviesDrive(fetcher),
     new MoviesHunt(fetcher),
     new ZinkMovies(fetcher),
+    new WatchSeries(fetcher),
+    new Necro(fetcher),
     new VidKing(fetcher),
     new VidFast(fetcher),
     new VegaMovies(fetcher),
