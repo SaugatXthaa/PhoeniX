@@ -42,6 +42,9 @@ import { VidSrcTo } from './VidSrcTo.js';
 import { VegaMovies } from './VegaMovies.js';
 import { Vidzee } from './Vidzee.js';
 import { VixSrc } from './VixSrc.js';
+// Cinepro-org/core ports (additive — no existing source modified)
+import { CineSu } from './CineSu.js';
+import { Fshare } from './Fshare.js';
 
 export { Source } from './Source.js';
 
@@ -71,6 +74,9 @@ export const createSources = (fetcher) => {
     new VidFast(fetcher),
     new VegaMovies(fetcher),
     new PrimeShows(fetcher),
+    // cinepro-org/core ports (additive)
+    new CineSu(fetcher),
+    new Fshare(fetcher),
     // anime
     new NineAnime(fetcher),
     new HiAnime(fetcher),

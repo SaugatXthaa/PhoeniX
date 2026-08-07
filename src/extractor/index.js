@@ -25,6 +25,9 @@ import { Vidzee } from './Vidzee.js';
 import { VixSrc } from './VixSrc.js';
 import { VidKing } from './VidKing.js';
 import { Voe } from './Voe.js';
+// Cinepro-org/core ports (additive — no existing extractor modified)
+import { CineSu } from './CineSu.js';
+import { Fshare } from './Fshare.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -70,6 +73,10 @@ export const createExtractors = (fetcher, logger) => {
     ]),
     new VixSrc(fetcher, logger),
     new VidKing(fetcher, logger),
+
+    // Cinepro-org/core ports (additive — placed before fallback)
+    new CineSu(fetcher, logger),
+    new Fshare(fetcher, logger),
 
     // Fallback — must come last
     new ExternalUrl(fetcher, logger),
