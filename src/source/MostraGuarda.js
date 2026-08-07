@@ -44,7 +44,7 @@ export class MostraGuarda extends Source {
         .map((_i, el) => new URL(($(el).attr('data-link')).replace(/^(https:)?\/\//, 'https://')))
         .toArray()
         .filter(url => !url.host.match(/mostraguarda/))
-        .map(url => ({ url, meta: { countryCodes: [CountryCode.it], referer: this.baseUrl, vidking: vidkingMeta } })),
+        .map(url => ({ url, meta: { countryCodes: [CountryCode.it], referer: this.baseUrl, ...(vidkingMeta && { vidking: vidkingMeta }) } })),
     );
   }
 }

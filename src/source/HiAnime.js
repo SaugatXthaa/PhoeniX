@@ -68,7 +68,7 @@ export class HiAnime extends Source {
     const results = [];
     const seenUrls = new Set();
 
-    const vidkingMeta = { name, year, tmdbId: tmdbId.id, ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }) };
+    // Don't pass vidking for anime — speedracelight returns wrong content
 
     $ep('.item.server-item').each((_i, el) => {
       const type = $ep(el).attr('data-type') || 'sub';
@@ -82,7 +82,6 @@ export class HiAnime extends Source {
         meta: {
           countryCodes: [CountryCode.multi, CountryCode.ja],
           title: `${title} (${langLabel})`,
-          vidking: vidkingMeta,
         },
       });
     });

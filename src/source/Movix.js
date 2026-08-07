@@ -42,13 +42,8 @@ export class Movix extends Source {
       ? `${json['tmdb_details']?.['title'] ?? 'Unknown'} ${TmdbId.formatSeasonAndEpisode(tmdbId)}`
       : `${json['tmdb_details']?.['title'] ?? 'Unknown'} (${year})`;
 
-    const vidkingMeta = {
-      name,
-      year,
-      tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
-    };
+    const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
 
-    return urls.map(url => ({ url, meta: { countryCodes: [CountryCode.fr], referer: data.iframe_src, title, vidking: vidkingMeta } }));
+    return urls.map(url => ({ url, meta: { countryCodes: [CountryCode.fr], referer: data.iframe_src, title, ...(vidkingMeta && { vidking: vidkingMeta }) } }));
   }
 }

@@ -32,17 +32,21 @@ export class VidFast extends Source {
       ? new URL(`/tv/${tmdbId.id}/${tmdbId.season}/${tmdbId.episode}`, this.baseUrl)
       : new URL(`/movie/${tmdbId.id}`, this.baseUrl);
 
+    // Only use VidKing/speedracelight fallback for MOVIES.
+    // For series/anime, the speedracelight API returns wrong content
+    // (e.g. "Supergirl" for Jujutsu Kaisen requests).
+    const vidkingMeta = tmdbId.season ? null : {
+      name,
+      year,
+      tmdbId: tmdbId.id,
+    };
+
     return [{
       url,
       meta: {
         countryCodes: [CountryCode.multi],
         title,
-        vidking: {
-          name,
-          year,
-          tmdbId: tmdbId.id,
-          ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
-        },
+        ...(vidkingMeta && { vidking: vidkingMeta }),
       },
     }];
   }

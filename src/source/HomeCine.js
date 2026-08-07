@@ -45,12 +45,7 @@ export class HomeCine extends Source {
 
     const title = tmdbId.season ? `${name} ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : `${name} (${year})`;
 
-    const vidkingMeta = {
-      name,
-      year,
-      tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
-    };
+    const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
 
     const $ = cheerio.load(pageHtml);
 
@@ -67,7 +62,7 @@ export class HomeCine extends Source {
 
         return {
           url: new URL($('iframe', $(el).attr('href')).attr('src')),
-          meta: { countryCodes, referer: pageUrl.href, title, vidking: vidkingMeta },
+          meta: { countryCodes, referer: pageUrl.href, title, ...(vidkingMeta && { vidking: vidkingMeta }) },
         };
       }).toArray();
   }

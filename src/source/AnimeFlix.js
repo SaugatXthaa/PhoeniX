@@ -63,7 +63,7 @@ export class AnimeFlix extends Source {
         meta: {
           countryCodes: [CountryCode.multi, CountryCode.ja],
           title,
-          vidking: { name, year, tmdbId: tmdbId.id, ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }) },
+          // Don't pass vidking for anime — speedracelight returns wrong content
         },
       }];
     }
@@ -72,7 +72,7 @@ export class AnimeFlix extends Source {
     const results = [];
     const seenUrls = new Set();
 
-    const vidkingMeta = { name, year, tmdbId: tmdbId.id, ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }) };
+    // Don't pass vidking for anime — speedracelight returns wrong content
 
     $ep('.server-item a[data-hash]').each((_i, el) => {
       const hash = $ep(el).attr('data-hash');
@@ -86,7 +86,7 @@ export class AnimeFlix extends Source {
           seenUrls.add(url);
           results.push({
             url: new URL(url),
-            meta: { countryCodes: [CountryCode.multi, CountryCode.ja], title, vidking: vidkingMeta },
+            meta: { countryCodes: [CountryCode.multi, CountryCode.ja], title },
           });
         }
       } catch { /* skip invalid base64 */ }

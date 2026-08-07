@@ -51,12 +51,7 @@ export class FilmpalastTO extends Source {
       ? `${name} ${TmdbId.formatSeasonAndEpisode(tmdbId)}`
       : `${name} (${year})`;
 
-    const vidkingMeta = {
-      name,
-      year,
-      tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
-    };
+    const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
 
     const html = await this.fetcher.text(ctx, streamPageUrl);
     const $ = cheerio.load(html);
@@ -76,7 +71,7 @@ export class FilmpalastTO extends Source {
               referer: streamPageUrl.href,
               title: `${hostName} - ${title}`,
               sourceLabel: this.label,
-              vidking: vidkingMeta,
+              ...(vidkingMeta && { vidking: vidkingMeta }),
             },
           });
         }
@@ -99,7 +94,7 @@ export class FilmpalastTO extends Source {
                 referer: streamPageUrl.href,
                 title: `${hostName} - ${title}`,
                 sourceLabel: this.label,
-                vidking: vidkingMeta,
+                ...(vidkingMeta && { vidking: vidkingMeta }),
               },
             });
           }

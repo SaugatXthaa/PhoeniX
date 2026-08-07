@@ -43,12 +43,7 @@ export class Kokoshka extends Source {
 
     const title = $('title').first().text().trim();
 
-    const vidkingMeta = {
-      name,
-      year,
-      tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
-    };
+    const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
 
     return Promise.all(
       $('.dooplay_player_option:not(#player-option-trailer)')
@@ -66,7 +61,7 @@ export class Kokoshka extends Source {
               countryCodes: [CountryCode.al],
               referer: pageUrl.href,
               title,
-              vidking: vidkingMeta,
+              ...(vidkingMeta && { vidking: vidkingMeta }),
             },
           };
         })

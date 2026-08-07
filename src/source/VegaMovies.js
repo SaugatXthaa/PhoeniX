@@ -35,25 +35,25 @@ export class VegaMovies extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // VegaMovies search is CF-protected. Use the VidKing extractor's
-    // speedracelight API (TMDB-based) to resolve streams. The URL is a
-    // placeholder — the VidKing extractor uses meta.vidking, not the URL.
+    // Only use VidKing/speedracelight fallback for MOVIES.
+    // For series/anime, the speedracelight API returns wrong content.
     const url = tmdbId.season
       ? new URL(`/tv/${tmdbId.id}/${tmdbId.season}/${tmdbId.episode}`, this.baseUrl)
       : new URL(`/movie/${tmdbId.id}`, this.baseUrl);
+
+    const vidkingMeta = tmdbId.season ? null : {
+      name,
+      year,
+      tmdbId: tmdbId.id,
+      ...(imdbId && { imdbId }),
+    };
 
     return [{
       url,
       meta: {
         countryCodes: [CountryCode.multi, CountryCode.hi, CountryCode.en],
         title,
-        vidking: {
-          name,
-          year,
-          tmdbId: tmdbId.id,
-          ...(imdbId && { imdbId }),
-          ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
-        },
+        ...(vidkingMeta && { vidking: vidkingMeta }),
       },
     }];
   }

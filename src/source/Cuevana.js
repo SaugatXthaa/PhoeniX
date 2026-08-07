@@ -43,12 +43,7 @@ export class Cuevana extends Source {
     const html = await this.fetcher.text(ctx, pageUrl);
     const $ = cheerio.load(html);
 
-    const vidkingMeta = {
-      name,
-      year,
-      tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
-    };
+    const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
 
     const urlResults = $('.open_submenu')
       .map((_i, el) => {
@@ -61,7 +56,7 @@ export class Cuevana extends Source {
           return $('[data-tr], [data-video]', el)
             .map((_i, el) => ({
               url: new URL($(el).attr('data-tr') ?? $(el).attr('data-video')),
-              meta: { countryCodes: [CountryCode.mx], referer: pageUrl.href, title, vidking: vidkingMeta },
+              meta: { countryCodes: [CountryCode.mx], referer: pageUrl.href, title, ...(vidkingMeta && { vidking: vidkingMeta }) },
             }))
             .toArray();
         }
@@ -69,7 +64,7 @@ export class Cuevana extends Source {
         return $('[data-tr], [data-video]', el)
           .map((_i, el) => ({
             url: new URL($(el).attr('data-tr') ?? $(el).attr('data-video')),
-            meta: { countryCodes: [CountryCode.es], referer: pageUrl.href, title, vidking: vidkingMeta },
+            meta: { countryCodes: [CountryCode.es], referer: pageUrl.href, title, ...(vidkingMeta && { vidking: vidkingMeta }) },
           }))
           .toArray();
       })

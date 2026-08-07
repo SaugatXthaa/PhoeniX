@@ -78,7 +78,7 @@ export class MeineCloud extends Source {
             meta: {
               countryCodes: [CountryCode.de],
               referer: this.baseUrl,
-              vidking: vidkingMeta,
+              ...(vidkingMeta && { vidking: vidkingMeta }),
             },
           });
         } catch {

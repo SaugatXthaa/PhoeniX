@@ -47,14 +47,9 @@ export class Frembed extends Source {
       ? `${json['title']} ${TmdbId.formatSeasonAndEpisode(tmdbId)}`
       : `${json['title']} (${year})`;
 
-    const vidkingMeta = {
-      name,
-      year,
-      tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
-    };
+    const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
 
-    return urls.map(url => ({ url, meta: { countryCodes: [CountryCode.fr], referer: baseUrl.origin, title, vidking: vidkingMeta } }));
+    return urls.map(url => ({ url, meta: { countryCodes: [CountryCode.fr], referer: baseUrl.origin, title, ...(vidkingMeta && { vidking: vidkingMeta }) } }));
   }
 
   async getBaseUrl(ctx) {

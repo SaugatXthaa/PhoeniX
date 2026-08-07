@@ -40,12 +40,7 @@ export class CineHDPlus extends Source {
 
     const title = `${($('meta[property="og:title"]').attr('content')).trim()} ${TmdbId.formatSeasonAndEpisode(tmdbId)}`;
 
-    const vidkingMeta = {
-      name,
-      year,
-      tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
-    };
+    const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
 
     return Promise.all(
       $(`[data-num="${tmdbId.season}x${tmdbId.episode}"]`)
@@ -54,7 +49,7 @@ export class CineHDPlus extends Source {
         .map((_i, el) => new URL(($(el).attr('data-link')).replace(/^(https:)?\/\//, 'https://')))
         .toArray()
         .filter(url => !url.host.match(/cinehdplus/))
-        .map(url => ({ url, meta: { countryCodes, referer: seriesPageUrl.href, title, vidking: vidkingMeta } })),
+        .map(url => ({ url, meta: { countryCodes, referer: seriesPageUrl.href, title, ...(vidkingMeta && { vidking: vidkingMeta }) } })),
     );
   }
 

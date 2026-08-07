@@ -54,7 +54,7 @@ export class VerHdLink extends Source {
           .map((_i, el) => new URL(($(el).attr('data-link')).replace(/^(https:)?\/\//, 'https://')))
           .toArray()
           .filter(url => !url.host.match(/verhdlink/))
-          .map(url => ({ url, meta: { countryCodes, referer: this.baseUrl, vidking: vidkingMeta } }));
+          .map(url => ({ url, meta: { countryCodes, referer: this.baseUrl, ...(vidkingMeta && { vidking: vidkingMeta }) } }));
       }).toArray();
   }
 }

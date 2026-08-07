@@ -75,7 +75,7 @@ export class MegaKino extends Source {
           countryCodes: [CountryCode.de],
           referer: pageUrl.href,
           title,
-          vidking: vidkingMeta,
+          ...(vidkingMeta && { vidking: vidkingMeta }),
         },
       }));
   }

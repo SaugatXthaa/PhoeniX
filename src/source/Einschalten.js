@@ -38,7 +38,7 @@ export class Einschalten extends Source {
         countryCodes: [CountryCode.de],
         referer: (new URL(`/movies/${tmdbId.id}`, this.baseUrl)).href,
         title,
-        vidking: vidkingMeta,
+        ...(vidkingMeta && { vidking: vidkingMeta }),
       },
     }];
   }

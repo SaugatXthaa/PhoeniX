@@ -40,20 +40,21 @@ export class VidKing extends Source {
       ? new URL(`/embed/tv/${tmdbId.id}/${tmdbId.season}/${tmdbId.episode}`, this.baseUrl)
       : new URL(`/embed/movie/${tmdbId.id}`, this.baseUrl);
 
+    // Only use VidKing/speedracelight fallback for MOVIES.
+    // For series/anime, the speedracelight API returns wrong content.
+    const vidkingMeta = tmdbId.season ? null : {
+      name,
+      year,
+      ...(imdbId && { imdbId }),
+      tmdbId: tmdbId.id,
+    };
+
     return [{
       url,
       meta: {
         countryCodes: [CountryCode.multi],
         title,
-        // Pass-through to the VidKing extractor — saves a duplicate TMDB call.
-        // (Extractor falls back to its own lookup if these are missing.)
-        vidking: {
-          name,
-          year,
-          ...(imdbId && { imdbId }),
-          tmdbId: tmdbId.id,
-          ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
-        },
+        ...(vidkingMeta && { vidking: vidkingMeta }),
       },
     }];
   }

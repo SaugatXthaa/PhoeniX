@@ -128,13 +128,12 @@ export class CineWave extends Source {
     } catch { /* HdHub API failed — continue to embed sources */ }
 
     // === Layer 2: Embed sources (fallback) ===
-    // All embed URLs get meta.vidking so the VidKing extractor can resolve
-    // them via speedracelight's API (most have no dedicated extractor).
-    const vidkingMeta = {
+    // Only use VidKing/speedracelight fallback for MOVIES.
+    // For series/anime, the speedracelight API returns wrong content.
+    const vidkingMeta = tmdbId.season ? null : {
       name,
       year,
       tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
     };
 
     for (const source of EMBED_SOURCES) {
@@ -147,7 +146,7 @@ export class CineWave extends Source {
         meta: {
           countryCodes: [CountryCode.multi],
           title: `${title} (${source.label})`,
-          vidking: vidkingMeta,
+          ...(vidkingMeta && { vidking: vidkingMeta }),
         },
       });
     }

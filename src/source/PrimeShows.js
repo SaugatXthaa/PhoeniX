@@ -40,12 +40,7 @@ export class PrimeShows extends Source {
       : `/watch/movie/${tmdbId.id}`;
 
     const results = [];
-    const vidkingMeta = {
-      name,
-      year,
-      tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
-    };
+    const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
 
     for (const server of SERVERS) {
       const watchUrl = new URL(`${watchPath}?server=${server.key}`, this.baseUrl);
@@ -61,7 +56,7 @@ export class PrimeShows extends Source {
             meta: {
               countryCodes: [CountryCode.multi],
               title: `${title} (${server.label})`,
-              vidking: vidkingMeta,
+              ...(vidkingMeta && { vidking: vidkingMeta }),
             },
           });
         }
