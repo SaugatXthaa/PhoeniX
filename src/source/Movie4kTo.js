@@ -28,10 +28,7 @@ export class Movie4kTo extends Source {
     super();
     this.id = 'movie4kto';
     this.label = 'Movie4kTo';
-    // Movies only — Movie4kTo's embed sources are movie-focused.
-    // The VidKing/speedracelight fallback returns wrong content for anime/TV
-    // (e.g. movie streams showing for anime requests).
-    this.contentTypes = ['movie'];
+    this.contentTypes = ['movie', 'series'];
     this.countryCodes = [CountryCode.multi];
     this.baseUrl = 'https://movie4kto.pro';
     this.fetcher = fetcher;
