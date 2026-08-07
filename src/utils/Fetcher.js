@@ -150,7 +150,8 @@ export class Fetcher {
 
         // Cloudflare detection — try got-scraping fallback for 403
         if (res.headers['cf-mitigated'] === 'challenge' || res.statusCode === 403) {
-          this.cfProtectedDomains.set(url.hostname, Date.now());
+          // Don't cache the CF block yet — got-scraping might bypass it.
+          // Only cache if got-scraping also fails (below).
 
           // Try got-scraping fallback (bypasses some CF challenges)
           if (!options.method || options.method === 'GET') {
@@ -186,9 +187,11 @@ export class Fetcher {
               } catch (e) {
                 // got-scraping also failed
               }
-              // Fall through to normal error handling below
+              // got-scraping failed — NOW cache the CF block
+              this.cfProtectedDomains.set(url.hostname, Date.now());
               this.handleErrorResponse(res, url, resolve, reject, options);
             }).catch(() => {
+              this.cfProtectedDomains.set(url.hostname, Date.now());
               this.handleErrorResponse(res, url, resolve, reject, options);
             });
             return; // Don't continue processing — async handler above will resolve/reject
