@@ -67,9 +67,11 @@ export class MoviesHunt extends Source {
         });
 
         if (Array.isArray(posts) && posts.length > 0) {
-          // Find the best match by title
           const nameLower = name.toLowerCase();
           const yearStr = String(year);
+          // Get the first 2-3 words for partial matching
+          const nameWords = nameLower.split(/\s+/).filter(w => w.length > 2);
+          const firstWords = nameWords.slice(0, Math.min(3, nameWords.length)).join(' ');
 
           // Try exact year match first
           const yearMatch = posts.find(p => {
@@ -78,15 +80,22 @@ export class MoviesHunt extends Source {
           });
           if (yearMatch) return yearMatch.link;
 
-          // Fallback: title contains the name
+          // Fallback: title contains the full name
           const titleMatch = posts.find(p => {
             const title = (p.title?.rendered || '').toLowerCase();
             return title.includes(nameLower);
           });
           if (titleMatch) return titleMatch.link;
 
-          // No fallback to first result — prevents wrong content mismatch
-          // (e.g. "Jujutsu Kaisen 0" showing for "House of the Dragon")
+          // Fallback: title contains the first 2-3 words of the name
+          // (handles cases like "House of the Dragon" → post title has "House of the Dragon (Season 1)")
+          if (firstWords.length > 3) {
+            const partialMatch = posts.find(p => {
+              const title = (p.title?.rendered || '').toLowerCase();
+              return title.includes(firstWords);
+            });
+            if (partialMatch) return partialMatch.link;
+          }
         }
       } catch { /* continue to next query */ }
     }
