@@ -23,7 +23,9 @@ export class StreamResolver {
     // Per-source timeout — ensures one slow source can't make Stremio's entire
     // request hang. Sources that haven't returned within SOURCE_TIMEOUT_MS are
     // abandoned (their partial results, if any, are still collected).
-    const SOURCE_TIMEOUT_MS = 20_000;
+    // 30s matches Stremio's default request timeout — gives sources maximum
+    // time on Render's free tier while still returning before Stremio gives up.
+    const SOURCE_TIMEOUT_MS = 30_000;
 
     const withTimeout = (promise, ms, sourceId) => {
       let timer;
