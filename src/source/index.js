@@ -21,6 +21,7 @@ import { MegaKino } from './MegaKino.js';
 import { MeineCloud } from './MeineCloud.js';
 import { MostraGuarda } from './MostraGuarda.js';
 import { MoviesDrive } from './MoviesDrive.js';
+import { MoviesHunt } from './MoviesHunt.js';
 import { MovieBox } from './MovieBox.js';
 import { Movie4kTo } from './Movie4kTo.js';
 import { Movix } from './Movix.js';
@@ -51,6 +52,7 @@ export const createSources = (fetcher) => {
     new Fmovies(fetcher),
     new CineWave(fetcher),
     new MoviesDrive(fetcher),
+    new MoviesHunt(fetcher),
     new VidKing(fetcher),
     new VidFast(fetcher),
     new VegaMovies(fetcher),
