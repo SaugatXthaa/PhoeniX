@@ -55,46 +55,61 @@ export class MoviesHunt extends Source {
     const queries = [
       name,
       name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(),
-      name.split(' ')[0],
     ].filter((q, i, arr) => q && arr.indexOf(q) === i);
 
     for (const query of queries) {
       try {
-        const apiUrl = new URL(`/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=10`, BASE_URL);
-        const posts = await this.fetcher.json(ctx, apiUrl, {
-          headers: { Accept: 'application/json' },
+        // Use HTML search (?s=) — the WP REST API search is broken on this site
+        // (returns the same post for every query)
+        const searchUrl = new URL(`/?s=${encodeURIComponent(query)}`, BASE_URL);
+        const html = await this.fetcher.text(ctx, searchUrl, {
+          headers: { Accept: 'text/html' },
           timeout: 10000,
         });
 
-        if (Array.isArray(posts) && posts.length > 0) {
-          const nameLower = name.toLowerCase();
-          const yearStr = String(year);
-          // Get the first 2-3 words for partial matching
-          const nameWords = nameLower.split(/\s+/).filter(w => w.length > 2);
-          const firstWords = nameWords.slice(0, Math.min(3, nameWords.length)).join(' ');
+        const $ = cheerio.load(html);
+        const nameLower = name.toLowerCase();
+        const yearStr = String(year);
+        const nameWords = nameLower.split(/\s+/).filter(w => w.length > 2);
+        const firstWords = nameWords.slice(0, Math.min(3, nameWords.length)).join(' ');
 
-          // Try exact year match first
-          const yearMatch = posts.find(p => {
-            const title = (p.title?.rendered || '').toLowerCase();
-            return title.includes(nameLower) && title.includes(yearStr);
-          });
-          if (yearMatch) return yearMatch.link;
+        // Find post links (exclude non-post URLs)
+        const postLinks = [];
+        $('a[href*="' + BASE_URL + '/"]').each((_i, el) => {
+          const href = $(el).attr('href');
+          if (!href) return;
+          // Exclude non-post URLs
+          if (href.includes('category/') || href.includes('page/') || href.includes('wp-') ||
+              href.includes('?s=') || href.includes('how-to') || href.includes('about') ||
+              href.includes('contact') || href.includes('dmca') || href.includes('privacy') ||
+              href.includes('feed/') || href.includes('xmlrpc') || href.includes('/tag/') ||
+              href.includes('/search/')) return;
+          if (!postLinks.includes(href)) postLinks.push(href);
+        });
 
-          // Fallback: title contains the full name
-          const titleMatch = posts.find(p => {
-            const title = (p.title?.rendered || '').toLowerCase();
-            return title.includes(nameLower);
-          });
-          if (titleMatch) return titleMatch.link;
+        // Try to find a matching post by title
+        for (const link of postLinks) {
+          // Get the link text or nearby title
+          const linkEl = $(`a[href="${link}"]`).first();
+          const linkText = linkEl.text().toLowerCase().trim();
+          const titleAttr = (linkEl.attr('title') || '').toLowerCase();
+          const altAttr = (linkEl.find('img').attr('alt') || '').toLowerCase();
 
-          // Fallback: title contains the first 2-3 words of the name
-          // (handles cases like "House of the Dragon" → post title has "House of the Dragon (Season 1)")
-          if (firstWords.length > 3) {
-            const partialMatch = posts.find(p => {
-              const title = (p.title?.rendered || '').toLowerCase();
-              return title.includes(firstWords);
-            });
-            if (partialMatch) return partialMatch.link;
+          // Match by full name
+          if (linkText.includes(nameLower) || titleAttr.includes(nameLower) || altAttr.includes(nameLower)) {
+            return link;
+          }
+        }
+
+        // Try partial word match
+        if (firstWords.length > 3) {
+          for (const link of postLinks) {
+            const linkEl = $(`a[href="${link}"]`).first();
+            const linkText = linkEl.text().toLowerCase().trim();
+            const titleAttr = (linkEl.attr('title') || '').toLowerCase();
+            if (linkText.includes(firstWords) || titleAttr.includes(firstWords)) {
+              return link;
+            }
           }
         }
       } catch { /* continue to next query */ }
@@ -132,15 +147,61 @@ export class MoviesHunt extends Source {
     const $ = cheerio.load(html);
     const results = [];
 
-    // Parse the structure: headings (quality/size) followed by download links
-    // Headings like: "720p [1.5GB]", "1080p [4GB]", "480p [400MB]"
-    // Links: <a href="hubcloud.cx/drive/...">HUBCLOUD [DD]</a>
+    // For TV series: the abhilinks page has episode headings like "-:Episodes: 1:-"
+    // followed by quality+size headings like "1080p [1.5GB]" with hubcloud links.
+    // We need to find the episode matching the requested episode number, then
+    // extract all quality links under that episode heading.
+    const targetEpisode = tmdbId.season ? (tmdbId.episode || 1) : null;
 
+    // Parse all headings and their associated links
     const headings = $('h1, h2, h3, h4, h5, h6').toArray();
+
+    // First pass: check if this is an episode-based page (has "Episodes: N" headings)
+    const hasEpisodeHeadings = headings.some(h => {
+      const text = $(h).text().trim();
+      return /episodes?\s*[:\-]?\s*\d+/i.test(text);
+    });
+
+    let currentEpisode = null;
 
     for (const heading of headings) {
       const headingText = $(heading).text().trim();
       if (!headingText) continue;
+
+      // Check if this is an episode heading (e.g. "-:Episodes: 1:-")
+      const epMatch = headingText.match(/episodes?\s*[:\-]?\s*(\d+)/i);
+      if (epMatch) {
+        currentEpisode = parseInt(epMatch[1]);
+
+        // If this is the target episode, collect links directly after this heading
+        if (hasEpisodeHeadings && targetEpisode !== null && currentEpisode === targetEpisode) {
+          const links = [];
+          $(heading).nextUntil('h1, h2, h3, h4, h5, h6').each((_j, sib) => {
+            $(sib).find('a').each((_k, a) => {
+              const href = $(a).attr('href');
+              if (href && /hubcloud/i.test(href) && !links.find(l => l.href === href)) {
+                links.push({ href, text: $(a).text().trim() });
+              }
+            });
+          });
+
+          for (const link of links) {
+            try {
+              const url = new URL(link.href);
+              results.push({
+                url,
+                meta: {
+                  countryCodes: [CountryCode.multi],
+                  title: `${title} — EP${targetEpisode}`,
+                  sourceId: this.id,
+                  sourceLabel: this.label,
+                },
+              });
+            } catch { /* skip invalid URL */ }
+          }
+        }
+        continue;
+      }
 
       // Extract quality and size from the heading
       const qualityMatch = headingText.match(/(\d{3,4})p/i);
@@ -148,8 +209,13 @@ export class MoviesHunt extends Source {
       const height = qualityMatch ? parseInt(qualityMatch[1]) : undefined;
       const fileSize = sizeMatch ? bytes.parse(`${sizeMatch[1]} ${sizeMatch[2]}`) : undefined;
 
-      // Skip headings that don't have quality info (section headers like "BluRay Multi Audio")
+      // Skip headings that don't have quality info
       if (!height && !fileSize) continue;
+
+      // If this is an episode-based page, only include links for the requested episode
+      if (hasEpisodeHeadings && targetEpisode !== null) {
+        if (currentEpisode !== targetEpisode) continue;
+      }
 
       // Find hubcloud links after this heading (until the next heading)
       const links = [];
@@ -181,7 +247,6 @@ export class MoviesHunt extends Source {
           const url = new URL(link.href);
           const countryCodes = [CountryCode.multi, ...findCountryCodes(headingText)];
 
-          // Build the stream title with quality and size
           const titleBits = [title];
           if (height) titleBits.push(`${height}p`);
           if (fileSize) titleBits.push(`[${bytes.format(fileSize)}]`);
