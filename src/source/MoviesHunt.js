@@ -85,8 +85,8 @@ export class MoviesHunt extends Source {
           });
           if (titleMatch) return titleMatch.link;
 
-          // Fallback: first result
-          return posts[0].link;
+          // No fallback to first result — prevents wrong content mismatch
+          // (e.g. "Jujutsu Kaisen 0" showing for "House of the Dragon")
         }
       } catch { /* continue to next query */ }
     }
