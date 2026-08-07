@@ -31,6 +31,7 @@ import { NineAnime } from './NineAnime.js';
 import { PrimeShows } from './PrimeShows.js';
 import { VerHdLink } from './VerHdLink.js';
 import { VidSrc } from './VidSrc.js';
+import { ZinkMovies } from './ZinkMovies.js';
 import { VidKing } from './VidKing.js';
 import { VidFast } from './VidFast.js';
 import { VegaMovies } from './VegaMovies.js';
@@ -55,6 +56,7 @@ export const createSources = (fetcher) => {
     new CineWave(fetcher),
     new MoviesDrive(fetcher),
     new MoviesHunt(fetcher),
+    new ZinkMovies(fetcher),
     new VidKing(fetcher),
     new VidFast(fetcher),
     new VegaMovies(fetcher),
