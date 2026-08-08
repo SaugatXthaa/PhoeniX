@@ -18,7 +18,7 @@ export class AcerMovies extends Extractor {
     super(fetcher, logger);
     this.id = 'acermovies';
     this.label = 'AcerMovies';
-    this.ttl = 3600000; // 1h
+    this.ttl = 300000; // 5min — GDrive URLs have time-limited tokens that expire
   }
 
   supports(_ctx, url) {

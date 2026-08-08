@@ -143,6 +143,75 @@ app.get('/extract', async (req, res) => {
   }
 });
 
+// ============== PROXY (stream content through addon) ==============
+// Used by sources whose CDN hosts may be DNS-blocked on the user's device
+// (e.g. fsharetv.cc). The addon fetches the content and streams it back,
+// so DNS resolution happens on the server, not the user's device.
+app.get('/proxy', async (req, res) => {
+  const rawUrl = req.query.url;
+  const rawReferer = req.query.referer;
+
+  if (!rawUrl) {
+    return res.status(400).send('Missing url parameter');
+  }
+
+  let targetUrl;
+  try {
+    targetUrl = new URL(rawUrl);
+  } catch {
+    return res.status(400).send('Invalid url parameter');
+  }
+
+  logger.log(`[${ADDON_NAME}] proxy ${targetUrl.hostname}${targetUrl.pathname.slice(0, 50)}`);
+
+  try {
+    const proxyHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+    };
+    if (rawReferer) proxyHeaders['Referer'] = rawReferer;
+    // Pass through Range header for seeking
+    if (req.headers.range) proxyHeaders['Range'] = req.headers.range;
+
+    const response = await fetch(targetUrl.href, {
+      headers: proxyHeaders,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!response.ok && response.status !== 206) {
+      logger.error(`[${ADDON_NAME}] proxy upstream ${response.status} for ${targetUrl.hostname}`);
+      return res.status(response.status).send(`Upstream error: ${response.status}`);
+    }
+
+    // Forward status code and headers
+    res.status(response.status);
+    const forwardHeaders = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'content-disposition'];
+    for (const h of forwardHeaders) {
+      const v = response.headers.get(h);
+      if (v) res.setHeader(h, v);
+    }
+
+    // Stream the body
+    const reader = response.body.getReader();
+    const pump = async () => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!res.write(value)) {
+          await new Promise(r => res.once('drain', r));
+        }
+      }
+      res.end();
+    };
+    pump().catch(() => { try { res.end(); } catch {} });
+  } catch (err) {
+    logger.error(`[${ADDON_NAME}] proxy error: ${err.message}`);
+    if (!res.headersSent) res.status(502).send('Proxy error');
+    else try { res.end(); } catch {}
+  }
+});
+
 // ============== HEALTH ==============
 app.get('/health', (req, res) => {
   res.json({

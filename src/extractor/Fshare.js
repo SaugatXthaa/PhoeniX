@@ -131,6 +131,11 @@ export class Fshare extends Extractor {
     // on that particular CDN host). Without this check, Stremio picks the
     // first stream which may be broken, and the user sees a playback error.
     // We HEAD-check each URL and only keep the ones that return 2xx.
+    //
+    // URLs are returned through the addon's /proxy endpoint so DNS resolution
+    // happens on the server (Render), not on the user's device. This fixes
+    // "Failed to resolve hostname fsharetv.cc" errors on user devices that
+    // can't reach fsharetv.cc directly.
     const results = [];
     const checkPlayable = async (s) => {
       const rawUrl = s.src.startsWith('http') ? s.src : `${BASE_URL}${s.src}`;
@@ -147,8 +152,15 @@ export class Fshare extends Extractor {
         });
         if (res.status >= 200 && res.status < 400) {
           const height = qualityToHeight(s.label || s.quality);
+
+          // Build proxy URL — streams through the addon so the user's device
+          // never needs to resolve fsharetv.cc directly
+          const proxyUrl = new URL('/proxy', ctx.hostUrl);
+          proxyUrl.searchParams.set('url', parsed.href);
+          proxyUrl.searchParams.set('referer', `${BASE_URL}/`);
+
           return {
-            url: parsed,
+            url: proxyUrl,
             format: inferFormat(rawUrl),
             label: this.label,
             meta: {
@@ -156,7 +168,7 @@ export class Fshare extends Extractor {
               ...(height && { height }),
               title: s.label || meta.title,
             },
-            requestHeaders: { Referer: `${BASE_URL}/` },
+            // No requestHeaders needed — the /proxy endpoint adds Referer
           };
         }
         this.logger?.warn?.(`Fshare: skipping unplayable URL (HTTP ${res.status}): ${parsed.href.slice(0, 80)}`);
