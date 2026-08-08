@@ -30,6 +30,8 @@ import { CineSu } from './CineSu.js';
 import { Fshare } from './Fshare.js';
 // AcerMovies — passthrough for direct GDrive CDN URLs
 import { AcerMovies } from './AcerMovies.js';
+// DirectStream — passthrough for direct playable CDN URLs (CineWave HdHub, Fmovies)
+import { DirectStream } from './DirectStream.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -81,6 +83,8 @@ export const createExtractors = (fetcher, logger) => {
     new Fshare(fetcher, logger),
     // AcerMovies — passthrough for direct GDrive CDN URLs
     new AcerMovies(fetcher, logger),
+    // DirectStream — passthrough for direct playable CDN URLs
+    new DirectStream(fetcher, logger),
 
     // Fallback — must come last
     new ExternalUrl(fetcher, logger),
