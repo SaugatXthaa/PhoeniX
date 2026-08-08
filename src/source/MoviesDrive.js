@@ -16,7 +16,7 @@ export class MoviesDrive extends Source {
     this.label = 'MoviesDrive';
     this.contentTypes = ['movie', 'series'];
     this.countryCodes = [CountryCode.multi, CountryCode.hi, CountryCode.en];
-    this.baseUrl = 'https://new1.moviesdrive.christmas';
+    this.baseUrl = 'https://new2.moviesdrive.christmas';
     this.fetcher = fetcher;
   }
 
@@ -46,6 +46,111 @@ export class MoviesDrive extends Source {
             archiveLinks.push({ url: href, label: text });
           }
         });
+
+        // Also find direct hubcloud links on the post page itself.
+        // The site structure changed — post pages now link directly to
+        // hubcloud.foo/drive/search-recover.php?from_ac=... instead of
+        // going through mdrive.lol/archive. These are JS-redirect pages
+        // that call an API to find the actual hubcloud.cx/drive/{id} URL.
+        // We call the API directly to resolve the real drive URL.
+        if (archiveLinks.length === 0) {
+          const directEntries = [];
+          $post('a[href*="hubcloud"]').each((_i, el) => {
+            const href = $post(el).attr('href');
+            const text = $post(el).text().trim();
+            if (!href || !HUB_HOST_PATTERN.test(href)) return;
+
+            // Parse quality and size from the link text
+            const qualityMatch = text.match(/(\d{3,})p|4k|2160p/i);
+            const sizeMatch = text.match(/([\d.]+)\s*(GB|MB)/i);
+
+            let quality = null;
+            if (qualityMatch) {
+              if (/4k|2160/i.test(qualityMatch[0])) quality = '2160p';
+              else quality = qualityMatch[1] + 'p';
+            }
+
+            directEntries.push({
+              episode: null,
+              quality,
+              size: sizeMatch ? `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}` : null,
+              url: href,
+              label: text,
+            });
+          });
+
+          // Process direct entries — resolve search-recover.php URLs via API
+          for (const entry of directEntries) {
+            if (tmdbId.season) {
+              const reqEp = tmdbId.episode || 1;
+              if (!entry.episode || entry.episode !== reqEp) continue;
+            }
+
+            const entryTitle = entry.label || title;
+            const countryCodes = [CountryCode.multi, ...findCountryCodes(entryTitle)];
+            const height = entry.quality ? parseInt(entry.quality) : findHeight(entryTitle);
+
+            let fileSize = undefined;
+            if (entry.size) {
+              const sm = entry.size.match(/([\d.]+)\s*(GB|MB)/i);
+              if (sm) {
+                const val = parseFloat(sm[1]);
+                const unit = sm[2].toUpperCase();
+                fileSize = unit === 'GB' ? val * 1024 * 1024 * 1024 : val * 1024 * 1024;
+              }
+            }
+
+            // If this is a search-recover.php URL, resolve it via the API
+            // to get the actual hubcloud.cx/drive/{id} URL that HubExtractor
+            // can handle.
+            let resolvedUrl = entry.url;
+            if (entry.url.includes('search-recover.php')) {
+              try {
+                const parsed = new URL(entry.url);
+                const fromAc = parsed.searchParams.get('from_ac') || '';
+                const q = parsed.searchParams.get('q') || '';
+                // Decode q if it's base64
+                let query = q;
+                try { query = Buffer.from(q, 'base64').toString('utf-8'); } catch {}
+
+                const apiUrl = new URL('/drive/search-recover.php', parsed.origin);
+                apiUrl.searchParams.set('api', 'search');
+                apiUrl.searchParams.set('q', query);
+                apiUrl.searchParams.set('page', '1');
+                apiUrl.searchParams.set('from_ac', fromAc);
+
+                const apiRes = await this.fetcher.json(ctx, apiUrl, {
+                  headers: { 'Accept': 'application/json' },
+                  timeout: 8000,
+                });
+
+                if (apiRes?.hits && Array.isArray(apiRes.hits) && apiRes.hits.length > 0) {
+                  // Use the first hit's URL (actual hubcloud.cx/drive/{id})
+                  resolvedUrl = apiRes.hits[0].url;
+                  // Update file size from API if available
+                  if (apiRes.hits[0].size && !fileSize) {
+                    const sm = String(apiRes.hits[0].size).match(/([\d.]+)\s*(GB|MB)/i);
+                    if (sm) {
+                      const val = parseFloat(sm[1]);
+                      const unit = sm[2].toUpperCase();
+                      fileSize = unit === 'GB' ? val * 1024 * 1024 * 1024 : val * 1024 * 1024;
+                    }
+                  }
+                }
+              } catch { /* API failed — use original URL (HubExtractor will try) */ }
+            }
+
+            results.push({
+              url: new URL(resolvedUrl),
+              meta: {
+                countryCodes,
+                ...(height && { height }),
+                title: entryTitle,
+                ...(fileSize && { bytes: fileSize }),
+              },
+            });
+          }
+        }
 
         // For each archive link, fetch it and extract hubcloud links
         for (const archive of archiveLinks) {
@@ -148,10 +253,13 @@ export class MoviesDrive extends Source {
     const queries = [
       name,
       name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(),
-      name.split(' ')[0], // first word only
     ].filter((q, i, arr) => q && arr.indexOf(q) === i);
 
     const postUrls = [];
+    const nameLower = name.toLowerCase();
+    // Normalize the name for matching — strip special chars for fuzzy compare
+    const nameNormalized = nameLower.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
     for (const query of queries) {
       const apiUrl = new URL(`/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=10`, this.baseUrl);
       try {
@@ -159,12 +267,24 @@ export class MoviesDrive extends Source {
         if (Array.isArray(posts)) {
           for (const post of posts) {
             const link = post.link;
+            if (!link) continue;
             const title = (post.title?.rendered || '').toLowerCase();
-            const nameLower = name.toLowerCase();
-            // Match by title containing the search name
-            if (link && (title.includes(nameLower) || nameLower.includes(title.split(' season')[0]) || title.length > 5)) {
-              if (!postUrls.includes(link)) postUrls.push(link);
+            // Normalize the post title for matching
+            const titleNormalized = title.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+            // Strict matching: the post title MUST contain the full movie/series name.
+            // This prevents random posts that merely mention the name in their content
+            // from showing up as results.
+            if (!titleNormalized.includes(nameNormalized)) continue;
+
+            // If we have a year, prefer posts that mention it (but don't require it —
+            // some posts omit the year in the title)
+            if (year && !titleNormalized.includes(String(year))) {
+              // Year doesn't match — skip only if we already have matches with the right year
+              // (to avoid being too strict and returning nothing)
             }
+
+            if (!postUrls.includes(link)) postUrls.push(link);
           }
         }
         if (postUrls.length > 0) break;
