@@ -96,6 +96,23 @@ export class CineWave extends Source {
           if (!url) continue;
 
           const nameTitle = `${stream.name || ''} ${stream.description || ''}`;
+
+          // Filter out streams that clearly belong to a different movie.
+          // The HdHub API sometimes returns mismatched content (e.g.,
+          // "Coriolanus" streams for an "Inception" request). We check if
+          // the stream name/title contains the requested movie name.
+          const streamText = (nameTitle + ' ' + (stream.title || '')).toLowerCase();
+          const nameLower = name.toLowerCase();
+          const nameNormalized = nameLower.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+          const streamNormalized = streamText.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+          // Skip if the stream text doesn't contain the movie name
+          // (but allow streams with no clear title text)
+          if (nameNormalized.length > 3 && streamNormalized.length > 10 &&
+              !streamNormalized.includes(nameNormalized) &&
+              !nameNormalized.includes(streamNormalized.split(' ').slice(0, 3).join(' '))) {
+            continue;
+          }
+
           const heightMatch = nameTitle.match(/(\d{3,})p/i);
           const height = heightMatch ? parseInt(heightMatch[1]) : undefined;
 
@@ -111,14 +128,17 @@ export class CineWave extends Source {
             }
           }
 
+          // Clean "HdHub" branding from the title — these are CineWave streams
+          let cleanTitle = stream.title || nameTitle.trim() || title;
+          cleanTitle = cleanTitle.replace(/^HdHub\s+/i, '').replace(/^HdHub\s*\/\s*VM\s+/i, '');
+
           results.push({
             url: new URL(url),
             meta: {
               countryCodes: [CountryCode.multi, ...findCountryCodes(nameTitle)],
-              title: stream.title || nameTitle.trim() || title,
+              title: cleanTitle,
               ...(height && { height }),
               ...(fileSize && { bytes: fileSize }),
-              // Tag as HdHub source so download label is applied
               sourceId: 'cinewave',
               sourceLabel: 'CineWave',
             },
