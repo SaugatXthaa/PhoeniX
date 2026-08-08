@@ -57,14 +57,44 @@ export class Fmovies extends Source {
     const $ = cheerio.load(html);
     const results = [];
 
+    // Collect all source tags first
+    const sourceEntries = [];
     $('video source[src]').each((_i, el) => {
       const src = $(el).attr('src');
       const label = $(el).attr('label') || '';
       if (!src) return;
+      sourceEntries.push({ src, label });
+    });
+
+    // Check each stream URL's file size — thefmovies.sbs sometimes serves
+    // tiny trailer/sample clips (under 50MB) instead of full movies. These
+    // trigger Cloudflare ToS violation errors when played. Filter them out
+    // so only real movies are returned.
+    const MIN_MOVIE_SIZE = 50 * 1024 * 1024; // 50MB — real movies are 300MB+
+    const seenUrls = new Set();
+
+    for (const { src, label } of sourceEntries) {
+      // Skip duplicate URLs (thefmovies often lists same URL for all qualities)
+      if (seenUrls.has(src)) continue;
+      seenUrls.add(src);
 
       try {
         const url = new URL(src);
         const height = parseInt(label.match(/(\d{3,4})p?/)?.[1] || '0') || undefined;
+
+        // HEAD request to check file size
+        let fileSize = 0;
+        try {
+          const res = await this.fetcher.fetch(ctx, url, {
+            method: 'HEAD',
+            timeout: 5000,
+          });
+          const cl = res.headers?.['content-length'] || res.headers?.['Content-Length'];
+          if (cl) fileSize = parseInt(Array.isArray(cl) ? cl[0] : cl) || 0;
+        } catch { /* skip — assume valid if HEAD fails */ }
+
+        // Skip streams that are too small (trailers/samples)
+        if (fileSize > 0 && fileSize < MIN_MOVIE_SIZE) continue;
 
         results.push({
           url,
@@ -75,10 +105,11 @@ export class Fmovies extends Source {
             title: `${title} (${label || 'MP4'})`,
             sourceId: this.id,
             sourceLabel: this.label,
+            ...(fileSize > 0 && { bytes: fileSize }),
           },
         });
       } catch { /* skip invalid URL */ }
-    });
+    }
 
     return results;
   }
@@ -182,16 +213,40 @@ export class Fmovies extends Source {
     } catch { return []; }
 
     const $vod = cheerio.load(html);
-    const results = [];
 
+    // Collect source entries and filter by size (same as handleMovie)
+    const sourceEntries = [];
     $vod('video source[src]').each((_i, el) => {
       const src = $vod(el).attr('src');
       const label = $vod(el).attr('label') || '';
       if (!src) return;
+      sourceEntries.push({ src, label });
+    });
+
+    const MIN_EPISODE_SIZE = 20 * 1024 * 1024; // 20MB — episodes are 100MB+
+    const seenUrls = new Set();
+    const results = [];
+
+    for (const { src, label } of sourceEntries) {
+      if (seenUrls.has(src)) continue;
+      seenUrls.add(src);
 
       try {
         const url = new URL(src);
         const height = parseInt(label.match(/(\d{3,4})p?/)?.[1] || '0') || undefined;
+
+        let fileSize = 0;
+        try {
+          const res = await this.fetcher.fetch(ctx, url, {
+            method: 'HEAD',
+            timeout: 5000,
+          });
+          const cl = res.headers?.['content-length'] || res.headers?.['Content-Length'];
+          if (cl) fileSize = parseInt(Array.isArray(cl) ? cl[0] : cl) || 0;
+        } catch { /* assume valid if HEAD fails */ }
+
+        // Skip streams that are too small (trailers/samples)
+        if (fileSize > 0 && fileSize < MIN_EPISODE_SIZE) continue;
 
         results.push({
           url,
@@ -202,10 +257,11 @@ export class Fmovies extends Source {
             title: `${title} (${label || 'MP4'})`,
             sourceId: this.id,
             sourceLabel: this.label,
+            ...(fileSize > 0 && { bytes: fileSize }),
           },
         });
       } catch { /* skip invalid URL */ }
-    });
+    }
 
     return results;
   }
