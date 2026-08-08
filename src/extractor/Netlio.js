@@ -35,13 +35,19 @@ export class Netlio extends Extractor {
     return NETLIO_CDN_PATTERNS.some(suffix => url.hostname.endsWith(suffix));
   }
 
-  async extractInternal(_ctx, url, meta) {
+  async extractInternal(ctx, url, meta) {
+    // Route through the addon's /proxy endpoint so the Referer header
+    // is added server-side. Without the proxy, Stremio's plain HTTP
+    // requests get 404 from the CDN (it requires Referer to play).
+    const proxyUrl = new URL('/proxy', ctx.hostUrl);
+    proxyUrl.searchParams.set('url', url.href);
+    proxyUrl.searchParams.set('referer', REFERER);
+
     return [{
-      url,
+      url: proxyUrl,
       format: Format.hls,
       label: this.label,
       meta: { ...meta },
-      requestHeaders: { Referer: REFERER },
     }];
   }
 }

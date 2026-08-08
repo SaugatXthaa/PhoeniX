@@ -34,9 +34,16 @@ export class HDHub4uNew extends Extractor {
            url.hostname.includes('hubcloud-download');
   }
 
-  async extractInternal(_ctx, url, meta) {
+  async extractInternal(ctx, url, meta) {
+    // Route through the addon's /proxy endpoint so Cloudflare-protected
+    // workers.dev URLs are fetched server-side (with proper TLS) and
+    // streamed to Stremio. Without the proxy, Stremio's plain HTTP
+    // requests get 403 Forbidden from Cloudflare.
+    const proxyUrl = new URL('/proxy', ctx.hostUrl);
+    proxyUrl.searchParams.set('url', url.href);
+
     return [{
-      url,
+      url: proxyUrl,
       format: Format.mp4, // CDN serves MP4/MKV directly
       label: this.label,
       meta: { ...meta },
