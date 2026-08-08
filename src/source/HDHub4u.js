@@ -62,10 +62,11 @@ export class HDHub4u extends Source {
     this.label = 'HDHub4u';
     this.contentTypes = ['movie', 'series'];
     this.countryCodes = [CountryCode.multi, CountryCode.gu, CountryCode.hi, CountryCode.ml, CountryCode.pa, CountryCode.ta, CountryCode.te];
-    this.baseUrl = 'https://new1.hdhub4u.limo';
+    this.baseUrl = 'https://new4.hdhub4u.cl';
     this.domainKey = 'hdhub';
     this.fetcher = fetcher;
     this.FALLBACK_CANDIDATES = [
+      'https://new4.hdhub4u.cl',
       'https://new1.hdhub4u.limo',
       'https://new1.hdhub4u.fo',
       'https://new2.hdhub4u.fo',
@@ -78,7 +79,7 @@ export class HDHub4u extends Source {
       'https://new9.hdhub4u.fo',
       'https://new10.hdhub4u.fo',
     ];
-    this.searchUrl = 'https://search.hdhub4u.glass';
+    this.searchUrl = 'https://search.pingora.fyi';
   }
 
   async handleInternal(ctx, _type, id) {

@@ -34,6 +34,8 @@ import { AcerMovies } from './AcerMovies.js';
 import { DirectStream } from './DirectStream.js';
 // HDHub4uNew — passthrough for Sootio-resolved CDN URLs
 import { HDHub4uNew } from './HDHub4uNew.js';
+// Netlio — passthrough for direct HLS URLs from netlio.vercel.app
+import { Netlio } from './Netlio.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -48,6 +50,8 @@ export const createExtractors = (fetcher, logger) => {
     // HDHub4uNew — must come BEFORE HubExtractor to claim workers.dev URLs
     // (HubExtractor matches 'hubcloud' in hostname and would claim them first)
     hdHub4uNewExtractor,
+    // Netlio — passthrough for direct HLS URLs (claim before ExternalUrl)
+    new Netlio(fetcher, logger),
     // HubCloud extractors (must come first — handles hubcloud/hubdrive/hubcdn)
     hubExtractor,
     new HBLinks(fetcher, logger, hubExtractor),

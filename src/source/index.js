@@ -30,6 +30,7 @@ import { MovieBox } from './MovieBox.js';
 import { Movie4kTo } from './Movie4kTo.js';
 import { Necro } from './Necro.js';
 import { Movix } from './Movix.js';
+import { Netlio } from './Netlio.js';
 import { NineAnime } from './NineAnime.js';
 import { PrimeShows } from './PrimeShows.js';
 import { VerHdLink } from './VerHdLink.js';
@@ -77,6 +78,8 @@ export const createSources = (fetcher) => {
     new VidFast(fetcher),
     new VegaMovies(fetcher),
     new PrimeShows(fetcher),
+    // Netlio (netlio.vercel.app — HLS streams with Hindi + English audio)
+    new Netlio(fetcher),
     // cinepro-org/core ports (additive)
     new CineSu(fetcher),
     new Fshare(fetcher),
