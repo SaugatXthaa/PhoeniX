@@ -86,7 +86,7 @@ export class MoviesDrive extends Source {
               if (!entry.episode || entry.episode !== reqEp) continue;
             }
 
-            const entryTitle = entry.label || title;
+            let entryTitle = entry.label || title;
             const countryCodes = [CountryCode.multi, ...findCountryCodes(entryTitle)];
             const height = entry.quality ? parseInt(entry.quality) : findHeight(entryTitle);
 
@@ -102,7 +102,8 @@ export class MoviesDrive extends Source {
 
             // If this is a search-recover.php URL, resolve it via the API
             // to get the actual hubcloud.cx/drive/{id} URL that HubExtractor
-            // can handle.
+            // can handle. The API returns all episodes for the show, so we
+            // filter by requested season+episode using the file_name field.
             let resolvedUrl = entry.url;
             if (entry.url.includes('search-recover.php')) {
               try {
@@ -125,16 +126,38 @@ export class MoviesDrive extends Source {
                 });
 
                 if (apiRes?.hits && Array.isArray(apiRes.hits) && apiRes.hits.length > 0) {
-                  // Use the first hit's URL (actual hubcloud.cx/drive/{id})
-                  resolvedUrl = apiRes.hits[0].url;
+                  // For series: find the hit matching the requested SxxExx
+                  // The file_name contains the season/episode info (e.g.
+                  // "House.of.the.Dragon.S02E01.720p...")
+                  let bestHit = apiRes.hits[0];
+                  if (tmdbId.season) {
+                    const reqS = tmdbId.season;
+                    const reqE = tmdbId.episode || 1;
+                    // Build regex: S{season}E{episode} (with optional leading zeros)
+                    const sxxexxRegex = new RegExp(`S0*${reqS}E0*${reqE}[^0-9]`, 'i');
+                    const matchingHit = apiRes.hits.find(h =>
+                      sxxexxRegex.test(String(h.file_name || '')));
+                    if (matchingHit) {
+                      bestHit = matchingHit;
+                    } else {
+                      // No matching episode found — skip this entry entirely
+                      // to prevent wrong episodes from showing up
+                      continue;
+                    }
+                  }
+                  resolvedUrl = bestHit.url;
                   // Update file size from API if available
-                  if (apiRes.hits[0].size && !fileSize) {
-                    const sm = String(apiRes.hits[0].size).match(/([\d.]+)\s*(GB|MB)/i);
+                  if (bestHit.size && !fileSize) {
+                    const sm = String(bestHit.size).match(/([\d.]+)\s*(GB|MB)/i);
                     if (sm) {
                       const val = parseFloat(sm[1]);
                       const unit = sm[2].toUpperCase();
                       fileSize = unit === 'GB' ? val * 1024 * 1024 * 1024 : val * 1024 * 1024;
                     }
+                  }
+                  // Update title with the actual file name from API (more accurate)
+                  if (bestHit.file_name) {
+                    entryTitle = bestHit.file_name;
                   }
                 }
               } catch { /* API failed — use original URL (HubExtractor will try) */ }
@@ -161,15 +184,28 @@ export class MoviesDrive extends Source {
             // Extract all h5 elements that contain EP{N} labels followed by hubcloud links
             const entries = [];
             const h5s = $arch('h5').toArray();
+            // Track the current season as we iterate through h5s.
+            // Archive pages have season headers like "Season 3 [Hindi – English] 480p"
+            // followed by episode entries like "EP01 – 480p [252.7 MB]".
+            // Without tracking the season, EP01 from Season 3 would match a
+            // request for S1E1 — showing the wrong episode.
+            let currentSeason = null;
 
             for (let i = 0; i < h5s.length; i++) {
               const h5Text = $arch(h5s[i]).text().trim();
-              
+
+              // Check if this h5 is a season header (e.g. "Season 3 [Hindi – English] 480p")
+              const seasonHeaderMatch = h5Text.match(/^Season\s+(\d+)/i);
+              if (seasonHeaderMatch) {
+                currentSeason = parseInt(seasonHeaderMatch[1]);
+                continue;
+              }
+
               // Check if this h5 has an EP label (e.g. "EP01 – 1080p [1.3GB]")
               const epMatch = h5Text.match(/EP\s*0*(\d+)/i);
               const qualityMatch = h5Text.match(/(\d{3,})p/i);
               const sizeMatch = h5Text.match(/([\d.]+)\s*(GB|MB)/i);
-              
+
               // Check if next h5 has a hubcloud link
               const nextH5 = h5s[i + 1];
               if (nextH5) {
@@ -177,6 +213,7 @@ export class MoviesDrive extends Source {
                 if (link) {
                   entries.push({
                     episode: epMatch ? parseInt(epMatch[1]) : null,
+                    season: currentSeason,
                     quality: qualityMatch ? qualityMatch[1] + 'p' : null,
                     size: sizeMatch ? `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}` : null,
                     url: link,
@@ -197,6 +234,7 @@ export class MoviesDrive extends Source {
                   const sizeMatch = context.match(/([\d.]+)\s*(GB|MB)/i);
                   entries.push({
                     episode: null,
+                    season: null,
                     quality: qualityMatch ? qualityMatch[1] + 'p' : null,
                     size: sizeMatch ? `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}` : null,
                     url: href,
@@ -205,14 +243,15 @@ export class MoviesDrive extends Source {
               });
             }
 
-            // Filter by requested episode for series
+            // Filter by requested season+episode for series
             for (const entry of entries) {
               if (tmdbId.season) {
+                const reqS = tmdbId.season;
                 const reqEp = tmdbId.episode || 1;
-                // Only include entries that explicitly match the requested episode.
-                // Skip null-episode entries (can't verify match) — prevents wrong
-                // episodes (E302, E342, S12E261) from showing when S1E1 is requested.
-                if (!entry.episode || entry.episode !== reqEp) continue;
+                // Only include entries that explicitly match BOTH the requested
+                // season AND episode. Skip null-season/episode entries (can't
+                // verify match) — prevents wrong episodes from showing.
+                if (entry.season !== reqS || !entry.episode || entry.episode !== reqEp) continue;
               }
 
               // Build meta
