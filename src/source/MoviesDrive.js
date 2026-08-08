@@ -295,9 +295,25 @@ export class MoviesDrive extends Source {
     ].filter((q, i, arr) => q && arr.indexOf(q) === i);
 
     const postUrls = [];
-    const nameLower = name.toLowerCase();
-    // Normalize the name for matching — strip special chars for fuzzy compare
-    const nameNormalized = nameLower.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+    // Normalize a string for fuzzy matching:
+    // - decode HTML entities (&#038; → &, &amp; → &)
+    // - replace & and "and" with space (so "Minions & Monsters" and "Minions and Monsters" both match)
+    // - strip special chars
+    // - collapse whitespace
+    const normalize = (s) => {
+      return s
+        .toLowerCase()
+        .replace(/&#0*38;/g, '&')   // HTML entity for &
+        .replace(/&amp;/g, '&')      // another HTML entity form
+        .replace(/&/g, ' ')          // & → space
+        .replace(/\band\b/g, ' ')    // "and" → space
+        .replace(/[^a-z0-9\s]/g, '') // strip remaining special chars
+        .replace(/\s+/g, ' ')        // collapse whitespace
+        .trim();
+    };
+
+    const nameNormalized = normalize(name);
 
     for (const query of queries) {
       const apiUrl = new URL(`/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=10`, this.baseUrl);
@@ -307,21 +323,13 @@ export class MoviesDrive extends Source {
           for (const post of posts) {
             const link = post.link;
             if (!link) continue;
-            const title = (post.title?.rendered || '').toLowerCase();
-            // Normalize the post title for matching
-            const titleNormalized = title.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+            const title = post.title?.rendered || '';
+            const titleNormalized = normalize(title);
 
             // Strict matching: the post title MUST contain the full movie/series name.
-            // This prevents random posts that merely mention the name in their content
-            // from showing up as results.
+            // Both are normalized so "Minions & Monsters" matches "Minions and Monsters"
+            // and "Minions &#038; Monsters".
             if (!titleNormalized.includes(nameNormalized)) continue;
-
-            // If we have a year, prefer posts that mention it (but don't require it —
-            // some posts omit the year in the title)
-            if (year && !titleNormalized.includes(String(year))) {
-              // Year doesn't match — skip only if we already have matches with the right year
-              // (to avoid being too strict and returning nothing)
-            }
 
             if (!postUrls.includes(link)) postUrls.push(link);
           }
