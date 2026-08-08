@@ -43,7 +43,10 @@ function inferFormat(url) {
   if (clean.endsWith('.mp4')) return Format.mp4;
   if (clean.endsWith('.mkv')) return Format.mp4;
   if (clean.endsWith('.webm')) return Format.mp4;
-  return Format.hls;
+  // Fshare /api/media/{hash} URLs serve direct MP4/MKV files (verified
+  // via Content-Type: video/mp4). Default to mp4 so Stremio plays them
+  // directly instead of trying HLS parsing.
+  return Format.mp4;
 }
 
 function qualityToHeight(quality) {
