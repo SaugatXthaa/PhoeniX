@@ -42,8 +42,12 @@ export const createExtractors = (fetcher, logger) => {
   const disabledExtractors = (process.env.DISABLED_EXTRACTORS || '').split(',').filter(Boolean);
 
   const hubExtractor = new HubExtractor(fetcher, logger);
+  const hdHub4uNewExtractor = new HDHub4uNew(fetcher, logger);
 
   return [
+    // HDHub4uNew — must come BEFORE HubExtractor to claim workers.dev URLs
+    // (HubExtractor matches 'hubcloud' in hostname and would claim them first)
+    hdHub4uNewExtractor,
     // HubCloud extractors (must come first — handles hubcloud/hubdrive/hubcdn)
     hubExtractor,
     new HBLinks(fetcher, logger, hubExtractor),
@@ -87,8 +91,6 @@ export const createExtractors = (fetcher, logger) => {
     new AcerMovies(fetcher, logger),
     // DirectStream — passthrough for direct playable CDN URLs
     new DirectStream(fetcher, logger),
-    // HDHub4uNew — passthrough for Sootio-resolved CDN URLs
-    new HDHub4uNew(fetcher, logger),
 
     // Fallback — must come last
     new ExternalUrl(fetcher, logger),
