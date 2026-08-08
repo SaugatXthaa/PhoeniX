@@ -28,6 +28,9 @@ const CINEWAVE_CONFIG = Buffer.from(JSON.stringify({
 })).toString('base64');
 
 // All embed sources used by CineWave (from JS bundle analysis)
+// Matches the server list in the CineWave UI (Server Hub):
+// VE, VCC, 2EM, VF, VC, RIVE, ZEE, AIR, SYNC, ROCK, HEXA, ORA, PEACH,
+// MAP, KING, TOU, VSE, 111M, FM, COS, LUX, HDH
 const EMBED_SOURCES = [
   { label: 'VidSrc', movie: 'https://vidsrc-embed.ru/embed/movie/{id}', tv: 'https://vidsrc-embed.ru/embed/tv/{id}/{s}/{e}' },
   { label: '2Embed', movie: 'https://2embed.cc/embed/movie/{id}', tv: 'https://2embed.cc/embed/tv/{id}&s={s}&e={e}' },
@@ -45,6 +48,12 @@ const EMBED_SOURCES = [
   { label: 'AirFlix', movie: 'https://airflix1.com/movie/{id}', tv: 'https://airflix1.com/tv/{id}/{s}/{e}' },
   { label: 'FMovies', movie: 'https://fmovies.gd/movie/{id}', tv: 'https://fmovies.gd/tv/{id}?s={s}&e={e}' },
   { label: '111Movies', movie: 'https://111movies.net/movie/{id}', tv: 'https://111movies.net/tv/{id}?s={s}&e={e}' },
+  { label: 'ZoroStream', movie: 'https://zorostream.com/embed/movie/{id}', tv: 'https://zorostream.com/embed/tv/{id}/{s}/{e}' },
+  { label: 'VidSrcMe', movie: 'https://vidsrc.me/embed/movie?tmdb={id}', tv: 'https://vidsrc.me/embed/tv?tmdb={id}&season={s}&episode={e}' },
+  { label: 'EmbedSu', movie: 'https://embed.su/embed/movie/{id}', tv: 'https://embed.su/embed/tv/{id}/{s}/{e}' },
+  { label: 'MultiEmbed', movie: 'https://multiembed.mov/?video_id={id}&tmdb=1', tv: 'https://multiembed.mov/?video_id={id}&tmdb=1&s={s}&e={e}' },
+  { label: 'SuperFlix', movie: 'https://superflixapi.co/filme/{id}', tv: 'https://superflixapi.co/serie/{id}/{s}/{e}' },
+  { label: 'MoviesApi', movie: 'https://moviesapi.club/movie/{id}', tv: 'https://moviesapi.club/tv/{id}-{s}-{e}' },
 ];
 
 export class CineWave extends Source {
