@@ -143,6 +143,8 @@ export class HDHub4uNew extends Source {
                     ...(fileSize && { bytes: fileSize }),
                     sourceId: this.id,
                     sourceLabel: this.label,
+                    // Store original hubdrive URL so extractor can re-resolve
+                    hdhub4unewOriginalUrl: link.url,
                   },
                 });
               } else if (resp.statusCode === 200) {
@@ -160,6 +162,7 @@ export class HDHub4uNew extends Source {
                       ...(fileSize && { bytes: fileSize }),
                       sourceId: this.id,
                       sourceLabel: this.label,
+                      hdhub4unewOriginalUrl: link.url,
                     },
                   });
                 }

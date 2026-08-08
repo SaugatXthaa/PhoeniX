@@ -170,41 +170,43 @@ app.get('/proxy', async (req, res) => {
       'Accept': '*/*',
     };
     if (rawReferer) proxyHeaders['Referer'] = rawReferer;
-    // Pass through Range header for seeking
-    if (req.headers.range) proxyHeaders['Range'] = req.headers.range;
+    // Pass through Range header for seeking. Some CDNs (workers.dev) require
+    // a Range header to return 206 — if Stremio doesn't send one, add a
+    // default Range to get the first byte (which triggers 206 + seekability).
+    if (req.headers.range) {
+      proxyHeaders['Range'] = req.headers.range;
+    } else {
+      proxyHeaders['Range'] = 'bytes=0-';
+    }
 
-    const response = await fetch(targetUrl.href, {
+    // Use got-scraping for Cloudflare bypass — plain fetch() gets 403
+    // from workers.dev and other CF-protected CDN hosts.
+    const { gotScraping } = await import('got-scraping');
+    const response = await gotScraping.get(targetUrl.href, {
       headers: proxyHeaders,
-      redirect: 'follow',
-      signal: AbortSignal.timeout(30000),
+      timeout: { request: 30000 },
+      throwHttpErrors: false,
+      followRedirect: true,
+      responseType: 'buffer',
+      // Don't decompress — pass through as-is
+      decompress: false,
     });
 
-    if (!response.ok && response.status !== 206) {
-      logger.error(`[${ADDON_NAME}] proxy upstream ${response.status} for ${targetUrl.hostname}`);
-      return res.status(response.status).send(`Upstream error: ${response.status}`);
+    if (response.statusCode >= 400) {
+      logger.error(`[${ADDON_NAME}] proxy upstream ${response.statusCode} for ${targetUrl.hostname}`);
+      return res.status(response.statusCode).send(`Upstream error: ${response.statusCode}`);
     }
 
     // Forward status code and headers
-    res.status(response.status);
+    res.status(response.statusCode);
     const forwardHeaders = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'content-disposition'];
     for (const h of forwardHeaders) {
-      const v = response.headers.get(h);
+      const v = response.headers[h];
       if (v) res.setHeader(h, v);
     }
 
-    // Stream the body
-    const reader = response.body.getReader();
-    const pump = async () => {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (!res.write(value)) {
-          await new Promise(r => res.once('drain', r));
-        }
-      }
-      res.end();
-    };
-    pump().catch(() => { try { res.end(); } catch {} });
+    // Send the body
+    res.send(response.body);
   } catch (err) {
     logger.error(`[${ADDON_NAME}] proxy error: ${err.message}`);
     if (!res.headersSent) res.status(502).send('Proxy error');

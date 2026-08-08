@@ -35,16 +35,37 @@ export class HDHub4uNew extends Extractor {
   }
 
   async extractInternal(ctx, url, meta) {
-    // Route through the addon's /proxy endpoint so Cloudflare-protected
-    // workers.dev URLs are fetched server-side (with proper TLS) and
-    // streamed to Stremio. Without the proxy, Stremio's plain HTTP
-    // requests get 403 Forbidden from Cloudflare.
+    // Re-resolve via Sootio to get a FRESH CDN URL (cached URLs get
+    // rate-limited after a few requests). Then route through /proxy
+    // with Sootio Referer so the CDN returns 206 (seekable).
+    let cdnUrl = url;
+
+    // If this is a workers.dev URL from a previous Sootio resolution,
+    // re-resolve the original hubdrive.tips URL via Sootio for a fresh CDN URL.
+    // The original hubdrive URL is stored in meta by the source.
+    if (meta?.hdhub4unewOriginalUrl) {
+      try {
+        const { gotScraping } = await import('got-scraping');
+        const sootioUrl = `https://sootio.forthewizards.uk/resolve/httpstreaming/${encodeURIComponent(meta.hdhub4unewOriginalUrl)}`;
+        const res = await gotScraping.get(sootioUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          timeout: { request: 10000 },
+          throwHttpErrors: false,
+          followRedirect: false,
+        });
+        if (res.statusCode === 302 && res.headers.location) {
+          cdnUrl = new URL(res.headers.location);
+        }
+      } catch { /* re-resolve failed — use cached URL */ }
+    }
+
     const proxyUrl = new URL('/proxy', ctx.hostUrl);
-    proxyUrl.searchParams.set('url', url.href);
+    proxyUrl.searchParams.set('url', cdnUrl.href);
+    proxyUrl.searchParams.set('referer', 'https://sootio.forthewizards.uk/');
 
     return [{
       url: proxyUrl,
-      format: Format.mp4, // CDN serves MP4/MKV directly
+      format: Format.mp4,
       label: this.label,
       meta: { ...meta },
     }];
