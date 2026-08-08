@@ -47,23 +47,39 @@ export class Netlio extends Source {
       try {
         const json = await this.fetcher.json(ctx, seasonUrl, { timeout: 10000 });
         if (json && typeof json === 'object') {
-          const episodeKey = String(tmdbId.episode || 1);
-          const hlsUrl = json[episodeKey];
-          if (hlsUrl) {
-            let parsed;
-            try { parsed = new URL(hlsUrl); } catch { /* invalid */ }
-            if (parsed) {
-              results.push({
-                url: parsed,
-                format: Format.hls,
-                meta: {
-                  countryCodes: [CountryCode.multi, CountryCode.hi, CountryCode.en],
-                  title: `${title} (Hindi + English)`,
-                  sourceId: this.id,
-                  sourceLabel: this.label,
-                },
-                requestHeaders: { Referer: REFERER },
-              });
+          const reqEp = tmdbId.episode || 1;
+
+          // The Netlio API uses absolute episode numbers (e.g., S12 starts at
+          // ep 244, not 1). We need to map Stremio's per-season episode number
+          // to Netlio's absolute episode number.
+          // Strategy: get all non-empty episodes sorted, then pick the Nth one
+          // where N = Stremio's episode number.
+          const allEps = Object.entries(json)
+            .filter(([k, v]) => v && typeof v === 'string' && v.startsWith('http'))
+            .sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+
+          if (allEps.length >= reqEp) {
+            // Use the Nth episode (1-indexed)
+            const [, hlsUrl] = allEps[reqEp - 1];
+
+            // Only use direct HLS URLs — skip multimovies.rpmhub.site URLs
+            // which require browser-side JS decryption
+            if (!hlsUrl.includes('rpmhub.site')) {
+              let parsed;
+              try { parsed = new URL(hlsUrl); } catch { /* invalid */ }
+              if (parsed) {
+                results.push({
+                  url: parsed,
+                  format: Format.hls,
+                  meta: {
+                    countryCodes: [CountryCode.multi, CountryCode.hi, CountryCode.en],
+                    title: `${title} (Hindi + English)`,
+                    sourceId: this.id,
+                    sourceLabel: this.label,
+                  },
+                  requestHeaders: { Referer: REFERER },
+                });
+              }
             }
           }
         }

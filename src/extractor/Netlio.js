@@ -9,16 +9,16 @@
 import { Format } from '../types.js';
 import { Extractor } from './Extractor.js';
 
-const NETLIO_CDN_PATTERNS = [
-  '.hightechsecurity.shop',
-  '.onlineartacademy.site',
-  '.auroramedialimited.space',
-  '.mindspireconsulting.sbs',
-  '.skylineforge.space',
-  '.auronetworkpartners.shop',
-  '.fitnessfanatic.sbs',
-  '.brightluneagency.cyou',
-];
+// Netlio uses dozens of rotating CDN domains. Instead of listing each one,
+// we match by URL path pattern: all Netlio HLS URLs contain "cf-master"
+// or "/v4/" in the path, and "/hls3/" for movie streams.
+const isNetlioCdnUrl = (url) => {
+  const path = url.pathname.toLowerCase();
+  return path.includes('cf-master') ||
+         path.includes('/v4/') ||
+         path.includes('/hls3/') ||
+         url.hostname.endsWith('.workers.dev');
+};
 
 const REFERER = 'https://netlio.vercel.app/';
 
@@ -31,8 +31,7 @@ export class Netlio extends Extractor {
   }
 
   supports(_ctx, url) {
-    // Claim URLs from Netlio's CDN hosts
-    return NETLIO_CDN_PATTERNS.some(suffix => url.hostname.endsWith(suffix));
+    return isNetlioCdnUrl(url);
   }
 
   async extractInternal(ctx, url, meta) {
