@@ -16,6 +16,7 @@ import { FourKHDHub } from './FourKHDHub.js';
 import { Frembed } from './Frembed.js';
 import { FrenchCloud } from './FrenchCloud.js';
 import { HDHub4u } from './HDHub4u.js';
+import { HDHub4uNew } from './HDHub4uNew.js';
 import { HiAnime } from './HiAnime.js';
 import { HomeCine } from './HomeCine.js';
 import { KinoGer } from './KinoGer.js';
@@ -56,6 +57,7 @@ export const createSources = (fetcher) => {
     // multi
     new FourKHDHub(fetcher),
     new HDHub4u(fetcher),
+    new HDHub4uNew(fetcher),
     new VixSrc(fetcher),
     new VidSrc(),
     new Vidzee(fetcher),

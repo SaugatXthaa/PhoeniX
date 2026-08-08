@@ -32,6 +32,8 @@ import { Fshare } from './Fshare.js';
 import { AcerMovies } from './AcerMovies.js';
 // DirectStream — passthrough for direct playable CDN URLs (CineWave HdHub, Fmovies)
 import { DirectStream } from './DirectStream.js';
+// HDHub4uNew — passthrough for Sootio-resolved CDN URLs
+import { HDHub4uNew } from './HDHub4uNew.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -85,6 +87,8 @@ export const createExtractors = (fetcher, logger) => {
     new AcerMovies(fetcher, logger),
     // DirectStream — passthrough for direct playable CDN URLs
     new DirectStream(fetcher, logger),
+    // HDHub4uNew — passthrough for Sootio-resolved CDN URLs
+    new HDHub4uNew(fetcher, logger),
 
     // Fallback — must come last
     new ExternalUrl(fetcher, logger),
