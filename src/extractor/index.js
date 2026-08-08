@@ -36,6 +36,8 @@ import { DirectStream } from './DirectStream.js';
 import { HDHub4uNew } from './HDHub4uNew.js';
 // Netlio — passthrough for direct HLS URLs from netlio.vercel.app
 import { Netlio } from './Netlio.js';
+// AnimeDirect — passthrough for anime HLS/MP4 URLs (AniDB, AniNeko, HiAnime, etc.)
+import { AnimeDirect } from './AnimeDirect.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -52,6 +54,8 @@ export const createExtractors = (fetcher, logger) => {
     hdHub4uNewExtractor,
     // Netlio — passthrough for direct HLS URLs (claim before ExternalUrl)
     new Netlio(fetcher, logger),
+    // AnimeDirect — passthrough for anime HLS/MP4 URLs
+    new AnimeDirect(fetcher, logger),
     // HubCloud extractors (must come first — handles hubcloud/hubdrive/hubcdn)
     hubExtractor,
     new HBLinks(fetcher, logger, hubExtractor),
