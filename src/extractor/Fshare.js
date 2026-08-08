@@ -126,25 +126,51 @@ export class Fshare extends Extractor {
     // Sort by quality desc (numeric)
     unique.sort((a, b) => (Number(b.quality) || 0) - (Number(a.quality) || 0));
 
+    // Verify each URL is actually playable before returning it.
+    // Fshare's CDN rotation means some hashes return HTTP 500 (broken file
+    // on that particular CDN host). Without this check, Stremio picks the
+    // first stream which may be broken, and the user sees a playback error.
+    // We HEAD-check each URL and only keep the ones that return 2xx.
     const results = [];
-    for (const s of unique) {
+    const checkPlayable = async (s) => {
       const rawUrl = s.src.startsWith('http') ? s.src : `${BASE_URL}${s.src}`;
       let parsed;
-      try { parsed = new URL(rawUrl); } catch { continue; }
-      if (!parsed) continue;
+      try { parsed = new URL(rawUrl); } catch { return null; }
+      if (!parsed) return null;
 
-      const height = qualityToHeight(s.label || s.quality);
-      results.push({
-        url: parsed,
-        format: inferFormat(rawUrl),
-        label: this.label,
-        meta: {
-          ...meta,
-          ...(height && { height }),
-          title: s.label || meta.title,
-        },
-        requestHeaders: { Referer: `${BASE_URL}/` },
-      });
+      // HEAD request with Range to verify the file exists and is playable
+      try {
+        const res = await this.fetcher.fetch(ctx, parsed, {
+          method: 'HEAD',
+          headers: { Referer: `${BASE_URL}/` },
+          timeout: 5000,
+        });
+        if (res.status >= 200 && res.status < 400) {
+          const height = qualityToHeight(s.label || s.quality);
+          return {
+            url: parsed,
+            format: inferFormat(rawUrl),
+            label: this.label,
+            meta: {
+              ...meta,
+              ...(height && { height }),
+              title: s.label || meta.title,
+            },
+            requestHeaders: { Referer: `${BASE_URL}/` },
+          };
+        }
+        this.logger?.warn?.(`Fshare: skipping unplayable URL (HTTP ${res.status}): ${parsed.href.slice(0, 80)}`);
+        return null;
+      } catch (e) {
+        this.logger?.warn?.(`Fshare: HEAD check failed for ${parsed.href.slice(0, 80)}: ${e?.message || e}`);
+        return null;
+      }
+    };
+
+    // Check all URLs in parallel (bounded by Promise.all)
+    const checked = await Promise.all(unique.map(checkPlayable));
+    for (const r of checked) {
+      if (r) results.push(r);
     }
 
     return results;
