@@ -28,6 +28,8 @@ import { Voe } from './Voe.js';
 // Cinepro-org/core ports (additive — no existing extractor modified)
 import { CineSu } from './CineSu.js';
 import { Fshare } from './Fshare.js';
+// AcerMovies — passthrough for direct GDrive CDN URLs
+import { AcerMovies } from './AcerMovies.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -77,6 +79,8 @@ export const createExtractors = (fetcher, logger) => {
     // Cinepro-org/core ports (additive — placed before fallback)
     new CineSu(fetcher, logger),
     new Fshare(fetcher, logger),
+    // AcerMovies — passthrough for direct GDrive CDN URLs
+    new AcerMovies(fetcher, logger),
 
     // Fallback — must come last
     new ExternalUrl(fetcher, logger),

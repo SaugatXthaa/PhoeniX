@@ -6,6 +6,7 @@ import { CineWave } from './CineWave.js';
 import { AnimeFlix } from './AnimeFlix.js';
 import { AniDB } from './AniDB.js';
 import { AniNeko } from './AniNeko.js';
+import { AcerMovies } from './AcerMovies.js';
 import { Cuevana } from './Cuevana.js';
 import { Einschalten } from './Einschalten.js';
 import { Eurostreaming } from './Eurostreaming.js';
@@ -101,5 +102,7 @@ export const createSources = (fetcher) => {
     new FrenchCloud(fetcher),
     new Movix(fetcher),
     // IT — Eurostreaming and MostraGuarda removed (DNS dead)
+    // Multi-region (acermovies.fun API — GDrive CDN movies)
+    new AcerMovies(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
