@@ -123,6 +123,16 @@ export class AnimeDirect extends Extractor {
           timeout: 10000,
         });
 
+        // Check for megaplay.buzz iframe (used by gogoanime.com.by embeds)
+        // gogoanime embeds contain: <iframe src="https://megaplay.buzz/stream/s-2/{id}/{sub|dub}">
+        const megaplayIframe = html.match(/<iframe[^>]+src=["'](https:\/\/megaplay\.buzz\/stream\/[^"']+)["']/i);
+        if (megaplayIframe?.[1]) {
+          // Resolve via the Megaplay getSourcesNew API (same flow as Megaplay extractor)
+          const megaUrl = new URL(megaplayIframe[1]);
+          const megaResult = await this.resolveMegaplay(ctx, megaUrl, meta);
+          if (megaResult) return [megaResult];
+        }
+
         // Look for HLS/MP4 URLs in the page
         const hlsMatch = html.match(/https?:\/\/[^"'\s<>]+\.m3u8[^"'\s<>]*/i);
         const mp4Match = html.match(/https?:\/\/[^"'\s<>]+\.mp4[^"'\s<>]*/i);
@@ -143,6 +153,13 @@ export class AnimeDirect extends Extractor {
                 headers: { 'Referer': url.origin + '/' },
                 timeout: 10000,
               });
+              // Check for megaplay iframe in the streaming page too
+              const megaIframe2 = streamHtml.match(/<iframe[^>]+src=["'](https:\/\/megaplay\.buzz\/stream\/[^"']+)["']/i);
+              if (megaIframe2?.[1]) {
+                const megaUrl2 = new URL(megaIframe2[1]);
+                const megaResult2 = await this.resolveMegaplay(ctx, megaUrl2, meta);
+                if (megaResult2) return [megaResult2];
+              }
               const hls2 = streamHtml.match(/https?:\/\/[^"'\s<>]+\.m3u8[^"'\s<>]*/i);
               const mp42 = streamHtml.match(/https?:\/\/[^"'\s<>]+\.mp4[^"'\s<>]*/i);
               const source2 = streamHtml.match(/source:\s*["']([^"']+)["']/i);
@@ -187,5 +204,69 @@ export class AnimeDirect extends Extractor {
     }
 
     return [];
+  }
+
+  // Resolve a megaplay.buzz embed URL to a direct m3u8 via getSourcesNew API.
+  // Same flow as the Megaplay extractor: fetch page → extract data-id →
+  // call getSourcesNew → route through /proxy with megaplay.buzz Referer.
+  async resolveMegaplay(ctx, megaUrl, meta) {
+    const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    try {
+      const { gotScraping } = await import('got-scraping');
+
+      // Fetch the megaplay embed page to extract data-id
+      const pageRes = await gotScraping.get(megaUrl.href, {
+        headers: { 'User-Agent': UA, 'Referer': 'https://hianime.win/' },
+        timeout: { request: 15000 }, throwHttpErrors: false,
+      });
+      if (pageRes.statusCode !== 200) return null;
+
+      const dataIdMatch = pageRes.body.match(/data-id="(\d+)"/);
+      if (!dataIdMatch) return null;
+      const dataId = dataIdMatch[1];
+
+      // Call getSourcesNew API
+      const apiUrl = `https://megaplay.buzz/stream/getSourcesNew?id=${dataId}`;
+      const apiRes = await gotScraping.get(apiUrl, {
+        headers: {
+          'User-Agent': UA,
+          'X-Requested-With': 'XMLHttpRequest',
+          'Referer': megaUrl.href,
+          'Accept': 'application/json,text/plain,*/*',
+        },
+        timeout: { request: 15000 }, throwHttpErrors: false,
+      });
+      if (apiRes.statusCode !== 200) return null;
+
+      const data = JSON.parse(apiRes.body);
+      if (!data?.sources?.file) return null;
+
+      const m3u8Url = new URL(data.sources.file);
+
+      // Try to extract resolution from the m3u8 playlist
+      let height;
+      try {
+        const playlistRes = await gotScraping.get(m3u8Url.href, {
+          headers: { 'User-Agent': UA, 'Referer': 'https://megaplay.buzz/' },
+          timeout: { request: 10000 }, throwHttpErrors: false,
+        });
+        if (playlistRes.statusCode === 200) {
+          const resMatch = playlistRes.body.match(/RESOLUTION=\d+x(\d+)/i);
+          if (resMatch) height = parseInt(resMatch[1]);
+        }
+      } catch { /* resolution detection failed — not critical */ }
+
+      // Route through /proxy with megaplay.buzz Referer
+      const proxyUrl = new URL('/proxy', ctx.hostUrl);
+      proxyUrl.searchParams.set('url', m3u8Url.href);
+      proxyUrl.searchParams.set('referer', 'https://megaplay.buzz/');
+
+      return {
+        url: proxyUrl,
+        format: Format.hls,
+        label: this.label,
+        meta: { ...(meta || {}), ...(height && { height }) },
+      };
+    } catch { return null; }
   }
 }

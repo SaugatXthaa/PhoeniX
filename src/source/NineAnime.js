@@ -95,7 +95,6 @@ export class NineAnime extends Source {
       name,
       name.normalize('NFD').replace(/[\u0300-\u036f]/g, ''), // remove diacritics
       name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(), // ascii only
-      name.split(' ')[0], // first word only
     ].filter((q, i, arr) => q && arr.indexOf(q) === i); // dedupe
 
     for (const query of queries) {
