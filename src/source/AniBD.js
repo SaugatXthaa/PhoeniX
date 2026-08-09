@@ -32,10 +32,12 @@ const REFERER = 'https://anibd.app/';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-// Normalize for fuzzy title matching
+// Normalize for fuzzy title matching — also collapses doubled vowels
+// (e.g. "Shippuuden" → "Shippuden") to handle romanization variants
 const normalize = (s) => (s || '').toLowerCase()
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
+  .replace(/(uu|oo|aa|ee|ii)/g, m => m[0]); // collapse doubled vowels
 
 async function apiGet(url) {
   const { gotScraping } = await import('got-scraping');
@@ -154,6 +156,7 @@ export class AniBD extends Source {
 
       let best = null;
       let bestScore = 0;
+      const nameWords = new Set(nameNorm.split(' ').filter(w => w.length > 2));
       for (const r of data.data) {
         const titles = [r.postname, r.english, r.romaji, r.native].filter(Boolean);
         let itemBest = 0;
@@ -164,6 +167,17 @@ export class AniBD extends Source {
           if (tNorm === nameNorm) score = 100;
           else if (tNorm.includes(nameNorm) || nameNorm.includes(tNorm)) {
             score = Math.min(tNorm.length, nameNorm.length) / Math.max(tNorm.length, nameNorm.length) * 90;
+          }
+          // Word-overlap scoring — handles romanization variants like
+          // "Shippuden" vs "Shippuuden" (normalized to same) and extra
+          // words like "the"/"BD" that prevent substring matching.
+          if (score < 50 && nameWords.size >= 2) {
+            const titleWords = new Set(tNorm.split(' ').filter(w => w.length > 2));
+            const common = [...nameWords].filter(w => titleWords.has(w));
+            const overlap = common.length / Math.max(nameWords.size, titleWords.size);
+            if (overlap >= 0.6) {
+              score = overlap * 80; // 60% word overlap → score 48, 75% → 60
+            }
           }
           if (score > itemBest) itemBest = score;
         }

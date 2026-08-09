@@ -193,9 +193,12 @@ app.get('/proxy', async (req, res) => {
     // Check if this is an HLS playlist by URL extension OR by content.
     // Some CDNs (Netlio, AniNeko) disguise HLS playlists with .txt
     // extensions — detect those by checking the response body for #EXTM3U.
-    const urlIsM3u8 = targetUrl.pathname.toLowerCase().endsWith('.m3u8') ||
-                      targetUrl.pathname.toLowerCase().includes('.m3u8');
-    const urlIsTxt = targetUrl.pathname.toLowerCase().endsWith('.txt');
+    // AniKage uses /m3u8/{token} paths (no .m3u8 extension).
+    const pathLower = targetUrl.pathname.toLowerCase();
+    const urlIsM3u8 = pathLower.endsWith('.m3u8') ||
+                      pathLower.includes('.m3u8') ||
+                      pathLower.includes('/m3u8/');
+    const urlIsTxt = pathLower.endsWith('.txt');
 
     if (urlIsM3u8 || urlIsTxt) {
       // Buffer content to check if it's HLS and rewrite URLs

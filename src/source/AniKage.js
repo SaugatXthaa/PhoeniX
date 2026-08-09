@@ -60,6 +60,9 @@ export class AniKage extends Source {
     this.countryCodes = [CountryCode.multi, CountryCode.ja];
     this.baseUrl = BASE_URL;
     this.fetcher = fetcher;
+    // Override the default 12h TTL — AniKage stream tokens expire quickly
+    // (within minutes). Caching stale tokens causes 404 errors on playback.
+    this.ttl = 5 * 60 * 1000; // 5min
   }
 
   async handleInternal(ctx, _type, id) {
