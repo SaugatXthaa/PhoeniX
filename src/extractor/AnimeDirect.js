@@ -25,13 +25,14 @@ const DIRECT_HLS_HOSTS = [
   'hls.anidb.app',
 ];
 
-// CDN host suffixes that serve direct HLS (AniNeko + Netlio CDNs)
+// CDN host suffixes that serve direct HLS (AniNeko + Netlio + VidSpark CDNs)
 const DIRECT_HLS_SUFFIXES = [
   '.dramiyos-cdn.com',
   '.harborlanecreativeworks.space',
   '.pinecliffdesigncollective.store',
   '.creativewritingtips.site',
   '.savannahridgedesignlab.cyou',
+  '.netrocdn.site',
 ];
 
 // Embed page hosts (need HTML extraction to find the actual stream URL)
@@ -73,9 +74,13 @@ export class AnimeDirect extends Extractor {
   async extractInternal(ctx, url, meta) {
     // Direct HLS — pass through with appropriate Referer
     if (isDirectHls(url)) {
-      const referer = url.hostname === 'hls.anidb.app'
-        ? 'https://anidb.app/'
-        : 'https://anineko.to/';
+      // Use Referer from source meta if provided (e.g., VidSpark sets
+      // requestHeaders: { Referer: 'https://vidspark.to/' })
+      // Otherwise infer from hostname
+      const referer = meta?.requestHeaders?.Referer ||
+        (url.hostname === 'hls.anidb.app' ? 'https://anidb.app/'
+        : url.hostname.endsWith('.netrocdn.site') ? 'https://vidspark.to/'
+        : 'https://anineko.to/');
 
       // Route through /proxy for CDN hosts that need Referer
       const proxyUrl = new URL('/proxy', ctx.hostUrl);

@@ -35,6 +35,7 @@ import { NineAnime } from './NineAnime.js';
 import { PrimeShows } from './PrimeShows.js';
 import { VerHdLink } from './VerHdLink.js';
 import { VidSrc } from './VidSrc.js';
+import { VidSpark } from './VidSpark.js';
 import { VidSrcSbs } from './VidSrcSbs.js';
 import { WatchSeries } from './WatchSeries.js';
 import { ZinkMovies } from './ZinkMovies.js';
@@ -61,6 +62,7 @@ export const createSources = (fetcher) => {
     new HDHub4uNew(fetcher),
     new VixSrc(fetcher),
     new VidSrc(),
+    new VidSpark(fetcher),
     new Vidzee(fetcher),
     new MovieBox(fetcher),
     new Movie4kTo(fetcher),
