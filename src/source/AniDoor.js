@@ -158,6 +158,14 @@ export class AniDoor extends Source {
       // Some templates use {mal} — skip if we don't have a MAL ID
       if (src.path.includes('{mal}') && !malId) continue;
 
+      // Skip dead/unextractable hosts — only megaplay.buzz URLs can be
+      // resolved server-side (via the Megaplay extractor's getSourcesNew API).
+      // vidnest.fun is a Next.js SPA (client-side fetch only).
+      // tryembed.us.cc requires a nonce/session handshake.
+      // stream.nightslayer.workers.dev returns 404 "Content Not Available".
+      // dropfile.cc is connection-refused / down.
+      if (!src.base.includes('megaplay.buzz')) continue;
+
       // Build URL by substituting placeholders
       const subDub = src.dub ? 'dub' : 'sub';
       const url = src.base + src.path

@@ -118,11 +118,26 @@ export class Megaplay extends Extractor {
           proxyUrl.searchParams.set('url', m3u8Url.href);
           proxyUrl.searchParams.set('referer', 'https://megaplay.buzz/');
 
+          // Try to fetch the m3u8 playlist to extract resolution/height.
+          // The playlist contains #EXT-X-STREAM-INF:...,RESOLUTION=WxH,...
+          let height = meta?.height;
+          if (!height) {
+            try {
+              const playlistRes = await gotGet(m3u8Url.href, {
+                'Referer': 'https://megaplay.buzz/',
+              });
+              if (playlistRes.statusCode === 200) {
+                const resMatch = playlistRes.body.match(/RESOLUTION=\d+x(\d+)/i);
+                if (resMatch) height = parseInt(resMatch[1]);
+              }
+            } catch { /* resolution detection failed — not critical */ }
+          }
+
           return [{
             url: proxyUrl,
             format: Format.hls,
             label: this.label,
-            meta: { ...meta },
+            meta: { ...meta, ...(height && { height }) },
           }];
         }
       }

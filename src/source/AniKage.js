@@ -44,7 +44,7 @@ async function apiGet(path, referer = BASE_URL + '/') {
       'Accept': 'application/json',
       'Referer': referer,
     },
-    timeout: { request: 15000 },
+    timeout: { request: 25000 },
     throwHttpErrors: false,
   });
   if (res.statusCode !== 200) return null;
@@ -124,20 +124,27 @@ export class AniKage extends Source {
           if (seenLabels.has(labelKey)) continue;
           seenLabels.add(labelKey);
 
-          // prox.anicore.tv requires `Origin: https://anikage.cc` (or Referer) —
-          // route through /proxy with Referer (which the /proxy endpoint supports)
-          const proxyUrl = new URL('/proxy', ctx.hostUrl);
-          proxyUrl.searchParams.set('url', parsed.href);
-          proxyUrl.searchParams.set('referer', BASE_URL + '/');
+          // Parse height from quality string (e.g. "hardsub HD-1" → 720,
+          // "1080p" → 1080, "VidPlay-1 auto" → undefined)
+          const qualityStr = String(source.quality || '');
+          let height;
+          const resMatch = qualityStr.match(/(\d{3,4})p?/);
+          if (resMatch) height = parseInt(resMatch[1]);
+          else if (qualityStr.includes('HD')) height = 720;
 
+          // Return the DIRECT m3u8 URL with requestHeaders.
+          // The AnimeDirect extractor claims prox.anicore.tv URLs and routes
+          // them through /proxy with the Referer from meta.requestHeaders.
           results.push({
-            url: proxyUrl,
+            url: parsed,
             format,
+            requestHeaders: { Referer: BASE_URL + '/' },
             meta: {
               countryCodes,
               title: `${title} (${audioLabel} · ${provider} · ${source.quality || 'HD'})`,
               sourceId: this.id,
               sourceLabel: this.label,
+              ...(height && { height }),
             },
           });
         }

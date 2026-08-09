@@ -118,19 +118,20 @@ export class AniBD extends Source {
     let parsed;
     try { parsed = new URL(m3u8Url); } catch { return []; }
 
-    // m3u8 requires Referer: https://anibd.app/ → route through /proxy
-    const proxyUrl = new URL('/proxy', ctx.hostUrl);
-    proxyUrl.searchParams.set('url', parsed.href);
-    proxyUrl.searchParams.set('referer', REFERER);
-
+    // Return the DIRECT m3u8 URL with requestHeaders.
+    // The AnimeDirect extractor claims playeng.animeapps.top URLs and routes
+    // them through /proxy with the Referer from meta.requestHeaders.
+    // AniBD streams are 1080p Blu-ray rips.
     const results = [{
-      url: proxyUrl,
+      url: parsed,
       format: Format.hls,
+      requestHeaders: { Referer: REFERER },
       meta: {
         countryCodes: [CountryCode.multi, CountryCode.ja],
         title: `${title} (Sub · ${server.server_name})`,
         sourceId: this.id,
         sourceLabel: this.label,
+        height: 1080,
       },
     }];
 

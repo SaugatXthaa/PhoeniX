@@ -24,6 +24,10 @@ import { Extractor } from './Extractor.js';
 const DIRECT_HLS_HOSTS = [
   'hls.anidb.app',
   'play.zephyrix.top',
+  // AniKage — prox.anicore.tv serves direct HLS (requires Referer: anikage.cc)
+  'prox.anicore.tv',
+  // AniBD — playeng.animeapps.top serves direct HLS (requires Referer: anibd.app)
+  'playeng.animeapps.top',
 ];
 
 // CDN host suffixes that serve direct HLS (AniNeko + Netlio + VidSpark CDNs)

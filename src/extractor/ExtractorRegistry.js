@@ -12,7 +12,7 @@ export class ExtractorRegistry {
   }
 
   async handle(ctx, url, meta = {}, allowLazy = false) {
-    let extractor = this.extractors.find(e => e.supports(ctx, url));
+    let extractor = this.extractors.find(e => e.supports(ctx, url, meta));
 
     // Fallback: if no URL-matched extractor but meta.vidking is present
     // (with a TMDB ID), route to the VidKing extractor. This lets sources

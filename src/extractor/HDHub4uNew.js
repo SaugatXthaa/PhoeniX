@@ -20,18 +20,22 @@ export class HDHub4uNew extends Extractor {
     this.ttl = 300000; // 5min — CDN URLs may expire
   }
 
-  supports(_ctx, url) {
-    // Claim URLs from workers.dev hosts (Sootio resolver output)
-    // and cdn.fukggl.buzz (another common HDHub4u CDN)
-    // Must match BEFORE HubExtractor (which matches 'hubcloud' in hostname)
-    // — we're registered after HubExtractor, so we only get URLs it doesn't
-    // claim. But hubcloud-download.*.workers.dev contains 'hubcloud' so
-    // HubExtractor claims it first. We need to claim it here instead.
-    // Fix: claim any URL with 'hubcloud-download' in the hostname
-    return url.hostname.endsWith('.workers.dev') ||
-           url.hostname === 'cdn.fukggl.buzz' ||
-           url.hostname === 'cdn.fsl-buckets.work' ||
-           url.hostname.includes('hubcloud-download');
+  supports(ctx, url, meta) {
+    // Claim known HDHub4u CDN hosts (non-workers.dev)
+    if (url.hostname === 'cdn.fukggl.buzz' ||
+        url.hostname === 'cdn.fsl-buckets.work' ||
+        url.hostname.includes('hubcloud-download')) {
+      return true;
+    }
+    // For workers.dev hosts — only claim if this URL came from the
+    // HDHub4uNew source (identified by meta.hdhub4unewOriginalUrl or
+    // meta.sourceId === 'hdhub4unew'). Other sources may also use
+    // workers.dev (e.g. AniDoor's nightslayer.workers.dev) and would
+    // be wrongly claimed here.
+    if (url.hostname.endsWith('.workers.dev')) {
+      return meta?.hdhub4unewOriginalUrl || meta?.sourceId === 'hdhub4unew';
+    }
+    return false;
   }
 
   async extractInternal(ctx, url, meta) {
