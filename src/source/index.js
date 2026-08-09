@@ -50,6 +50,15 @@ import { VixSrc } from './VixSrc.js';
 // Cinepro-org/core ports (additive — no existing source modified)
 import { CineSu } from './CineSu.js';
 import { Fshare } from './Fshare.js';
+// New sources (additive — no existing source modified)
+import { StreamDuck } from './StreamDuck.js';
+import { StreamXTV } from './StreamXTV.js';
+import { Anikoto } from './Anikoto.js';
+import { AniKage } from './AniKage.js';
+import { AniBD } from './AniBD.js';
+import { TwoDhive } from './TwoDhive.js';
+import { AllWish } from './AllWish.js';
+import { AniDoor } from './AniDoor.js';
 
 export { Source } from './Source.js';
 
@@ -113,5 +122,22 @@ export const createSources = (fetcher) => {
     // IT — Eurostreaming and MostraGuarda removed (DNS dead)
     // Multi-region (acermovies.fun API — GDrive CDN movies)
     new AcerMovies(fetcher),
+    // New sources (additive — no existing source modified)
+    // streamduck.site — TMDB-based aggregator (vidsrc.me + vidsrc.to)
+    new StreamDuck(fetcher),
+    // streamxtv.tech — TMDB + AniList aggregator with megaplay anime (sub/dub)
+    new StreamXTV(fetcher),
+    // anikoto.cz — anime-only with sub/dub via megaplay.buzz
+    new Anikoto(fetcher),
+    // anikage.cc — anime-only with clean JSON API + prox.anicore.tv direct HLS (sub/dub)
+    new AniKage(fetcher),
+    // anibd.app — anime BD with animeapps.top API → playeng.animeapps.top HLS (SUB-only)
+    new AniBD(fetcher),
+    // 2dhive.com — MAL-ID-keyed anime archive via megaplay.buzz (sub/dub)
+    new TwoDhive(fetcher),
+    // all-wish.me — Animesuge clone with Laravel AJAX → megaplay.buzz (sub/dub)
+    new AllWish(fetcher),
+    // anidoor.me — public sources.json templates + AniList GraphQL (sub/dub)
+    new AniDoor(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
