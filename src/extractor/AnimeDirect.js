@@ -23,6 +23,7 @@ import { Extractor } from './Extractor.js';
 // Direct HLS CDN hosts (pass through as-is, just add Referer)
 const DIRECT_HLS_HOSTS = [
   'hls.anidb.app',
+  'play.zephyrix.top',
 ];
 
 // CDN host suffixes that serve direct HLS (AniNeko + Netlio + VidSpark CDNs)
@@ -79,6 +80,7 @@ export class AnimeDirect extends Extractor {
       // Otherwise infer from hostname
       const referer = meta?.requestHeaders?.Referer ||
         (url.hostname === 'hls.anidb.app' ? 'https://anidb.app/'
+        : url.hostname === 'play.zephyrix.top' ? 'https://play.zephyrix.top/'
         : url.hostname.endsWith('.netrocdn.site') ? 'https://vidspark.to/'
         : 'https://anineko.to/');
 

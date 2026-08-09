@@ -4,6 +4,7 @@
 import { CineHDPlus } from './CineHDPlus.js';
 import { CineWave } from './CineWave.js';
 import { AnimeFlix } from './AnimeFlix.js';
+import { AnimeWorld } from './AnimeWorld.js';
 import { AniDB } from './AniDB.js';
 import { AniNeko } from './AniNeko.js';
 import { AcerMovies } from './AcerMovies.js';
@@ -87,6 +88,7 @@ export const createSources = (fetcher) => {
     new Fshare(fetcher),
     // anime
     new NineAnime(fetcher),
+    new AnimeWorld(fetcher),
     new HiAnime(fetcher),
     new AnimeFlix(fetcher),
     new AniDB(fetcher),
