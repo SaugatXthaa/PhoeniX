@@ -5,8 +5,10 @@
 //   vidsrc-embed.ru, moviesapi.club, vidlink.pro, player.videasy.net,
 //   111movies.com, player.vidzee.wtf, vidsrc.to
 //
-// Same pattern as CineWave/VidFast — pass meta.vidking for the VidKing
-// extractor to resolve via speedracelight's TMDB-based API.
+// All embed URLs are TMDB-ID-keyed, so they always return the correct
+// content. We do NOT pass meta.vidking (speedracelight fallback) because
+// the speedracelight API uses fuzzy title matching and returns wrong
+// content for certain TMDB IDs (e.g. "Supergirl" for "Colony" requests).
 
 import { CountryCode } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
@@ -40,16 +42,9 @@ export class Movie4kTo extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Only use VidKing/speedracelight fallback for MOVIES.
-    // For series/anime, the speedracelight API returns wrong content
-    // (e.g. "Obsession" movie for Naruto anime requests). Series/anime
-    // rely on their own embed extractors (VidSrc, Vidzee, etc.) instead.
-    const vidkingMeta = tmdbId.season ? null : {
-      name,
-      year,
-      tmdbId: tmdbId.id,
-    };
-
+    // No meta.vidking — all embed URLs are TMDB-ID-keyed and always return
+    // the correct content. The speedracelight API fallback was returning
+    // wrong content for certain titles (fuzzy title matching issue).
     const results = [];
     for (const source of EMBED_SOURCES) {
       const url = tmdbId.season
@@ -61,7 +56,6 @@ export class Movie4kTo extends Source {
         meta: {
           countryCodes: [CountryCode.multi],
           title: `${title} (${source.label})`,
-          ...(vidkingMeta && { vidking: vidkingMeta }),
         },
       });
     }
