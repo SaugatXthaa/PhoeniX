@@ -112,30 +112,37 @@ export class AnimeFlix extends Source {
 
       const $ = cheerio.load(html);
 
+      // Use scoring to avoid matching wrong anime
       let bestMatch = null;
-      const nameLower = name.toLowerCase();
-      const nameAscii = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      const slug = nameAscii.replace(/\s+/g, '-');
-      const yearStr = String(year);
+      let bestScore = 0;
+      const nameLower = name.toLowerCase().trim();
+      const nameAscii = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
       $('a[href*="/anime/"]').each((_i, el) => {
         const href = $(el).attr('href');
         if (!href || href.includes('/anime/?') || href.includes('/az-list') || href.includes('/genres/')) return;
-        const hrefLower = href.toLowerCase();
+        const text = $(el).text().trim().toLowerCase();
+        if (!text) return;
 
-        // Match by URL slug (handles ū→u double-u variants like "shippuuden")
-        if (hrefLower.includes(slug) || hrefLower.includes(slug.replace(/shippuden/, 'shippuuden'))) {
-          if (tmdbId.season && hrefLower.includes(yearStr)) {
-            bestMatch = href;
-            return false;
-          }
-          if (!tmdbId.season && !bestMatch) {
-            bestMatch = href;
-          }
+        let score = 0;
+        if (text === nameLower) score = 100;
+        else if (text === nameAscii) score = 95;
+        else if (text.includes(nameLower) || nameLower.includes(text)) {
+          score = Math.min(text.length, nameLower.length) / Math.max(text.length, nameLower.length) * 90;
+        }
+
+        // Bonus for matching year
+        if (score > 0 && year) {
+          if (href.includes(String(year))) score += 5;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = href;
         }
       });
 
-      if (bestMatch) return new URL(bestMatch, this.baseUrl);
+      if (bestMatch && bestScore >= 60) return new URL(bestMatch, this.baseUrl);
     }
 
     return null;

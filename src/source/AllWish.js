@@ -214,7 +214,7 @@ export class AllWish extends Source {
         }
       });
 
-      if (bestMatch && bestScore >= 0.6) return bestMatch;
+      if (bestMatch && bestScore >= 60) return bestMatch;
     }
 
     return null;

@@ -94,32 +94,39 @@ export class AniNeko extends Source {
     } catch { return null; }
 
     const $ = cheerio.load(html);
-    const nameLower = name.toLowerCase();
+    const nameLower = name.toLowerCase().trim();
 
-    // Find the best matching /watch/ link
+    // Find the best matching /watch/ link — prefer exact matches to avoid
+    // matching wrong anime (e.g. "Naruto" matching "Naruto Shippuden")
     let bestMatch = null;
+    let bestScore = 0;
     $('a[href*="/watch/"]').each((_i, el) => {
-      if (bestMatch) return;
       const href = $(el).attr('href');
       if (!href || href.includes('/ep-')) return;
 
-      // Check if the link text or nearby text matches
       const linkText = $(el).text().toLowerCase().trim();
-      const titleAttr = ($(el).attr('title') || '').toLowerCase();
-      const imgAlt = ($(el).find('img').attr('alt') || '').toLowerCase();
+      const titleAttr = ($(el).attr('title') || '').toLowerCase().trim();
+      const imgAlt = ($(el).find('img').attr('alt') || '').toLowerCase().trim();
 
-      if (linkText.includes(nameLower) || titleAttr.includes(nameLower) || imgAlt.includes(nameLower) ||
-          nameLower.includes(linkText.slice(0, 20))) {
-        bestMatch = href;
+      // Score against all available titles
+      for (const t of [linkText, titleAttr, imgAlt]) {
+        if (!t) continue;
+        let score = 0;
+        if (t === nameLower) score = 100;
+        else if (t.includes(nameLower) || nameLower.includes(t)) {
+          score = Math.min(t.length, nameLower.length) / Math.max(t.length, nameLower.length) * 90;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = href;
+        }
       }
     });
 
-    // Fallback: first /watch/ link
-    if (!bestMatch) {
-      bestMatch = $('a[href*="/watch/"]').first().attr('href');
-    }
+    // Only accept matches with score >= 60 (avoid wrong anime)
+    if (bestMatch && bestScore >= 60) return bestMatch;
 
-    return bestMatch || null;
+    return null;
   }
 
   async findEpisodeUrl(ctx, animeSlug, episodeNum) {

@@ -107,36 +107,39 @@ export class NineAnime extends Source {
       const $ = cheerio.load(html);
 
       // Find anime page link — /anime/{slug}/
+      // Use scoring to avoid matching wrong anime (e.g. "Naruto" matching "Naruto Shippuden")
       let bestMatch = null;
-      const nameLower = name.toLowerCase();
-      const nameAscii = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      let bestScore = 0;
+      const nameLower = name.toLowerCase().trim();
+      const nameAscii = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
       $('a[href*="/anime/"]').each((_i, el) => {
         const href = $(el).attr('href');
         if (!href || href.includes('/anime/?') || href.includes('/az-list') || href.includes('/genres/')) return;
         const text = $(el).text().trim().toLowerCase();
-        const hrefLower = href.toLowerCase();
-        const yearStr = String(year);
+        if (!text) return;
 
-        // For series: match by slug containing the title (without year)
-        // and the year in the URL or nearby text
-        const slug = nameAscii.replace(/\s+/g, '-');
+        let score = 0;
+        if (text === nameLower) score = 100;
+        else if (text === nameAscii) score = 95;
+        else if (text.includes(nameLower) || nameLower.includes(text)) {
+          score = Math.min(text.length, nameLower.length) / Math.max(text.length, nameLower.length) * 90;
+        }
 
-        // Strong match: URL slug contains the title slug
-        if (hrefLower.includes(slug) || hrefLower.includes(slug.replace(/shippuden/, 'shippuuden'))) {
-          // For series, prefer URLs with the year
-          if (tmdbId.season && hrefLower.includes(yearStr)) {
-            bestMatch = href;
-            return false; // break each loop
-          }
-          // For movies, take the first match
-          if (!tmdbId.season && !bestMatch) {
-            bestMatch = href;
-          }
+        // Bonus for matching year (helps distinguish series from sequels)
+        if (score > 0 && year) {
+          const yearStr = String(year);
+          if (href.includes(yearStr)) score += 5;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = href;
         }
       });
 
-      if (bestMatch) return new URL(bestMatch, this.baseUrl);
+      // Only accept matches with score >= 60
+      if (bestMatch && bestScore >= 60) return new URL(bestMatch, this.baseUrl);
     }
 
     return null;

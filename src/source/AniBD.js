@@ -191,7 +191,7 @@ export class AniBD extends Source {
       // Lower thresholds cause wrong anime matches (e.g. "Naruto The Lost
       // Story" matching "ROAD TO NINJA: NARUTO THE MOVIE" — both contain
       // "Naruto" but are completely different titles).
-      if (best && bestScore >= 0.5) {
+      if (best && bestScore >= 50) {
         return { postid: best.postid, anilist: best.anilist };
       }
     }

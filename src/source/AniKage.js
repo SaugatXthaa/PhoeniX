@@ -195,7 +195,7 @@ export class AniKage extends Source {
         }
       }
 
-      if (best && bestScore >= 0.6) return best.slug;
+      if (best && bestScore >= 60) return best.slug;
     }
 
     return null;

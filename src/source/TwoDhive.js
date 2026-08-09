@@ -121,7 +121,7 @@ export class TwoDhive extends Source {
         }
       }
 
-      if (best && bestScore >= 0.6) return best.id;
+      if (best && bestScore >= 60) return best.id;
     }
 
     return null;

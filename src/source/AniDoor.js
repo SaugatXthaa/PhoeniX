@@ -134,7 +134,7 @@ export class AniDoor extends Source {
         }
       }
     }
-    if (!bestMedia || bestScore < 0.6) return [];
+    if (!bestMedia || bestScore < 60) return [];
 
     const anilistId = bestMedia.id;
     const malId = bestMedia.idMal;

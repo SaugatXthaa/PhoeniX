@@ -113,16 +113,28 @@ export class AnimeWorld extends Source {
     const $ = cheerio.load(html);
     const nameNorm = normalize(name);
 
+    // Use scoring to avoid matching wrong anime (e.g. "Naruto" matching "Naruto Shippuden")
     let bestMatch = null;
+    let bestScore = 0;
     $('a[href*="/anime/"]').each((_i, el) => {
       const href = $(el).attr('href');
       const text = normalize($(el).text());
-      if (href && text.length > 3 && text.includes(nameNorm)) {
-        if (!bestMatch) bestMatch = href;
+      if (!href || text.length <= 3) return;
+
+      let score = 0;
+      if (text === nameNorm) score = 100;
+      else if (text.includes(nameNorm) || nameNorm.includes(text)) {
+        score = Math.min(text.length, nameNorm.length) / Math.max(text.length, nameNorm.length) * 90;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = href;
       }
     });
 
-    return bestMatch;
+    // Only accept matches with score >= 60
+    if (bestMatch && bestScore >= 60) return bestMatch;
+    return null;
   }
 
   // Find episode URL from anime page

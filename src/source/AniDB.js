@@ -102,30 +102,40 @@ export class AniDB extends Source {
     } catch { return null; }
 
     // Parse the search results — links can be /anime/{slug}-{id} or full URL
-    const nameLower = name.toLowerCase();
+    const nameLower = name.toLowerCase().trim();
 
     // Find all anime links (both relative and absolute URLs)
     const matches = [...html.matchAll(/href="(?:https?:\/\/anidb\.app)?\/anime\/([^"]+)-(\d+)"/g)];
     if (matches.length === 0) return null;
 
-    // Find the best match by title text
+    // Find the best match by title text — prefer exact matches to avoid
+    // matching wrong anime (e.g. "Naruto" matching "Naruto Shippuden")
+    let bestMatch = null;
+    let bestScore = 0;
     for (const match of matches) {
       const slug = match[1];
       const id = match[2];
-      // Check if the link text contains the search name
       const linkRegex = new RegExp(`href="(?:https?://anidb\\.app)?/anime/${slug}-${id}"[^>]*>[\\s\\S]*?<p[^>]*>([^<]+)</p>`, 'i');
       const linkMatch = html.match(linkRegex);
       if (linkMatch) {
         const linkTitle = linkMatch[1].toLowerCase().trim();
-        if (linkTitle.includes(nameLower) || nameLower.includes(linkTitle.slice(0, 20))) {
-          return { id: parseInt(id), slug };
+        let score = 0;
+        if (linkTitle === nameLower) score = 100;
+        else if (linkTitle.includes(nameLower) || nameLower.includes(linkTitle)) {
+          score = Math.min(linkTitle.length, nameLower.length) / Math.max(linkTitle.length, nameLower.length) * 90;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = { id: parseInt(id), slug };
         }
       }
     }
 
-    // Fallback: return the first result
-    const first = matches[0];
-    return { id: parseInt(first[2]), slug: first[1] };
+    // Only accept matches with score >= 60 (avoid wrong anime)
+    if (bestMatch && bestScore >= 60) return bestMatch;
+
+    // No good match — return null (no streams) rather than wrong anime
+    return null;
   }
 
   async fetchEpisodes(ctx, animeId) {

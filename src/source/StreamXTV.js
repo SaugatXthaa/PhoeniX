@@ -172,7 +172,7 @@ export class StreamXTV extends Source {
       }
 
       // Only accept matches with a reasonable score
-      if (best && bestScore >= 0.5) {
+      if (best && bestScore >= 50) {
         return { id: best.id, title: best.title };
       }
     }
