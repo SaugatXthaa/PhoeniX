@@ -27,12 +27,16 @@ const DIRECT_CDN_HOSTS = [
   'pixeldrain.dev',
   'cdn.fsl-buckets.work',
   'cdn.fukggl.buzz',
+  // MovieBox — direct MP4 on hakunaymatata.com CDN
+  'bcdnxw2.hakunaymatata.com',
+  'bcdnxw.hakunaymatata.com',
 ];
 
 // Host suffixes (for wildcard matching like *.r2.dev)
 const DIRECT_CDN_SUFFIXES = [
   '.r2.dev',
   '.r2.cloudflarestorage.com',
+  '.hakunaymatata.com',
 ];
 
 function isDirectCdnHost(hostname) {

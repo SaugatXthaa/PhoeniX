@@ -62,6 +62,7 @@ import { AniBD } from './AniBD.js';
 import { TwoDhive } from './TwoDhive.js';
 import { AllWish } from './AllWish.js';
 import { AniDoor } from './AniDoor.js';
+import { NowHDTime } from './NowHDTime.js';
 
 export { Source } from './Source.js';
 
@@ -143,5 +144,7 @@ export const createSources = (fetcher) => {
     new AllWish(fetcher),
     // anidoor.me — public sources.json templates + AniList GraphQL (sub/dub)
     new AniDoor(fetcher),
+    // nowhdtime.to — movies/series/anime/kdrama via nhdapi.com HLS proxy API
+    new NowHDTime(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };

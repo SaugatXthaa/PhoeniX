@@ -1,18 +1,90 @@
 // src/source/MovieBox.js
-// Ported from research/webstreamr-mbg/src/source/MovieBox.ts
+// movie-box.co — movies, series, anime, kdrama with direct MP4 URLs
+//
+// Flow (clean JSON API, no scraping):
+//   1. Get JWT token: POST /subject/search-suggest → extract from x-user header
+//   2. Search: POST /subject/search → [{subjectId, title, releaseDate, detailPath, ...}]
+//   3. Play: GET /subject/play?subjectId=...&se=...&ep=...&detailPath=...&streamSignType=1
+//      → {streams: [{url, resolutions, vipLocked, ...}]}
+//   4. Stream URLs are direct MP4 on hakunaymatata.com CDN — no Referer needed
+//
+// The API requires:
+//   - Authorization: Bearer {jwt} (from search-suggest)
+//   - Referer: https://movie-box.co/movies/{detailPath} (for /subject/play only)
+//   - X-Client-Info: {timezone: "UTC"}
+//   - X-Request-Lang: en
+//
+// JWT token is anonymous (auto-issued), lasts 90 days, reusable across IPs.
+// Stream URLs are time-limited (~1 hour) — don't cache them.
 
-import { CountryCode } from '../types.js';
+import { CountryCode, Format } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
-const SEARCH_PATH = '/wefeed-h5api-bff/subject/search';
-const DOWNLOAD_PATH = '/wefeed-h5api-bff/subject/download';
+const API_BASE = 'https://h5-api.aoneroom.com/wefeed-h5api-bff';
+const SITE_BASE = 'https://movie-box.co';
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-const SUBJECT_TYPE_MOVIE = 1;
-const SUBJECT_TYPE_TV = 2;
+// Normalize for fuzzy title matching
+const normalize = (s) => (s || '').toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 
-function stripSeasonSuffix(title) {
-  return title.replace(/\s+S\d+$/, '');
+// JWT token cache (90 days, but refresh weekly for safety)
+let jwtToken = null;
+let jwtTokenTs = 0;
+const JWT_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+async function getJwt() {
+  if (jwtToken && Date.now() - jwtTokenTs < JWT_TTL) return jwtToken;
+  const { gotScraping } = await import('got-scraping');
+  const r = await gotScraping.post(`${API_BASE}/subject/search-suggest`, {
+    headers: { 'User-Agent': UA, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({ keyword: 'a', perPage: 1 }),
+    timeout: { request: 15000 }, throwHttpErrors: false,
+  });
+  if (r.statusCode !== 200 || !r.headers['x-user']) return null;
+  try {
+    const data = JSON.parse(r.headers['x-user']);
+    jwtToken = data.token;
+    jwtTokenTs = Date.now();
+    return jwtToken;
+  } catch { return null; }
+}
+
+async function apiPost(path, body) {
+  const jwt = await getJwt();
+  if (!jwt) return null;
+  const { gotScraping } = await import('got-scraping');
+  const r = await gotScraping.post(`${API_BASE}${path}`, {
+    headers: {
+      'User-Agent': UA, 'Content-Type': 'application/json', 'Accept': 'application/json',
+      'Authorization': `Bearer ${jwt}`,
+      'X-Client-Info': JSON.stringify({ timezone: 'UTC' }),
+      'X-Request-Lang': 'en',
+    },
+    body: JSON.stringify(body),
+    timeout: { request: 15000 }, throwHttpErrors: false,
+  });
+  if (r.statusCode !== 200) return null;
+  try { return JSON.parse(r.body); } catch { return null; }
+}
+
+async function apiGet(path) {
+  const jwt = await getJwt();
+  if (!jwt) return null;
+  const { gotScraping } = await import('got-scraping');
+  const r = await gotScraping.get(`${API_BASE}${path}`, {
+    headers: {
+      'User-Agent': UA, 'Accept': 'application/json',
+      'Authorization': `Bearer ${jwt}`,
+      'X-Client-Info': JSON.stringify({ timezone: 'UTC' }),
+      'X-Request-Lang': 'en',
+    },
+    timeout: { request: 15000 }, throwHttpErrors: false,
+  });
+  if (r.statusCode !== 200) return null;
+  try { return JSON.parse(r.body); } catch { return null; }
 }
 
 export class MovieBox extends Source {
@@ -22,148 +94,133 @@ export class MovieBox extends Source {
     this.label = 'MovieBox';
     this.contentTypes = ['movie', 'series'];
     this.countryCodes = [CountryCode.multi];
-    this.baseUrl = 'https://moviebox.ph';
-    this.priority = -1;
-    this.apiBaseUrl = 'https://h5-api.aoneroom.com';
+    this.baseUrl = SITE_BASE;
     this.fetcher = fetcher;
+    // MovieBox doesn't have anime-specific content — it's all movies/series
+    // Stream URLs are time-limited, so use short cache TTL
+    this.ttl = 10 * 60 * 1000; // 10min
   }
 
   async handleInternal(ctx, _type, id) {
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
 
-    const subjectType = tmdbId.season ? SUBJECT_TYPE_TV : SUBJECT_TYPE_MOVIE;
+    const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    const searchResult = await this.searchMovieBox(ctx, name, year, subjectType, tmdbId.season ?? 0);
-    if (!searchResult) {
-      return [];
-    }
+    // Step 1: Search for the title
+    const subjectType = tmdbId.season ? 2 : 1; // 1=movie, 2=series
+    const item = await this.findItem(name, year, subjectType);
+    if (!item) return [];
 
-    const { subjectId, detailPath } = searchResult;
-
-    const se = tmdbId.season ?? 0;
-    const ep = tmdbId.episode ?? 0;
-
-    const downloadUrl = new URL(`${this.apiBaseUrl}${DOWNLOAD_PATH}`);
-    downloadUrl.searchParams.set('subjectId', subjectId);
-    downloadUrl.searchParams.set('se', String(se));
-    downloadUrl.searchParams.set('ep', String(ep));
-    downloadUrl.searchParams.set('detailPath', detailPath);
-
-    let title = name;
-    if (tmdbId.season) {
-      title += ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}`;
-    } else {
-      title += ` (${year})`;
-    }
-
-    return [{
-      url: downloadUrl,
-      meta: {
-        countryCodes: [CountryCode.multi],
-        referer: 'https://videodownloader.site/',
-        title,
-      },
-    }];
-  }
-
-  async searchMovieBox(ctx, name, year, subjectType, season) {
-    const searchUrl = new URL(`${this.apiBaseUrl}${SEARCH_PATH}`);
-
-    const payload = JSON.stringify({
-      keyword: name,
-      page: 1,
-      perPage: 24,
-      subjectType,
-    });
-
-    const responseText = await this.fetcher.textPost(
-      ctx,
-      searchUrl,
-      payload,
-      {
-        headers: {
-          ...this.getApiHeaders(),
-          'Content-Type': 'application/json',
-        },
-      },
+    // Step 2: Get play URLs
+    const se = tmdbId.season || 0;
+    const ep = tmdbId.episode || 0;
+    const playData = await apiGet(
+      `/subject/play?subjectId=${item.subjectId}&se=${se}&ep=${ep}&detailPath=${item.detailPath}&streamSignType=1`
     );
 
-    let response;
-    try {
-      response = JSON.parse(responseText);
-    } catch {
-      return null;
+    // Note: The /subject/play endpoint requires a Referer header
+    // We need to re-fetch with the correct Referer
+    if (!playData?.data?.streams?.length) {
+      // Retry with Referer
+      const jwt = await getJwt();
+      if (!jwt) return [];
+      const { gotScraping } = await import('got-scraping');
+      const r = await gotScraping.get(
+        `${API_BASE}/subject/play?subjectId=${item.subjectId}&se=${se}&ep=${ep}&detailPath=${item.detailPath}&streamSignType=1`,
+        {
+          headers: {
+            'User-Agent': UA, 'Accept': 'application/json',
+            'Authorization': `Bearer ${jwt}`,
+            'Referer': `${SITE_BASE}/movies/${item.detailPath}`,
+          },
+          timeout: { request: 15000 }, throwHttpErrors: false,
+        }
+      );
+      if (r.statusCode !== 200) return [];
+      try {
+        const data = JSON.parse(r.body);
+        if (!data?.data?.streams?.length) return [];
+        return this.buildStreams(data.data.streams, title);
+      } catch { return []; }
     }
 
-    if (response.code !== 0 || !response.data?.items?.length) {
-      return null;
-    }
-
-    const items = response.data.items;
-
-    if (subjectType === SUBJECT_TYPE_MOVIE) {
-      return this.matchMovie(items, name, year);
-    }
-
-    return this.matchTv(items, name, season);
+    return this.buildStreams(playData.data.streams, title);
   }
 
-  matchMovie(items, name, year) {
-    const yearStr = String(year);
+  buildStreams(streams, title) {
+    const results = [];
+    const seenUrls = new Set();
 
-    // Try exact match by title and year
-    const exactMatch = items.find((item) => {
-      const titleMatch = item.title?.toLowerCase() === name.toLowerCase();
-      const yearMatch = !item.releaseDate || item.releaseDate.startsWith(yearStr);
-      return titleMatch && yearMatch && item.hasResource;
-    });
+    for (const s of streams) {
+      if (!s.url || s.vipLocked) continue;
+      if (seenUrls.has(s.url)) continue;
+      seenUrls.add(s.url);
 
-    if (exactMatch) {
-      return { subjectId: exactMatch.subjectId, detailPath: exactMatch.detailPath };
+      let parsed;
+      try { parsed = new URL(s.url); } catch { continue; }
+
+      const height = parseInt(s.resolutions) || undefined;
+
+      results.push({
+        url: parsed,
+        format: Format.mp4,
+        meta: {
+          countryCodes: [CountryCode.multi],
+          title: `${title} (${s.resolutions}p)`,
+          sourceId: this.id,
+          sourceLabel: this.label,
+          ...(height && { height }),
+        },
+      });
     }
 
-    // Fallback: first item with resources
-    const firstWithResource = items.find(item => item.hasResource);
-    if (firstWithResource) {
-      return { subjectId: firstWithResource.subjectId, detailPath: firstWithResource.detailPath };
-    }
-
-    return null;
+    return results;
   }
 
-  matchTv(items, name, season) {
-    const matchingItems = items.filter((item) => {
-      const baseTitle = stripSeasonSuffix(item.title);
-      return baseTitle.toLowerCase() === name.toLowerCase();
-    });
+  // Search MovieBox by name and return the best matching item
+  async findItem(name, year, subjectType) {
+    const nameNorm = normalize(name);
+    const queries = [
+      name,
+      name.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
+      name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(),
+    ].filter((q, i, arr) => q && arr.indexOf(q) === i);
 
-    if (matchingItems.length === 0) {
-      const firstWithResource = items.find(item => item.hasResource);
-      if (firstWithResource) {
-        return { subjectId: firstWithResource.subjectId, detailPath: firstWithResource.detailPath };
+    for (const query of queries) {
+      const data = await apiPost('/subject/search', {
+        keyword: query, page: 1, perPage: 20, subjectType,
+      });
+      if (!data?.data?.items?.length) continue;
+
+      let best = null;
+      let bestScore = 0;
+      for (const item of data.data.items) {
+        if (item.subjectType !== subjectType) continue;
+        const itemNorm = normalize(item.title);
+        if (!itemNorm) continue;
+
+        let score = 0;
+        if (itemNorm === nameNorm) score = 100;
+        else if (itemNorm.includes(nameNorm) || nameNorm.includes(itemNorm)) {
+          score = Math.min(itemNorm.length, nameNorm.length) / Math.max(itemNorm.length, nameNorm.length) * 90;
+        }
+
+        // Year bonus — helps distinguish remakes/sequels
+        if (score > 0 && year && item.releaseDate) {
+          const itemYear = parseInt(item.releaseDate.slice(0, 4));
+          if (itemYear === year) score += 10;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          best = item;
+        }
       }
-      return null;
-    }
 
-    const seasonMatch = matchingItems.find(item => item.season === season && item.hasResource);
-    if (seasonMatch) {
-      return { subjectId: seasonMatch.subjectId, detailPath: seasonMatch.detailPath };
-    }
-
-    const firstWithResource = matchingItems.find(item => item.hasResource);
-    if (firstWithResource) {
-      return { subjectId: firstWithResource.subjectId, detailPath: firstWithResource.detailPath };
+      if (best && bestScore >= 60) return best;
     }
 
     return null;
-  }
-
-  getApiHeaders() {
-    return {
-      'Accept': 'application/json',
-      'X-Client-Info': '{"timezone":"UTC"}',
-      'Referer': 'https://videodownloader.site/',
-    };
   }
 }
