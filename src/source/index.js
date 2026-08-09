@@ -19,6 +19,9 @@ import { FrenchCloud } from './FrenchCloud.js';
 import { HDHub4u } from './HDHub4u.js';
 import { HDHub4uNew } from './HDHub4uNew.js';
 import { HiAnime } from './HiAnime.js';
+// HiAnime removed — gn1r5n.org is a React SPA (can't extract server-side),
+// playmogo.com is DoodStream with Turnstile captcha. Produces 0 playable streams.
+// import { HiAnime } from './HiAnime.js';
 import { HomeCine } from './HomeCine.js';
 import { KinoGer } from './KinoGer.js';
 import { Kokoshka } from './Kokoshka.js';
@@ -98,7 +101,8 @@ export const createSources = (fetcher) => {
     // anime
     new NineAnime(fetcher),
     new AnimeWorld(fetcher),
-    new HiAnime(fetcher),
+    // HiAnime removed — gn1r5n.org is a React SPA (can't extract server-side),
+    // playmogo.com is DoodStream with Turnstile captcha. Produces 0 playable streams.
     new AnimeFlix(fetcher),
     new AniDB(fetcher),
     new AniNeko(fetcher),

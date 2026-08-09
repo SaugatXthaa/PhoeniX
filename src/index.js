@@ -190,13 +190,15 @@ app.get('/proxy', async (req, res) => {
     // from workers.dev and other CF-protected CDN hosts.
     const { gotScraping } = await import('got-scraping');
 
-    // Check if this is an HLS playlist — if so, we need to buffer and
-    // rewrite relative URLs to absolute /proxy URLs.
-    const isM3u8 = targetUrl.pathname.toLowerCase().endsWith('.m3u8') ||
-                   targetUrl.pathname.toLowerCase().includes('.m3u8');
+    // Check if this is an HLS playlist by URL extension OR by content.
+    // Some CDNs (Netlio, AniNeko) disguise HLS playlists with .txt
+    // extensions — detect those by checking the response body for #EXTM3U.
+    const urlIsM3u8 = targetUrl.pathname.toLowerCase().endsWith('.m3u8') ||
+                      targetUrl.pathname.toLowerCase().includes('.m3u8');
+    const urlIsTxt = targetUrl.pathname.toLowerCase().endsWith('.txt');
 
-    if (isM3u8) {
-      // Buffer m3u8 content to rewrite URLs
+    if (urlIsM3u8 || urlIsTxt) {
+      // Buffer content to check if it's HLS and rewrite URLs
       const m3u8Res = await gotScraping.get(targetUrl.href, {
         headers: proxyHeaders,
         timeout: { request: 30000 },
@@ -209,12 +211,28 @@ app.get('/proxy', async (req, res) => {
         return res.status(m3u8Res.statusCode).send(`Upstream error: ${m3u8Res.statusCode}`);
       }
 
-      const rewritten = rewriteM3u8Urls(m3u8Res.body, targetUrl, rawReferer, req);
-      res.status(200);
-      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-      res.setHeader('Content-Length', Buffer.byteLength(rewritten));
-      res.send(rewritten);
-      return;
+      const body = m3u8Res.body;
+      const isHls = body.trimStart().startsWith('#EXTM3U');
+
+      if (isHls) {
+        // It's an HLS playlist — rewrite relative URLs to absolute /proxy URLs
+        const rewritten = rewriteM3u8Urls(body, targetUrl, rawReferer, req);
+        res.status(200);
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+        res.setHeader('Content-Length', Buffer.byteLength(rewritten));
+        res.send(rewritten);
+        return;
+      }
+
+      // .txt file but not HLS — serve as-is (could be subtitles or other text)
+      if (urlIsTxt) {
+        res.status(200);
+        const ct = m3u8Res.headers['content-type'] || 'text/plain';
+        res.setHeader('Content-Type', ct);
+        res.setHeader('Content-Length', Buffer.byteLength(body));
+        res.send(body);
+        return;
+      }
     }
 
     // Non-m3u8 content — stream directly to avoid OOM on Render's 512MB tier

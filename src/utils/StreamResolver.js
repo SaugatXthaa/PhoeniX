@@ -41,8 +41,8 @@ export class StreamResolver {
         this.logger.info(`Source ${source.id} returned ${sourceResults.length} results`);
         // Extractor phase — also bounded by the same timeout (reset per source)
         const sourceUrlResults = await Promise.all(
-          sourceResults.map(({ url, meta }) =>
-            this.extractorRegistry.handle(ctx, url, { sourceLabel: source.label, sourceId: source.id, priority: source.priority, ...meta }, true)
+          sourceResults.map(({ url, meta, requestHeaders }) =>
+            this.extractorRegistry.handle(ctx, url, { sourceLabel: source.label, sourceId: source.id, priority: source.priority, ...(requestHeaders && { requestHeaders }), ...meta }, true)
               .catch(e => {
                 const msg = e?.message || e?.constructor?.name || String(e);
                 this.logger.warn(`Extractor for ${source.id} ${url.href} error: ${msg}`);

@@ -9,6 +9,11 @@
 // Only matches googleusercontent.com URLs when the source is AcerMovies
 // (identified via meta.sourceId === 'acermovies'). This prevents the
 // extractor from hijacking HubCloud's googleusercontent URLs.
+//
+// Streams are routed through /proxy to enable Range-request seeking.
+// Without the proxy, Stremio's player often can't seek on direct GDrive
+// MP4 URLs (the player needs 206 Partial Content responses with proper
+// Content-Range headers, which the /proxy endpoint handles correctly).
 
 import { Format } from '../types.js';
 import { Extractor } from './Extractor.js';
@@ -28,13 +33,18 @@ export class AcerMovies extends Extractor {
     return url.hostname === 'video-downloads.googleusercontent.com';
   }
 
-  async extractInternal(_ctx, url, meta) {
+  async extractInternal(ctx, url, meta) {
+    // Route through /proxy to enable Range-request seeking.
+    // The /proxy endpoint passes through Range headers and returns 206
+    // responses with Content-Range, which Stremio needs for seeking.
+    const proxyUrl = new URL('/proxy', ctx.hostUrl);
+    proxyUrl.searchParams.set('url', url.href);
+
     return [{
-      url,
-      format: Format.mp4, // GDrive CDN serves MP4/MKV — Stremio plays both as mp4
+      url: proxyUrl,
+      format: Format.mp4,
       label: this.label,
       meta: { ...meta },
-      // No requestHeaders needed — GDrive CDN allows direct access
     }];
   }
 }

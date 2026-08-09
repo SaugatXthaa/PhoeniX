@@ -85,6 +85,8 @@ export class AnimeDirect extends Extractor {
       const referer = meta?.requestHeaders?.Referer ||
         (url.hostname === 'hls.anidb.app' ? 'https://anidb.app/'
         : url.hostname === 'play.zephyrix.top' ? 'https://play.zephyrix.top/'
+        : url.hostname === 'prox.anicore.tv' ? 'https://anikage.cc/'
+        : url.hostname === 'playeng.animeapps.top' ? 'https://anibd.app/'
         : url.hostname.endsWith('.netrocdn.site') ? 'https://vidspark.to/'
         : 'https://anineko.to/');
 
