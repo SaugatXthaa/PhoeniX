@@ -234,11 +234,15 @@ export class VidKing extends Extractor {
 
         const format = formatFromUrl(streamUrl);
 
-        // Some speedracelight CDNs (ironwallnet.net, vimeos.net, etc.) return
-        // 403 without a Referer. Add the vidking.net Referer so Stremio's proxy
-        // injects it. Hosts like rivermagnet.site work without Referer, but
-        // adding it doesn't break them — so we add it for all streams.
-        const requestHeaders = { Referer: 'https://www.vidking.net/' };
+        // Route through /proxy so the m3u8 URL rewriting handles variant
+        // playlists and segments with the correct Referer.
+        // Without this, Stremio's proxyHeaders only applies to the main m3u8
+        // URL — variant playlists (index-s1080p-v1-a1.m3u8) fetched by the
+        // player don't get the Referer, causing 403/reloading on CDNs like
+        // ironwallnet.net and vimeos.zip.
+        const proxyUrl = new URL('/proxy', ctx.hostUrl);
+        proxyUrl.searchParams.set('url', streamUrl.href);
+        proxyUrl.searchParams.set('referer', 'https://www.vidking.net/');
 
         const titleBits = [];
         if (meta2.title) titleBits.push(meta2.title);
@@ -247,10 +251,9 @@ export class VidKing extends Extractor {
         const streamTitle = titleBits.join(' — ');
 
         streams.push({
-          url: streamUrl,
+          url: proxyUrl,
           format,
           label: `${provider.name}`,
-          requestHeaders,
           meta: {
             ...meta,
             ...meta2,

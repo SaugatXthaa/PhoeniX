@@ -287,8 +287,11 @@ function rewriteM3u8Urls(m3u8Text, baseUrl, referer, req) {
   return lines.map(line => {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) {
-      // Rewrite URI= inside #EXT-X-STREAM-INF and #EXT-X-I-FRAME-STREAM-INF tags
-      if (trimmed.startsWith('#EXT-X-STREAM-INF') || trimmed.startsWith('#EXT-X-I-FRAME-STREAM-INF')) {
+      // Rewrite URI= inside #EXT-X-STREAM-INF, #EXT-X-I-FRAME-STREAM-INF,
+      // and #EXT-X-MAP tags (all use URI="..." for variant/segment references)
+      if (trimmed.startsWith('#EXT-X-STREAM-INF') ||
+          trimmed.startsWith('#EXT-X-I-FRAME-STREAM-INF') ||
+          trimmed.startsWith('#EXT-X-MAP')) {
         return line.replace(/URI="([^"]+)"/g, (match, uri) => {
           const absoluteUrl = new URL(uri, baseUrl).href;
           const proxyUrl = new URL(proxyBase);
