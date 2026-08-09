@@ -42,11 +42,10 @@ export class WatchSeries extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Only use VidKing/speedracelight fallback for MOVIES.
-    // For series/anime, the speedracelight API uses fuzzy title matching and
-    // returns wrong content (e.g. random anime for movie searches, or
-    // "Obsession" movie for Naruto anime requests). Series/anime rely on
-    // their own embed extractors (VidSrc, Vidzee, etc.) instead.
+    // Pass meta.vidking for movies only — the speedracelight API resolves
+    // streams for embed URLs that have no dedicated extractor (vidlink.pro,
+    // 2embed.cc, vidfast.pro, etc.). Without it, these produce 0 streams.
+    // For series/anime, speedracelight returns wrong content — skip it.
     const vidkingMeta = tmdbId.season ? null : {
       name,
       year,

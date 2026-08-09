@@ -42,9 +42,16 @@ export class Movie4kTo extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // No meta.vidking — all embed URLs are TMDB-ID-keyed and always return
-    // the correct content. The speedracelight API fallback was returning
-    // wrong content for certain titles (fuzzy title matching issue).
+    // Pass meta.vidking for movies only — the speedracelight API resolves
+    // streams for embed URLs that have no dedicated extractor (vidlink.pro,
+    // 2embed.cc, vidfast.pro, etc.). Without it, these produce 0 streams.
+    // For series/anime, speedracelight returns wrong content — skip it.
+    const vidkingMeta = tmdbId.season ? null : {
+      name,
+      year,
+      tmdbId: tmdbId.id,
+    };
+
     const results = [];
     for (const source of EMBED_SOURCES) {
       const url = tmdbId.season
@@ -56,6 +63,7 @@ export class Movie4kTo extends Source {
         meta: {
           countryCodes: [CountryCode.multi],
           title: `${title} (${source.label})`,
+          ...(vidkingMeta && { vidking: vidkingMeta }),
         },
       });
     }

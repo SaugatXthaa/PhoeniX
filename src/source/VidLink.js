@@ -3,13 +3,13 @@
 //
 // vidlink.pro uses TMDB IDs with JW Player. The stream URL is encrypted
 // client-side using libsodium + WebAssembly — can't be resolved server-side.
-// We pass meta.vidking for the VidKing extractor to resolve via speedracelight.
+// No meta.vidking — the speedracelight API is slow and returns wrong content
+// for some titles. The embed URL is claimed by the VidKing extractor via
+// the meta.vidking fallback, but we skip that to avoid slowness.
 //
 // URL patterns:
 //   Movie: /movie/{tmdbId}
 //   TV:    /tv/{tmdbId}/{season}/{episode}
-//
-// VidLink is specifically good for anime streaming (sub + dub support).
 
 import { CountryCode } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
@@ -36,11 +36,14 @@ export class VidLink extends Source {
       ? new URL(`/tv/${tmdbId.id}/${tmdbId.season}/${tmdbId.episode}`, this.baseUrl)
       : new URL(`/movie/${tmdbId.id}`, this.baseUrl);
 
-    const vidkingMeta = {
+    // Pass meta.vidking for movies only — the speedracelight API resolves
+    // streams for the vidlink.pro embed (which uses WASM encryption and
+    // can't be extracted server-side). Without it, VidLink produces 0 streams.
+    // For series/anime, speedracelight returns wrong content — skip it.
+    const vidkingMeta = tmdbId.season ? null : {
       name,
       year,
       tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
     };
 
     return [{
@@ -48,7 +51,7 @@ export class VidLink extends Source {
       meta: {
         countryCodes: [CountryCode.multi],
         title,
-        vidking: vidkingMeta,
+        ...(vidkingMeta && { vidking: vidkingMeta }),
       },
     }];
   }
