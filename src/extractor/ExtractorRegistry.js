@@ -34,6 +34,15 @@ export class ExtractorRegistry {
       return cached.results;
     }
 
+    // Evict expired entries to prevent OOM on Render's 512MB free tier
+    if (this.urlResultCache.size > 200) {
+      const now = Date.now();
+      for (const [key, val] of this.urlResultCache) {
+        if (now - val.ts > (val.ttl || 900000)) this.urlResultCache.delete(key);
+      }
+      this.lazyUrlResultCache.clear(); // Clear lazy cache too
+    }
+
     // Check in-flight
     const existing = this.inFlight.get(cacheKey);
     if (existing) return existing;

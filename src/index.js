@@ -181,19 +181,27 @@ app.get('/proxy', async (req, res) => {
 
     // Use got-scraping for Cloudflare bypass — plain fetch() gets 403
     // from workers.dev and other CF-protected CDN hosts.
+    // Use streaming mode to avoid OOM on Render's 512MB free tier.
     const { gotScraping } = await import('got-scraping');
-    const response = await gotScraping.get(targetUrl.href, {
+    const stream = gotScraping.stream(targetUrl.href, {
       headers: proxyHeaders,
       timeout: { request: 30000 },
       throwHttpErrors: false,
       followRedirect: true,
-      responseType: 'buffer',
-      // Don't decompress — pass through as-is
-      decompress: false,
+      isStream: true,
+    });
+
+    // Wait for the response headers
+    const response = await new Promise((resolve, reject) => {
+      stream.on('response', (resp) => resolve(resp));
+      stream.on('error', (err) => reject(err));
+      // Timeout if no response in 15s
+      setTimeout(() => reject(new Error('proxy response timeout')), 15000);
     });
 
     if (response.statusCode >= 400) {
       logger.error(`[${ADDON_NAME}] proxy upstream ${response.statusCode} for ${targetUrl.hostname}`);
+      stream.destroy();
       return res.status(response.statusCode).send(`Upstream error: ${response.statusCode}`);
     }
 
@@ -205,8 +213,9 @@ app.get('/proxy', async (req, res) => {
       if (v) res.setHeader(h, v);
     }
 
-    // Send the body
-    res.send(response.body);
+    // Stream the body — pipe directly to avoid buffering in memory
+    stream.pipe(res);
+    stream.on('error', () => { try { res.end(); } catch {} });
   } catch (err) {
     logger.error(`[${ADDON_NAME}] proxy error: ${err.message}`);
     if (!res.headersSent) res.status(502).send('Proxy error');

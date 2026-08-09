@@ -63,6 +63,15 @@ export class Source {
       return cached.data;
     }
 
+    // Evict expired entries periodically to prevent unbounded memory growth
+    // (Render free tier has 512MB limit)
+    if (sourceResultCache.size > 100) {
+      const now = Date.now();
+      for (const [key, val] of sourceResultCache) {
+        if (now - val.ts > 43200000) sourceResultCache.delete(key);
+      }
+    }
+
     let results;
     try {
       results = await this.handleInternal(ctx, type, id);
