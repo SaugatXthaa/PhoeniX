@@ -160,7 +160,6 @@ export class AniKage extends Source {
       name,
       name.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
       name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(),
-      name.split(' ')[0],
     ].filter((q, i, arr) => q && arr.indexOf(q) === i);
 
     const nameNorm = normalize(name);

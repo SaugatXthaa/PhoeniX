@@ -144,13 +144,9 @@ export class AniBD extends Source {
       name,
       name.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
       name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(),
-      name.split(' ')[0],
     ].filter((q, i, arr) => q && arr.indexOf(q) === i);
 
     const nameNorm = normalize(name);
-    // First-word match (e.g. "Naruto" — useful for "Shippuden" vs "Shippuuden"
-    // romanization differences where the title differs only in vowel doubling)
-    const firstName = nameNorm.split(' ')[0];
 
     for (const query of queries) {
       const data = await apiGet(`${SEARCH_API}?keyword=${encodeURIComponent(query)}`);
@@ -158,8 +154,6 @@ export class AniBD extends Source {
 
       let best = null;
       let bestScore = 0;
-      let firstWordMatch = null;
-      let firstWordScore = 0;
       for (const r of data.data) {
         const titles = [r.postname, r.english, r.romaji, r.native].filter(Boolean);
         let itemBest = 0;
@@ -172,15 +166,6 @@ export class AniBD extends Source {
             score = Math.min(tNorm.length, nameNorm.length) / Math.max(tNorm.length, nameNorm.length) * 90;
           }
           if (score > itemBest) itemBest = score;
-
-          // First-word match score — useful for romanization variants
-          if (firstName.length > 3 && tNorm.startsWith(firstName)) {
-            const fwScore = firstName.length / Math.max(tNorm.length, 1) * 60;
-            if (fwScore > firstWordScore) {
-              firstWordScore = fwScore;
-              firstWordMatch = r;
-            }
-          }
         }
         if (itemBest > bestScore) {
           bestScore = itemBest;
@@ -188,12 +173,12 @@ export class AniBD extends Source {
         }
       }
 
+      // Only accept matches with score >= 0.5 (at least 50% title overlap).
+      // Lower thresholds cause wrong anime matches (e.g. "Naruto The Lost
+      // Story" matching "ROAD TO NINJA: NARUTO THE MOVIE" — both contain
+      // "Naruto" but are completely different titles).
       if (best && bestScore >= 0.5) {
         return { postid: best.postid, anilist: best.anilist };
-      }
-      // Fallback: first-word match (handles "Shippuden" vs "Shippuuden")
-      if (firstWordMatch && firstWordScore >= 0.3) {
-        return { postid: firstWordMatch.postid, anilist: firstWordMatch.anilist };
       }
     }
 

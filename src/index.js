@@ -147,6 +147,13 @@ app.get('/extract', async (req, res) => {
 // Used by sources whose CDN hosts may be DNS-blocked on the user's device
 // (e.g. fsharetv.cc). The addon fetches the content and streams it back,
 // so DNS resolution happens on the server, not the user's device.
+//
+// For .m3u8 playlists, relative URLs inside the playlist are rewritten to
+// /proxy URLs pointing back to this addon (with the same Referer). This
+// ensures the player fetches variant playlists and segments through the
+// proxy with the correct Referer header — without it, the player resolves
+// relative URLs against the proxy URL itself (phoenix-hgs3.onrender.com)
+// and gets 404s.
 app.get('/proxy', async (req, res) => {
   const rawUrl = req.query.url;
   const rawReferer = req.query.referer;
@@ -181,8 +188,36 @@ app.get('/proxy', async (req, res) => {
 
     // Use got-scraping for Cloudflare bypass — plain fetch() gets 403
     // from workers.dev and other CF-protected CDN hosts.
-    // Use streaming mode to avoid OOM on Render's 512MB free tier.
     const { gotScraping } = await import('got-scraping');
+
+    // Check if this is an HLS playlist — if so, we need to buffer and
+    // rewrite relative URLs to absolute /proxy URLs.
+    const isM3u8 = targetUrl.pathname.toLowerCase().endsWith('.m3u8') ||
+                   targetUrl.pathname.toLowerCase().includes('.m3u8');
+
+    if (isM3u8) {
+      // Buffer m3u8 content to rewrite URLs
+      const m3u8Res = await gotScraping.get(targetUrl.href, {
+        headers: proxyHeaders,
+        timeout: { request: 30000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+      });
+
+      if (m3u8Res.statusCode >= 400) {
+        logger.error(`[${ADDON_NAME}] proxy upstream ${m3u8Res.statusCode} for ${targetUrl.hostname}`);
+        return res.status(m3u8Res.statusCode).send(`Upstream error: ${m3u8Res.statusCode}`);
+      }
+
+      const rewritten = rewriteM3u8Urls(m3u8Res.body, targetUrl, rawReferer, req);
+      res.status(200);
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      res.setHeader('Content-Length', Buffer.byteLength(rewritten));
+      res.send(rewritten);
+      return;
+    }
+
+    // Non-m3u8 content — stream directly to avoid OOM on Render's 512MB tier
     const stream = gotScraping.stream(targetUrl.href, {
       headers: proxyHeaders,
       timeout: { request: 30000 },
@@ -222,6 +257,38 @@ app.get('/proxy', async (req, res) => {
     else try { res.end(); } catch {}
   }
 });
+
+// Rewrite relative URLs in an m3u8 playlist to absolute /proxy URLs.
+// This ensures the player fetches variant playlists and segments through
+// the proxy with the correct Referer — without it, relative URLs resolve
+// against the proxy URL itself and return 404.
+function rewriteM3u8Urls(m3u8Text, baseUrl, referer, req) {
+  const lines = m3u8Text.split('\n');
+  const proxyBase = `${req.protocol}://${req.get('host')}/proxy`;
+
+  return lines.map(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      // Rewrite URI= inside #EXT-X-STREAM-INF and #EXT-X-I-FRAME-STREAM-INF tags
+      if (trimmed.startsWith('#EXT-X-STREAM-INF') || trimmed.startsWith('#EXT-X-I-FRAME-STREAM-INF')) {
+        return line.replace(/URI="([^"]+)"/g, (match, uri) => {
+          const absoluteUrl = new URL(uri, baseUrl).href;
+          const proxyUrl = new URL(proxyBase);
+          proxyUrl.searchParams.set('url', absoluteUrl);
+          if (referer) proxyUrl.searchParams.set('referer', referer);
+          return `URI="${proxyUrl.href}"`;
+        });
+      }
+      return line;
+    }
+    // This line is a URL (variant playlist or segment)
+    const absoluteUrl = new URL(trimmed, baseUrl).href;
+    const proxyUrl = new URL(proxyBase);
+    proxyUrl.searchParams.set('url', absoluteUrl);
+    if (referer) proxyUrl.searchParams.set('referer', referer);
+    return proxyUrl.href;
+  }).join('\n');
+}
 
 // ============== HEALTH ==============
 app.get('/health', (req, res) => {
