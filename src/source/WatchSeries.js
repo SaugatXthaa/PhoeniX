@@ -42,11 +42,15 @@ export class WatchSeries extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    const vidkingMeta = {
+    // Only use VidKing/speedracelight fallback for MOVIES.
+    // For series/anime, the speedracelight API uses fuzzy title matching and
+    // returns wrong content (e.g. random anime for movie searches, or
+    // "Obsession" movie for Naruto anime requests). Series/anime rely on
+    // their own embed extractors (VidSrc, Vidzee, etc.) instead.
+    const vidkingMeta = tmdbId.season ? null : {
       name,
       year,
       tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
     };
 
     const results = [];
@@ -60,7 +64,7 @@ export class WatchSeries extends Source {
         meta: {
           countryCodes: [CountryCode.multi],
           title: `${title} (${server.label})`,
-          vidking: vidkingMeta,
+          ...(vidkingMeta && { vidking: vidkingMeta }),
         },
       });
     }

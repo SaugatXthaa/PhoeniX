@@ -234,15 +234,19 @@ export class VidKing extends Extractor {
 
         const format = formatFromUrl(streamUrl);
 
-        // Route through /proxy so the m3u8 URL rewriting handles variant
-        // playlists and segments with the correct Referer.
-        // Without this, Stremio's proxyHeaders only applies to the main m3u8
-        // URL — variant playlists (index-s1080p-v1-a1.m3u8) fetched by the
-        // player don't get the Referer, causing 403/reloading on CDNs like
-        // ironwallnet.net and vimeos.zip.
-        const proxyUrl = new URL('/proxy', ctx.hostUrl);
-        proxyUrl.searchParams.set('url', streamUrl.href);
-        proxyUrl.searchParams.set('referer', 'https://www.vidking.net/');
+        // Return the DIRECT m3u8 URL with requestHeaders (Referer).
+        // Stremio's built-in proxy (proxyHeaders) will apply the Referer to
+        // the m3u8 AND all segments referenced inside it. This is faster than
+        // routing through our /proxy endpoint (which adds per-segment latency).
+        //
+        // The m3u8 playlists from speedracelight CDNs (ironwallnet.net,
+        // vimeos.zip) contain ABSOLUTE segment URLs, so Stremio can fetch
+        // them directly with the Referer — no URL rewriting needed.
+        //
+        // Fallback: if Stremio's proxyHeaders doesn't apply to segments on
+        // some clients, the /proxy endpoint still works (just slower). The
+        // StreamResolver checks for requestHeaders and sets proxyHeaders.
+        const requestHeaders = { Referer: 'https://www.vidking.net/' };
 
         const titleBits = [];
         if (meta2.title) titleBits.push(meta2.title);
@@ -251,9 +255,10 @@ export class VidKing extends Extractor {
         const streamTitle = titleBits.join(' — ');
 
         streams.push({
-          url: proxyUrl,
+          url: streamUrl,
           format,
           label: `${provider.name}`,
+          requestHeaders,
           meta: {
             ...meta,
             ...meta2,
