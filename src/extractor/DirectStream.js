@@ -35,6 +35,10 @@ const DIRECT_CDN_HOSTS = [
   'vcloud.zip',
   'filebee.xyz',
   'vikingfile.com',
+  // VegaCatering — file hosts from nexdrive
+  'vcloud.fit',
+  'new26.gdtot.dad',
+  'gdtot.dad',
 ];
 
 // Host suffixes (for wildcard matching like *.r2.dev)

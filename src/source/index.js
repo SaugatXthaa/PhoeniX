@@ -64,6 +64,8 @@ import { AllWish } from './AllWish.js';
 import { AniDoor } from './AniDoor.js';
 import { NowHDTime } from './NowHDTime.js';
 import { FilmeOnlineHD } from './FilmeOnlineHD.js';
+import { CineFreak } from './CineFreak.js';
+import { VegaCatering } from './VegaCatering.js';
 
 export { Source } from './Source.js';
 
@@ -149,5 +151,9 @@ export const createSources = (fetcher) => {
     new NowHDTime(fetcher),
     // filmeonlinehd.digital — Hindi movies/series via linksdrive → HubCloud/GDFlix
     new FilmeOnlineHD(fetcher),
+    // cinefreak.net — movies/series/anime/kdrama → generate.php → r2.dev direct MKV
+    new CineFreak(fetcher),
+    // vegamovies.catering — WP REST API → nexdrive.fit → file hosts
+    new VegaCatering(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
