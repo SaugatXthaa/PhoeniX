@@ -1,6 +1,15 @@
 // src/source/Antova.js
 // anilibria.top (rebranded "AniLiberty" / "Antova") — Russian-dubbed anime
 //
+// NOTE: This source uses AniLibria's API (anilibria.top/api/v1), which provides
+// ONLY Russian fan-dubbed anime. It does NOT provide Japanese original, English
+// dub, or Spanish dub. PenguPlay's "antova" source is a DIFFERENT backend that
+// provides multi-language streams (Japanese/English/Spanish) via their private
+// authenticated API — we cannot replicate that without PenguPlay's auth token.
+//
+// For Japanese SUB and English DUB anime streams, use the addon's other anime
+// sources: AniKoto, AniKage, TwoDhive, AllWish, AniVault, AniPriv8, ZXCStream.
+//
 // Public REST API at https://anilibria.top/api/v1 — NO AUTH REQUIRED.
 // All endpoints return 200. Tested live 2026-08-10.
 //
@@ -130,7 +139,7 @@ export class Antova extends Source {
   constructor(fetcher) {
     super();
     this.id = 'antova';
-    this.label = 'Antova';
+    this.label = 'AniLibria';
     this.contentTypes = ['movie', 'series'];
     this.countryCodes = [CountryCode.multi, CountryCode.ja, CountryCode.ru];
     this.baseUrl = ORIGIN;
@@ -272,7 +281,7 @@ export class Antova extends Source {
         format: Format.hls,
         meta: {
           countryCodes: [CountryCode.multi, CountryCode.ja, CountryCode.ru],
-          title: `${titleBase} (Antova ${q.label} RU Dub${teamLabel})`,
+          title: `${titleBase} (AniLibria ${q.label} RU Dub${teamLabel})`,
           sourceId: this.id,
           sourceLabel: this.label,
           height: q.height,
