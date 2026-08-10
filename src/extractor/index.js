@@ -45,8 +45,6 @@ import { Megaplay } from './Megaplay.js';
 import { ZXCStream as ZXCStreamExtractor } from './ZXCStream.js';
 // HDGharTV — passthrough for streamraiwind.stream HLS URLs
 import { HDGharTV as HDGharTVExtractor } from './HDGharTV.js';
-// Antova — passthrough for cache.libria.fun HLS URLs
-import { Antova as AntovaExtractor } from './Antova.js';
 // AniPriv8 — routes anipriv8.online HLS through /proxy for m3u8 URL rewriting
 import { AniPriv8 as AniPriv8Extractor } from './AniPriv8.js';
 
@@ -68,8 +66,6 @@ export const createExtractors = (fetcher, logger) => {
     new ZXCStreamExtractor(fetcher, logger),
     // HDGharTV — passthrough for streamraiwind.stream HLS URLs
     new HDGharTVExtractor(fetcher, logger),
-    // Antova — passthrough for cache.libria.fun HLS URLs
-    new AntovaExtractor(fetcher, logger),
     // AniPriv8 — routes anipriv8.online HLS through /proxy for m3u8 URL rewriting
     new AniPriv8Extractor(fetcher, logger),
     // Netlio — passthrough for direct HLS URLs (claim before ExternalUrl)
