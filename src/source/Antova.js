@@ -8,7 +8,8 @@
 //   1. GET /app/search/releases?query={title}&limit=20
 //        → array of { alias, year, name: { main, english, alternative } }
 //   2. GET /anime/releases/{alias}
-//        → { name, episodes: [{ ordinal, duration, hls_480, hls_720, hls_1080 }] }
+//        → { name, episodes: [{ ordinal, sort_order, hls_480, hls_720, hls_1080 }],
+//            members: [{ role: { value: "voicing" }, nickname }] }
 //
 // Stream URL pattern:
 //   https://cache.libria.fun/videos/media/ts/{releaseId}/{episode}/{quality}/{hash}.m3u8
@@ -18,8 +19,22 @@
 // needed). Stremio plays these directly — no proxy or Referer required.
 //
 // Audio: All streams are Russian-dubbed (AniLibria is a Russian fan-dub group).
-// Original Japanese audio is not available separately — the dub is baked in.
-// Subtitles: None (the dub replaces the original audio).
+// Each release has one voice team (listed in members[] with role "voicing").
+// The voice team name is included in the stream title so users can distinguish
+// different dub teams.
+//
+// Episode matching:
+//   AniLibria uses absolute episode numbering (ordinal field). For most releases
+//   ordinal starts at 1, but some start at a higher number (e.g., Naruto
+//   Shippuuden starts at ordinal 370). We match by ordinal, and if the exact
+//   episode isn't found, we return [] (no streams) instead of falling back to
+//   episodes[0] which would return wrong content.
+//
+// Multi-season handling:
+//   AniLibria often has separate releases for each season (e.g.,
+//   "jujutsu-kaisen" for S1, "jujutsu-kaisen-season-2" for S2). We match the
+//   best release by title + year, and for multi-season anime, the search results
+//   usually contain all seasons as separate releases.
 //
 // NOTE: AniLibria doesn't have myanimelist_id/anilist_id fields — we match by
 // fuzzy title (Levenshtein-style ratio). Year is used as a disambiguator.
@@ -90,6 +105,27 @@ const normalize = (s) => (s || '').toLowerCase()
 // Strip year suffix like "Berserk (2016)" → "Berserk"
 const stripYear = (s) => (s || '').replace(/\s*[\(\[]\d{4}[\)\]]\s*$/, '').trim();
 
+// Extract voice team name from release members
+function getVoiceTeam(release) {
+  const voices = (release.members || []).filter(m => m.role?.value === 'voicing').map(m => m.nickname);
+  return voices.length > 0 ? voices.slice(0, 3).join(', ') : null;
+}
+
+// Run async tasks with bounded concurrency
+async function mapBounded(items, limit, fn) {
+  const results = [];
+  let idx = 0;
+  const workers = new Array(Math.min(limit, items.length)).fill(null).map(async () => {
+    while (idx < items.length) {
+      const cur = idx++;
+      try { results[cur] = await fn(items[cur], cur); }
+      catch { results[cur] = null; }
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export class Antova extends Source {
   constructor(fetcher) {
     super();
@@ -108,21 +144,34 @@ export class Antova extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const titleBase = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Step 1: Search by title
-    const searchUrl = `${API_BASE}/app/search/releases?query=${encodeURIComponent(name)}&limit=20`;
-    const searchData = await fetchJson(searchUrl);
-    if (!searchData) return [];
+    // Step 1: Search by title with multiple queries to maximize match chances
+    // Try the full name first, then a shortened version (strip subtitle after colon)
+    const cleanName = stripYear(name);
+    const shortName = cleanName.replace(/\s*:\s*.*$/, '').trim();
+    const queries = [name, cleanName, shortName]
+      .filter((q, i, arr) => q && arr.indexOf(q) === i && q.length > 2);
 
-    const results = Array.isArray(searchData) ? searchData : (searchData.data || []);
+    let results = [];
+    for (const query of queries) {
+      const searchUrl = `${API_BASE}/app/search/releases?query=${encodeURIComponent(query)}&limit=20`;
+      const searchData = await fetchJson(searchUrl);
+      const searchResults = Array.isArray(searchData) ? searchData : (searchData?.data || []);
+      // Merge results, dedup by alias
+      for (const r of searchResults) {
+        if (!results.find(x => x.alias === r.alias)) results.push(r);
+      }
+      if (results.length >= 10) break; // enough results
+    }
+
     if (results.length === 0) return [];
 
-    // Step 2: Fuzzy-match the title
-    const cleanTitle = normalize(stripYear(name));
-    // Also strip "Season N" / "Part N" / "TV" etc. for matching
-    const cleanTitleBase = cleanTitle.replace(/\s*:\s*.*$/, '').trim();
+    // Step 2: Fuzzy-match the title — collect ALL matching releases (score >= 60)
+    // Multiple releases may match (e.g., "jujutsu-kaisen" and "jujutsu-kaisen-season-2")
+    // We want to find the one that matches the requested season.
+    const cleanTitle = normalize(cleanName);
+    const cleanTitleBase = normalize(shortName);
 
-    let bestMatch = null;
-    let bestScore = 0;
+    const matches = [];
     for (const r of results) {
       const names = r.name || {};
       const candidates = [
@@ -131,34 +180,77 @@ export class Antova extends Source {
       ].filter(Boolean).map(stripYear).map(normalize);
       if (!candidates.length) continue;
 
-      let score = Math.max(...candidates.map(c => fuzzRatio(cleanTitleBase, c)));
-      // Year bonus
-      if (year && r.year === year) score += 15;
+      // Score against both full title and shortened title
+      let score = Math.max(...candidates.map(c => Math.max(
+        fuzzRatio(cleanTitle, c),
+        fuzzRatio(cleanTitleBase, c),
+      )));
+
+      // Year bonus — strong signal for season matching
+      if (year && r.year === year) score += 20;
+      else if (year && r.year && Math.abs(r.year - year) <= 1) score += 5;
       else if (year && r.year && r.year !== year) score -= 10;
 
-      if (score > bestScore) { bestScore = score; bestMatch = r; }
+      if (score >= 60) {
+        matches.push({ release: r, score });
+      }
     }
 
-    // Require score >= 60 to avoid mismatches
-    if (!bestMatch || bestScore < 60) return [];
+    if (matches.length === 0) return [];
+
+    // Sort by score descending
+    matches.sort((a, b) => b.score - a.score);
+
+    // For series with seasons: if Stremio requests S2+, try to find a season-specific release
+    // (e.g., "jujutsu-kaisen-season-2"). Otherwise use the best match.
+    // For movies (no season), use the best match.
+    let bestMatch = matches[0].release;
+
+    // If it's a series with season > 1, look for a season-specific release
+    if (tmdbId.season && tmdbId.season > 1) {
+      const seasonStr = String(tmdbId.season);
+      const seasonMatch = matches.find(m => {
+        const alias = m.release.alias.toLowerCase();
+        return alias.includes(`season-${seasonStr}`) ||
+               alias.includes(`${seasonStr}-season`) ||
+               alias.includes(`s${seasonStr}`);
+      });
+      if (seasonMatch) bestMatch = seasonMatch.release;
+    }
 
     // Step 3: Get the full release detail (includes episodes with HLS URLs)
     const release = await fetchJson(`${API_BASE}/anime/releases/${bestMatch.alias}`);
-    if (!release?.episodes) return [];
+    if (!release?.episodes || release.episodes.length === 0) return [];
 
-    // Step 4: For movies (no season), use episode 1
-    // For series, find the matching episode by ordinal
+    // Step 4: Find the matching episode
+    // For movies (no season), use episode 1 (ordinal 1)
+    // For series, match by ordinal
     const targetEpisode = tmdbId.season ? tmdbId.episode : 1;
-    // AniLibria uses absolute episode numbering (no season concept)
-    // For Stremio season 1, episode N → AniLibria episode N
-    // For Stremio season 2+, we need to skip ahead — but AniLibria often has
-    // separate releases for each season (e.g., "jujutsu-kaisen-season-2")
-    // so the season is already encoded in the release choice.
-    const episode = release.episodes.find(e => Number(e.ordinal) === targetEpisode)
-                 || release.episodes[0];
+    let episode = release.episodes.find(e => Number(e.ordinal) === targetEpisode);
+
+    // If exact ordinal not found, try sort_order (some releases use sort_order starting at 1)
+    if (!episode) {
+      episode = release.episodes.find(e => Number(e.sort_order) === targetEpisode);
+    }
+
+    // If still not found and this is episode 1, check if ordinals start at 1
+    if (!episode && targetEpisode === 1 && release.episodes[0]) {
+      const firstOrd = Number(release.episodes[0].ordinal);
+      const firstSort = Number(release.episodes[0].sort_order);
+      if (firstOrd === 1 || firstSort === 1) {
+        episode = release.episodes[0];
+      }
+    }
+
+    // If no matching episode found, return empty — don't fall back to episodes[0]
+    // (would return wrong content, e.g., Naruto Shippuuden episode 370 for S01E01)
     if (!episode) return [];
 
-    // Step 5: Build stream results for each quality
+    // Step 5: Get voice team for labeling
+    const voiceTeam = getVoiceTeam(release);
+    const teamLabel = voiceTeam ? ` · ${voiceTeam}` : '';
+
+    // Step 6: Build stream results for each quality
     const streams = [];
     const seenUrls = new Set();
     const qualityLabels = [
@@ -180,7 +272,7 @@ export class Antova extends Source {
         format: Format.hls,
         meta: {
           countryCodes: [CountryCode.multi, CountryCode.ja, CountryCode.ru],
-          title: `${titleBase} (Antova ${q.label} RU)`,
+          title: `${titleBase} (Antova ${q.label} RU Dub${teamLabel})`,
           sourceId: this.id,
           sourceLabel: this.label,
           height: q.height,
