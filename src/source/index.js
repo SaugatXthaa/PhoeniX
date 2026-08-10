@@ -66,6 +66,7 @@ import { NowHDTime } from './NowHDTime.js';
 import { FilmeOnlineHD } from './FilmeOnlineHD.js';
 import { CineFreak } from './CineFreak.js';
 import { VegaCatering } from './VegaCatering.js';
+import { AniVault } from './AniVault.js';
 
 export { Source } from './Source.js';
 
@@ -155,5 +156,7 @@ export const createSources = (fetcher) => {
     new CineFreak(fetcher),
     // vegamovies.catering — WP REST API → nexdrive.fit → file hosts
     new VegaCatering(fetcher),
+    // anivault.co — anime sub/dub via AniVault API (AnimeHeaven MP4 + Anikoto HLS)
+    new AniVault(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };

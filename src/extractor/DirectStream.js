@@ -39,6 +39,8 @@ const DIRECT_CDN_HOSTS = [
   'vcloud.fit',
   'new26.gdtot.dad',
   'gdtot.dad',
+  // AniVault — AnimeHeaven direct MP4
+  'rt.animeheaven.me',
 ];
 
 // Host suffixes (for wildcard matching like *.r2.dev)

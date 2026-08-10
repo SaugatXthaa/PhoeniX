@@ -28,6 +28,11 @@ const DIRECT_HLS_HOSTS = [
   'prox.anicore.tv',
   // AniBD — playeng.animeapps.top serves direct HLS (requires Referer: anibd.app)
   'playeng.animeapps.top',
+  // AniVault — megap.* serves direct HLS (requires Referer: megaplay.buzz)
+  'megap.norami.top',
+  'megap.shiora.top',
+  'megap.shiora.site',
+  'megap.mikora.top',
 ];
 
 // CDN host suffixes that serve direct HLS (AniNeko + Netlio + VidSpark CDNs)
