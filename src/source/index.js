@@ -68,6 +68,7 @@ import { CineFreak } from './CineFreak.js';
 import { VegaCatering } from './VegaCatering.js';
 import { AniVault } from './AniVault.js';
 import { AniPriv8 } from './AniPriv8.js';
+import { ZXCStream } from './ZXCStream.js';
 
 export { Source } from './Source.js';
 
@@ -161,5 +162,7 @@ export const createSources = (fetcher) => {
     new AniVault(fetcher),
     // anipriv8.online — anime sub/dub via AniPriv8 pipeline API (5 providers)
     new AniPriv8(fetcher),
+    // zxcstream.xyz — movies/series/anime/kdrama via 7 ZXC backend servers (sub/dub)
+    new ZXCStream(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
