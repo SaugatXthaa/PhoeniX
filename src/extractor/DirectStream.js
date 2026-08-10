@@ -41,8 +41,7 @@ const DIRECT_CDN_HOSTS = [
   'gdtot.dad',
   // AniVault — AnimeHeaven direct MP4
   'rt.animeheaven.me',
-  // AniPriv8 — HLS proxy (m3u8 with relative segment URLs)
-  'anipriv8.online',
+  // AniPriv8 — handled by dedicated AniPriv8 extractor (needs proxy for m3u8 rewriting)
 ];
 
 // Host suffixes (for wildcard matching like *.r2.dev)

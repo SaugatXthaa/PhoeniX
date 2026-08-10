@@ -196,14 +196,22 @@ app.get('/proxy', async (req, res) => {
     // AniKage uses /m3u8/{token} paths (no .m3u8 extension).
     // AniKage also uses /stream/{token} for BOTH HLS variant playlists AND
     // MP4 streams (megg provider) — we need to check content-type to distinguish.
+    // AniPriv8 uses /api/secure/pipeline/{token} for BOTH m3u8 playlists AND
+    // MPEG-TS segments — detect by content (small = playlist, large = segment).
+    // ZXCStream Berkas uses *.berkasNN.workers.dev/?data=... for BOTH master
+    // m3u8 playlists AND variant playlists — detect by hostname pattern.
     const pathLower = targetUrl.pathname.toLowerCase();
+    const hostLower = targetUrl.hostname.toLowerCase();
     const urlIsM3u8 = pathLower.endsWith('.m3u8') ||
                       pathLower.includes('.m3u8') ||
                       pathLower.includes('/m3u8/');
     const urlIsStream = pathLower.includes('/stream/');  // AniKage: could be HLS or MP4
     const urlIsTxt = pathLower.endsWith('.txt');
+    const urlIsAniPriv8 = pathLower.includes('/api/secure/pipeline/');
+    // Berkas: *.berkas*.workers.dev — master m3u8 and variant playlists
+    const urlIsBerkas = hostLower.includes('berkas') && hostLower.endsWith('.workers.dev');
 
-    if (urlIsM3u8 || urlIsTxt || urlIsStream) {
+    if (urlIsM3u8 || urlIsTxt || urlIsStream || urlIsAniPriv8 || urlIsBerkas) {
       // Buffer content to check if it's HLS and rewrite URLs.
       // For /stream/ paths, use a HEAD request first to check content-type —
       // if it's video/mp4, stream directly (avoid buffering large MP4 files).
@@ -223,7 +231,26 @@ app.get('/proxy', async (req, res) => {
         } catch { /* HEAD failed — try buffering (might be HLS) */ }
       }
 
-      if (urlIsM3u8 || urlIsTxt || urlIsStream) {
+      // For AniPriv8, use a HEAD request to check Content-Length —
+      // m3u8 playlists are small (< 100KB), segments are large (> 1MB).
+      // Only buffer if it's likely a playlist (avoid OOM on large segments).
+      if (urlIsAniPriv8) {
+        try {
+          const headRes = await gotScraping.head(targetUrl.href, {
+            headers: proxyHeaders,
+            timeout: { request: 8000 },
+            throwHttpErrors: false,
+            followRedirect: true,
+          });
+          const cl = parseInt(headRes.headers['content-length'] || '0');
+          // Segments are typically > 500KB — stream directly, skip buffering
+          if (cl > 500000) {
+            urlIsAniPriv8 = false; // fall through to streaming mode
+          }
+        } catch { /* HEAD failed — try buffering (might be playlist) */ }
+      }
+
+      if (urlIsM3u8 || urlIsTxt || urlIsStream || urlIsAniPriv8 || urlIsBerkas) {
         // Buffer content to check if it's HLS and rewrite URLs
         const m3u8Res = await gotScraping.get(targetUrl.href, {
           headers: proxyHeaders,
@@ -308,6 +335,16 @@ app.get('/proxy', async (req, res) => {
     for (const h of forwardHeaders) {
       const v = response.headers[h];
       if (v) res.setHeader(h, v);
+    }
+
+    // AniPriv8 segments return Content-Type: image/png when Range is requested
+    // (server bug). The body is valid MPEG-TS — override Content-Type so
+    // Stremio's HLS player accepts it.
+    if (urlIsAniPriv8) {
+      const ct = (response.headers['content-type'] || '').toLowerCase();
+      if (ct.includes('image/png') || ct.includes('application/octet-stream') || !ct) {
+        res.setHeader('Content-Type', 'video/mp2t');
+      }
     }
 
     // Stream the body — pipe directly to avoid buffering in memory

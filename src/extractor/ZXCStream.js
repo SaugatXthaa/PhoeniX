@@ -1,19 +1,25 @@
 // src/extractor/ZXCStream.js
-// Passthrough extractor for ZXCStream (zxcstream.xyz) direct stream URLs.
+// Extractor for ZXCStream (zxcstream.xyz) direct stream URLs.
 //
 // ZXCStream source returns direct playable Cloudflare Worker / CDN URLs from
 // 7 backend servers (1orion, 1icarus, 1berkas, 1resshin, 1daedalus, 1athena,
-// 1sentinel). These URLs are public (no Referer/Auth needed) and play directly.
+// 1sentinel). Most servers return URLs that play directly without proxy.
+//
+// Server-specific handling:
+//   - 1berkas: Returns HLS master m3u8 with variant URLs on rotating
+//     *.berkasNN.workers.dev subdomains. These subdomains are frequently
+//     slow/dead (timeouts). Route through /proxy so the proxy can:
+//       1. Fetch the master m3u8
+//       2. Rewrite variant URLs to absolute /proxy URLs
+//       3. Handle timeouts gracefully
+//     Without proxy, Stremio gets the master m3u8 directly, tries to fetch
+//     variants from slow subdomains, and gets stuck on loading.
+//   - All other servers: Direct passthrough (no proxy needed).
 //
 // This extractor claims URLs where meta.sourceId === 'zxcstream' (set by the
 // ZXCStream source). Without this, the Netlio extractor would claim *.workers.dev
 // URLs and force them through /proxy with an incorrect Referer + HLS format,
 // breaking MP4 streams.
-//
-// Format is inferred from the URL path:
-//   - /hls/...          → HLS (Athena server)
-//   - .m3u8             → HLS (Sentinel server)
-//   - everything else   → MP4 (Icarus, Resshin, Daedalus, Orion MP4 links)
 
 import { Format } from '../types.js';
 import { Extractor } from './Extractor.js';
@@ -39,10 +45,26 @@ export class ZXCStream extends Extractor {
     return meta?.sourceId === this.id;
   }
 
-  async extractInternal(_ctx, url, meta) {
-    // ZXCStream URLs are direct playable CDN URLs (workers.dev, devcorp.me).
+  async extractInternal(ctx, url, meta) {
+    // Berkas server: route through /proxy for m3u8 URL rewriting.
+    // Berkas returns HLS master m3u8 with variant URLs on rotating
+    // *.berkasNN.workers.dev subdomains that are frequently slow/dead.
+    // The proxy fetches the master, rewrites variant URLs to /proxy URLs,
+    // and handles timeouts gracefully.
+    if (meta?.serverId === '1berkas') {
+      const proxyUrl = new URL('/proxy', ctx.hostUrl);
+      proxyUrl.searchParams.set('url', url.href);
+
+      return [{
+        url: proxyUrl,
+        format: Format.hls,
+        meta: { ...meta },
+      }];
+    }
+
+    // All other servers: direct passthrough.
+    // URLs are direct playable CDN URLs (workers.dev, devcorp.me).
     // They work without Referer/Auth — verified with Range requests (HTTP 206).
-    // Return as-is to preserve the correct format and avoid proxy overhead.
     return [{
       url,
       format: inferFormat(url),

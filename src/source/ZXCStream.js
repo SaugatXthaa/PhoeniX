@@ -288,6 +288,7 @@ export class ZXCStream extends Source {
           title: `${titleBase} (${label} · ${server.label}${h ? ` ${h}p` : ''})`,
           sourceId: this.id,
           sourceLabel: this.label,
+          serverId: server.id,
           ...(h && { height: h }),
         },
       });
