@@ -36,11 +36,12 @@ export class Necro extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    const vidkingMeta = {
+    // Only pass meta.vidking for MOVIES — the speedracelight API returns
+    // wrong content for series/anime (fuzzy title matching issue).
+    const vidkingMeta = tmdbId.season ? null : {
       name,
       year,
       tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
     };
 
     const results = [];
@@ -54,7 +55,7 @@ export class Necro extends Source {
         meta: {
           countryCodes: [CountryCode.multi],
           title: `${title} (${source.label})`,
-          vidking: vidkingMeta,
+          ...(vidkingMeta && { vidking: vidkingMeta }),
         },
       });
     }

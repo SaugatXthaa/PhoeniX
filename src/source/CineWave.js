@@ -157,14 +157,12 @@ export class CineWave extends Source {
     } catch { /* HdHub API failed — continue to embed sources */ }
 
     // === Layer 2: Embed sources (fallback) ===
-    // Pass meta.vidking for ALL content (movies + series + anime).
-    // The speedracelight API returns correct stream URLs for series/anime.
-    // The VidKing extractor uses preloaded.name for the title display.
-    const vidkingMeta = {
+    // Only pass meta.vidking for MOVIES — the speedracelight API returns
+    // wrong content for series/anime (fuzzy title matching issue).
+    const vidkingMeta = tmdbId.season ? null : {
       name,
       year,
       tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
     };
 
     for (const source of EMBED_SOURCES) {

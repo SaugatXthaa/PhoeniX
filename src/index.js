@@ -197,7 +197,8 @@ app.get('/proxy', async (req, res) => {
     const pathLower = targetUrl.pathname.toLowerCase();
     const urlIsM3u8 = pathLower.endsWith('.m3u8') ||
                       pathLower.includes('.m3u8') ||
-                      pathLower.includes('/m3u8/');
+                      pathLower.includes('/m3u8/') ||
+                      pathLower.includes('/stream/');  // AniKage variant playlists use /stream/{token}
     const urlIsTxt = pathLower.endsWith('.txt');
 
     if (urlIsM3u8 || urlIsTxt) {

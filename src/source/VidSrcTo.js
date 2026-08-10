@@ -34,11 +34,12 @@ export class VidSrcTo extends Source {
       ? new URL(`/embed/tv/${tmdbId.id}/${tmdbId.season}/${tmdbId.episode}`, this.baseUrl)
       : new URL(`/embed/movie/${tmdbId.id}`, this.baseUrl);
 
-    const vidkingMeta = {
+    // Only pass meta.vidking for MOVIES — speedracelight returns wrong
+    // content for series/anime (fuzzy title matching issue).
+    const vidkingMeta = tmdbId.season ? null : {
       name,
       year,
       tmdbId: tmdbId.id,
-      ...(tmdbId.season && { season: tmdbId.season, episode: tmdbId.episode }),
     };
 
     return [{
@@ -46,7 +47,7 @@ export class VidSrcTo extends Source {
       meta: {
         countryCodes: [CountryCode.multi],
         title,
-        vidking: vidkingMeta,
+        ...(vidkingMeta && { vidking: vidkingMeta }),
       },
     }];
   }
