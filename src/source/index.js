@@ -70,6 +70,7 @@ import { AniVault } from './AniVault.js';
 import { AniPriv8 } from './AniPriv8.js';
 import { ZXCStream } from './ZXCStream.js';
 import { HDGharTV } from './HDGharTV.js';
+import { Cinejoy } from './Cinejoy.js';
 
 export { Source } from './Source.js';
 
@@ -167,5 +168,7 @@ export const createSources = (fetcher) => {
     new ZXCStream(fetcher),
     // hdghartv.cc — movies/series/anime with multi-audio HLS (Hindi/English/Tamil/Telugu)
     new HDGharTV(fetcher),
+    // cinejoy.to — movies/series via shegu.st encrypted API + scrypt PoW (4K/1080p/720p/360p)
+    new Cinejoy(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };

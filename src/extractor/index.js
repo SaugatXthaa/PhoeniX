@@ -47,6 +47,8 @@ import { ZXCStream as ZXCStreamExtractor } from './ZXCStream.js';
 import { HDGharTV as HDGharTVExtractor } from './HDGharTV.js';
 // AniPriv8 — routes anipriv8.online HLS through /proxy for m3u8 URL rewriting
 import { AniPriv8 as AniPriv8Extractor } from './AniPriv8.js';
+// Cinejoy — routes help.earthcleaner.cc HLS through /proxy with Referer
+import { Cinejoy as CinejoyExtractor } from './Cinejoy.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -68,6 +70,8 @@ export const createExtractors = (fetcher, logger) => {
     new HDGharTVExtractor(fetcher, logger),
     // AniPriv8 — routes anipriv8.online HLS through /proxy for m3u8 URL rewriting
     new AniPriv8Extractor(fetcher, logger),
+    // Cinejoy — routes help.earthcleaner.cc HLS through /proxy with Referer
+    new CinejoyExtractor(fetcher, logger),
     // Netlio — passthrough for direct HLS URLs (claim before ExternalUrl)
     new Netlio(fetcher, logger),
     // AnimeDirect — passthrough for anime HLS/MP4 URLs
