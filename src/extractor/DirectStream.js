@@ -30,6 +30,11 @@ const DIRECT_CDN_HOSTS = [
   // MovieBox — direct MP4 on hakunaymatata.com CDN
   'bcdnxw2.hakunaymatata.com',
   'bcdnxw.hakunaymatata.com',
+  // FilmeOnlineHD — file hosts from linksdrive
+  'fastdl.zip',
+  'vcloud.zip',
+  'filebee.xyz',
+  'vikingfile.com',
 ];
 
 // Host suffixes (for wildcard matching like *.r2.dev)

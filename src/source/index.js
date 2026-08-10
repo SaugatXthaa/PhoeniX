@@ -63,6 +63,7 @@ import { TwoDhive } from './TwoDhive.js';
 import { AllWish } from './AllWish.js';
 import { AniDoor } from './AniDoor.js';
 import { NowHDTime } from './NowHDTime.js';
+import { FilmeOnlineHD } from './FilmeOnlineHD.js';
 
 export { Source } from './Source.js';
 
@@ -146,5 +147,7 @@ export const createSources = (fetcher) => {
     new AniDoor(fetcher),
     // nowhdtime.to — movies/series/anime/kdrama via nhdapi.com HLS proxy API
     new NowHDTime(fetcher),
+    // filmeonlinehd.digital — Hindi movies/series via linksdrive → HubCloud/GDFlix
+    new FilmeOnlineHD(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
