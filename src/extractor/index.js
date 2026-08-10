@@ -43,6 +43,10 @@ import { Megaplay } from './Megaplay.js';
 // ZXCStream — passthrough for ZXCStream direct CDN URLs (must come before Netlio
 // so it claims *.workers.dev URLs from ZXCStream source, preserving correct format)
 import { ZXCStream as ZXCStreamExtractor } from './ZXCStream.js';
+// HDGharTV — passthrough for streamraiwind.stream HLS URLs
+import { HDGharTV as HDGharTVExtractor } from './HDGharTV.js';
+// Antova — passthrough for cache.libria.fun HLS URLs
+import { Antova as AntovaExtractor } from './Antova.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -60,6 +64,10 @@ export const createExtractors = (fetcher, logger) => {
     // ZXCStream — must come BEFORE Netlio to claim *.workers.dev URLs from
     // ZXCStream source (Netlio would otherwise force them to HLS format)
     new ZXCStreamExtractor(fetcher, logger),
+    // HDGharTV — passthrough for streamraiwind.stream HLS URLs
+    new HDGharTVExtractor(fetcher, logger),
+    // Antova — passthrough for cache.libria.fun HLS URLs
+    new AntovaExtractor(fetcher, logger),
     // Netlio — passthrough for direct HLS URLs (claim before ExternalUrl)
     new Netlio(fetcher, logger),
     // AnimeDirect — passthrough for anime HLS/MP4 URLs

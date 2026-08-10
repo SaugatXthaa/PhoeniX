@@ -69,6 +69,8 @@ import { VegaCatering } from './VegaCatering.js';
 import { AniVault } from './AniVault.js';
 import { AniPriv8 } from './AniPriv8.js';
 import { ZXCStream } from './ZXCStream.js';
+import { HDGharTV } from './HDGharTV.js';
+import { Antova } from './Antova.js';
 
 export { Source } from './Source.js';
 
@@ -164,5 +166,9 @@ export const createSources = (fetcher) => {
     new AniPriv8(fetcher),
     // zxcstream.xyz — movies/series/anime/kdrama via 7 ZXC backend servers (sub/dub)
     new ZXCStream(fetcher),
+    // hdghartv.cc — movies/series/anime with multi-audio HLS (Hindi/English/Tamil/Telugu)
+    new HDGharTV(fetcher),
+    // anilibria.top (AniLiberty/Antova) — Russian-dubbed anime via cache.libria.fun HLS
+    new Antova(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
