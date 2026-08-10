@@ -33,16 +33,20 @@
 //      → master m3u8 with 4K/1080p/720p/360p variants + audio tracks
 //
 // Streams require Referer: https://cinejoy.to/ — routed through /proxy.
+// Uses Cinejoy's embedded TMDB key (8476a7ab80ad76f0936744df0430e67c) to avoid
+// dependency on TMDB_API_KEY env var — reduces latency by fetching TMDB details
+// in parallel with the server list.
 
 import crypto from 'crypto';
 import { CountryCode, Format } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
+import { getTmdbId, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 import { gotScraping } from 'got-scraping';
 import { HeaderGenerator } from 'header-generator';
 
 const CINEJOY_ORIGIN = 'https://cinejoy.to';
 const SHEGU_API = 'https://api.shegu.st';
+const TMDB_KEY = '8476a7ab80ad76f0936744df0430e67c'; // baked into Cinejoy frontend
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 // Static HKDF base key (pc XOR wc arrays from BToEzF61.js)
@@ -122,28 +126,24 @@ function solvePoW(challenge) {
   throw new Error('PoW solver failed');
 }
 
-async function fetchJson(url, params) {
-  const fullUrl = new URL(url);
-  if (params) for (const [k, v] of Object.entries(params)) fullUrl.searchParams.set(k, v);
-  const res = await gotScraping.get(fullUrl.href, {
-    headers: apiHeaders(),
-    timeout: { request: 20000 },
-    throwHttpErrors: false,
-    http2: true,
-  });
-  if (res.statusCode !== 200) throw new Error(`HTTP ${res.statusCode}`);
-  try { return JSON.parse(res.body); } catch { throw new Error('Parse error'); }
-}
-
-async function fetchText(url, referer) {
-  const res = await gotScraping.get(url, {
-    headers: { ...hg.getHeaders({ httpVersion: '2' }), 'User-Agent': UA, 'Accept': '*/*', ...(referer && { Referer: referer }) },
-    timeout: { request: 15000 },
-    throwHttpErrors: false,
-    http2: true,
-  });
-  if (res.statusCode !== 200) throw new Error(`HTTP ${res.statusCode}`);
-  return res.body;
+// Fetch TMDB details (title, year, imdb_id) using Cinejoy's embedded key
+async function fetchTmdbDetails(tmdbId, mediaType) {
+  try {
+    const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_KEY}&append_to_response=external_ids`;
+    const res = await gotScraping.get(url, {
+      headers: { 'Accept': 'application/json' },
+      timeout: { request: 8000 },
+      throwHttpErrors: false,
+    });
+    if (res.statusCode !== 200) return null;
+    const d = JSON.parse(res.body);
+    const date = d.release_date || d.first_air_date || '';
+    return {
+      title: d.title || d.name || '',
+      year: date ? String(parseInt(date.slice(0, 4))) : '',
+      imdbId: d.external_ids?.imdb_id || d.imdb_id || '',
+    };
+  } catch { return null; }
 }
 
 export class Cinejoy extends Source {
@@ -161,32 +161,39 @@ export class Cinejoy extends Source {
 
   async handleInternal(ctx, _type, id) {
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
-    const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const mediaType = tmdbId.season ? 'series' : 'movie';
+
+    // Step 1: Fetch TMDB details + server list in parallel (saves ~1-2s)
+    const [tmdbInfo, serversData] = await Promise.all([
+      fetchTmdbDetails(tmdbId.id, mediaType),
+      (async () => {
+        try {
+          const fullUrl = new URL(`${SHEGU_API}/servers`);
+          const res = await gotScraping.get(fullUrl.href, {
+            headers: apiHeaders(),
+            timeout: { request: 10000 },
+            throwHttpErrors: false,
+            http2: true,
+          });
+          if (res.statusCode !== 200) return null;
+          return JSON.parse(res.body);
+        } catch { return null; }
+      })(),
+    ]);
+
+    const name = tmdbInfo?.title || `TMDB ${tmdbId.id}`;
+    const year = tmdbInfo?.year || '';
+    const imdbId = tmdbInfo?.imdbId || '';
     const titleBase = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Step 1: Get server list
-    let serverName = 'Lisbon';
-    try {
-      const serversData = await fetchJson(`${SHEGU_API}/servers`);
-      if (serversData?.servers?.[0]?.name) serverName = serversData.servers[0].name;
-    } catch { /* use default */ }
+    const serverName = serversData?.servers?.[0]?.name || 'Lisbon';
 
     // Step 2: Build payload path
-    // Movie:  /{server}/movie?imdb={imdb}&title={title}&tmdb={tmdb}&year={year}
-    // TV:     /{server}/series?imdb={imdb}&title={title}&tmdb={tmdb}&year={year}&season={s}&episode={e}
     const params = new URLSearchParams();
-    // Get imdbId from the tmdbId (if available)
-    let imdbId = null;
-    try {
-      const { getImdbId } = await import('../utils/index.js');
-      imdbId = (await getImdbId(this.fetcher, ctx, tmdbId)).id;
-    } catch { /* best-effort */ }
-
     if (imdbId) params.set('imdb', imdbId);
     if (name) params.set('title', name);
     params.set('tmdb', String(tmdbId.id));
-    if (year) params.set('year', String(year));
+    if (year) params.set('year', year);
     if (tmdbId.season) {
       params.set('season', String(tmdbId.season));
       params.set('episode', String(tmdbId.episode));
@@ -200,11 +207,22 @@ export class Cinejoy extends Source {
     const rid = generateRid(payload);
 
     // Step 4: Fetch challenge
-    const challenge = await fetchJson(`${SHEGU_API}/challenge`, { rid });
+    const challengeUrl = new URL(`${SHEGU_API}/challenge`);
+    challengeUrl.searchParams.set('rid', rid);
+    const chRes = await gotScraping.get(challengeUrl.href, {
+      headers: apiHeaders(),
+      timeout: { request: 15000 },
+      throwHttpErrors: false,
+      http2: true,
+    });
+    if (chRes.statusCode !== 200) return [];
+    let challenge;
+    try { challenge = JSON.parse(chRes.body); } catch { return []; }
     if (challenge.v !== 2) return [];
 
-    // Step 5: Solve PoW
-    const c = solvePoW(challenge);
+    // Step 5: Solve PoW (scrypt — CPU intensive, ~1-5s)
+    let c;
+    try { c = solvePoW(challenge); } catch { return []; }
 
     // Step 6: Build X-At token
     const xAt = Buffer.from(JSON.stringify({ ...challenge, c })).toString('base64');
@@ -213,7 +231,7 @@ export class Cinejoy extends Source {
     const blobUrl = new URL(`${SHEGU_API}/${rid}`);
     const blobRes = await gotScraping.get(blobUrl.href, {
       headers: { ...apiHeaders(), 'X-At': xAt },
-      timeout: { request: 20000 },
+      timeout: { request: 15000 },
       throwHttpErrors: false,
       http2: true,
     });
@@ -230,7 +248,14 @@ export class Cinejoy extends Source {
     // Step 9: Fetch master playlist
     let masterText;
     try {
-      masterText = await fetchText(playlistUrl, `${CINEJOY_ORIGIN}/`);
+      const plRes = await gotScraping.get(playlistUrl, {
+        headers: { ...hg.getHeaders({ httpVersion: '2' }), 'User-Agent': UA, 'Accept': '*/*', 'Referer': `${CINEJOY_ORIGIN}/` },
+        timeout: { request: 15000 },
+        throwHttpErrors: false,
+        http2: true,
+      });
+      if (plRes.statusCode !== 200) return [];
+      masterText = plRes.body;
     } catch { return []; }
 
     // Parse the master m3u8 to extract variant streams
@@ -238,17 +263,17 @@ export class Cinejoy extends Source {
     const seenUrls = new Set();
     const lines = masterText.split('\n').map(l => l.trim()).filter(Boolean);
     let inf = null;
-    let audioUrl = null;
 
     for (const line of lines) {
       if (line.startsWith('#EXT-X-MEDIA:') && line.includes('TYPE=AUDIO')) {
-        const m = line.match(/URI="([^"]+)"/);
-        if (m) audioUrl = m[1];
+        // Audio track info — could parse language for metadata
+        continue;
       } else if (line.startsWith('#EXT-X-STREAM-INF:')) {
         const a = line.slice('#EXT-X-STREAM-INF:'.length);
         const resolution = a.match(/RESOLUTION=([^,]+)/)?.[1] || '';
         const bandwidth = parseInt(a.match(/BANDWIDTH=(\d+)/)?.[1] || '0');
-        inf = { resolution, bandwidth };
+        const codecs = a.match(/CODECS="([^"]+)"/)?.[1] || '';
+        inf = { resolution, bandwidth, codecs };
       } else if (line.startsWith('http') && inf) {
         if (seenUrls.has(line)) { inf = null; continue; }
         seenUrls.add(line);
@@ -264,8 +289,6 @@ export class Cinejoy extends Source {
         let parsed;
         try { parsed = new URL(line); } catch { inf = null; continue; }
 
-        // Return direct URL — the Cinejoy extractor will route through /proxy
-        // with the correct Referer header
         results.push({
           url: parsed,
           format: Format.hls,
@@ -274,6 +297,9 @@ export class Cinejoy extends Source {
             title: `${titleBase} (Cinejoy ${qualityLabel})`,
             sourceId: this.id,
             sourceLabel: this.label,
+            serverName,
+            codecs: inf.codecs,
+            bandwidth: inf.bandwidth,
             ...(h > 0 && { height: h }),
           },
         });
@@ -293,6 +319,7 @@ export class Cinejoy extends Source {
             title: `${titleBase} (Cinejoy HD)`,
             sourceId: this.id,
             sourceLabel: this.label,
+            serverName,
           },
         });
       } catch { /* invalid URL */ }

@@ -77,6 +77,9 @@ export class CineFreak extends Source {
             title: `${title} (${dl.quality})`,
             sourceId: this.id,
             sourceLabel: this.label,
+            ...(dl.height && { height: dl.height }),
+            ...(dl.bytes && { bytes: dl.bytes }),
+            ...(dl.codec && { codec: dl.codec }),
           },
         });
       } catch { /* skip failed link */ }
@@ -153,23 +156,45 @@ export class CineFreak extends Source {
       const href = $(el).attr('href');
       if (!href || !href.includes('generate.php')) return;
 
-      // Find quality from nearby h4
+      // Skip "watch" duplicates — prefer "download" links
+      const isDownload = $(el).hasClass('dlbtn-download');
+      if (!isDownload) return;
+
+      // Find quality + file size from nearby h4
       let quality = 'HD';
+      let height = undefined;
+      let bytes = undefined;
+      let codec = undefined;
       const $container = $(el).closest('.dlbtn-container');
       if ($container.length) {
         const h4Text = $container.prev('h4.movie-title').text().trim() ||
                        $container.find('h4').text().trim();
         if (h4Text) {
-          const resMatch = h4Text.match(/(\d{3,4})p/i);
-          if (resMatch) quality = `${resMatch[1]}p`;
+          // Match resolution: 4K/2160p, 1080p, 720p, 480p, 360p
+          if (/4k|2160p/i.test(h4Text)) { quality = '4K'; height = 2160; }
+          else if (/1080p/i.test(h4Text)) { quality = '1080p'; height = 1080; }
+          else if (/720p/i.test(h4Text)) { quality = '720p'; height = 720; }
+          else if (/480p/i.test(h4Text)) { quality = '480p'; height = 480; }
+          else if (/360p/i.test(h4Text)) { quality = '360p'; height = 360; }
+          else {
+            const resMatch = h4Text.match(/(\d{3,4})p/i);
+            if (resMatch) { quality = `${resMatch[1]}p`; height = parseInt(resMatch[1]); }
+          }
+
+          // Extract codec info (HEVC, x265, x264, AVC)
+          if (/hevc|x265/i.test(h4Text)) codec = 'HEVC';
+          else if (/x264|avc/i.test(h4Text)) codec = 'AVC';
+
+          // Extract file size: [6.7 GB], [900 MB], [410 MB]
+          const sizeMatch = h4Text.match(/\[\s*([\d.]+)\s*(GB|MB)\s*\]/i);
+          if (sizeMatch) {
+            const val = parseFloat(sizeMatch[1]);
+            bytes = sizeMatch[2].toUpperCase() === 'GB' ? val * 1024 * 1024 * 1024 : val * 1024 * 1024;
+          }
         }
       }
 
-      // Skip "watch" duplicates — prefer "download" links
-      const isDownload = $(el).hasClass('dlbtn-download');
-      if (!isDownload) return;
-
-      links.push({ quality, href });
+      links.push({ quality, href, height, bytes, codec });
     });
 
     return links;
