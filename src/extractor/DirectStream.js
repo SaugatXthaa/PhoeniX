@@ -74,13 +74,18 @@ export class DirectStream extends Extractor {
     return isDirectCdnHost(url.hostname);
   }
 
-  async extractInternal(_ctx, url, meta) {
+  async extractInternal(ctx, url, meta) {
+    // Route through /proxy for reliable playback and seeking support.
+    // Some CDNs (hakunaymatata.com) block direct Stremio requests or
+    // don't support Range headers properly without a proxy.
+    const proxyUrl = new URL('/proxy', ctx.hostUrl);
+    proxyUrl.searchParams.set('url', url.href);
+
     return [{
-      url,
+      url: proxyUrl,
       format: inferFormat(url),
       label: this.label,
       meta: { ...meta },
-      // No requestHeaders needed — these CDNs allow direct access
     }];
   }
 }

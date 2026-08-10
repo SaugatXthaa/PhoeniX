@@ -106,6 +106,8 @@ export class Anikoto extends Source {
     this.countryCodes = [CountryCode.multi, CountryCode.ja];
     this.baseUrl = BASE_URL;
     this.fetcher = fetcher;
+    // Short TTL — stream URLs expire quickly (vidtube.site links especially)
+    this.ttl = 5 * 60 * 1000; // 5min
   }
 
   async handleInternal(ctx, _type, id) {
@@ -155,9 +157,11 @@ export class Anikoto extends Source {
     const seenLabels = new Set();
 
     // Prioritize sub then dub — keep one server per (type, server-name) pair
+    // Skip VidPlay servers — vidtube.site URLs resolve to WRONG content
+    // (different anime) via megaplay.buzz's getSourcesNew API.
     const dedupedServers = [];
     for (const type of ['sub', 'dub', 'hsub']) {
-      const byType = servers.filter(s => s.type === type);
+      const byType = servers.filter(s => s.type === type && !s.name.toLowerCase().includes('vidplay'));
       const seenNames = new Set();
       for (const s of byType) {
         const key = `${type}_${s.name}`;

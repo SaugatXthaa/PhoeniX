@@ -92,6 +92,11 @@ export class Megaplay extends Extractor {
     let dataId = null;
     try {
       const res = await gotGet(url.href, { Referer: upstreamReferer });
+      // If the page returns 404 or "Not Found", return no streams
+      // (some vidtube.site links are expired/dead)
+      if (res.statusCode !== 200 || res.body.includes('Page not found') || res.body.includes('Not Found')) {
+        return [];
+      }
       if (res.statusCode === 200) {
         const match = res.body.match(/data-id="(\d+)"/);
         if (match) dataId = match[1];

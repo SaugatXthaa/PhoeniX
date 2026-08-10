@@ -194,48 +194,88 @@ app.get('/proxy', async (req, res) => {
     // Some CDNs (Netlio, AniNeko) disguise HLS playlists with .txt
     // extensions — detect those by checking the response body for #EXTM3U.
     // AniKage uses /m3u8/{token} paths (no .m3u8 extension).
+    // AniKage also uses /stream/{token} for BOTH HLS variant playlists AND
+    // MP4 streams (megg provider) — we need to check content-type to distinguish.
     const pathLower = targetUrl.pathname.toLowerCase();
     const urlIsM3u8 = pathLower.endsWith('.m3u8') ||
                       pathLower.includes('.m3u8') ||
-                      pathLower.includes('/m3u8/') ||
-                      pathLower.includes('/stream/');  // AniKage variant playlists use /stream/{token}
+                      pathLower.includes('/m3u8/');
+    const urlIsStream = pathLower.includes('/stream/');  // AniKage: could be HLS or MP4
     const urlIsTxt = pathLower.endsWith('.txt');
 
-    if (urlIsM3u8 || urlIsTxt) {
-      // Buffer content to check if it's HLS and rewrite URLs
-      const m3u8Res = await gotScraping.get(targetUrl.href, {
-        headers: proxyHeaders,
-        timeout: { request: 30000 },
-        throwHttpErrors: false,
-        followRedirect: true,
-      });
-
-      if (m3u8Res.statusCode >= 400) {
-        logger.error(`[${ADDON_NAME}] proxy upstream ${m3u8Res.statusCode} for ${targetUrl.hostname}`);
-        return res.status(m3u8Res.statusCode).send(`Upstream error: ${m3u8Res.statusCode}`);
+    if (urlIsM3u8 || urlIsTxt || urlIsStream) {
+      // Buffer content to check if it's HLS and rewrite URLs.
+      // For /stream/ paths, use a HEAD request first to check content-type —
+      // if it's video/mp4, stream directly (avoid buffering large MP4 files).
+      if (urlIsStream) {
+        try {
+          const headRes = await gotScraping.head(targetUrl.href, {
+            headers: proxyHeaders,
+            timeout: { request: 8000 },
+            throwHttpErrors: false,
+            followRedirect: true,
+          });
+          const ct = (headRes.headers['content-type'] || '').toLowerCase();
+          if (ct.includes('video/') || ct.includes('application/octet-stream')) {
+            // It's a video file (MP4) — stream directly, skip HLS rewriting
+            urlIsStream = false; // fall through to streaming mode
+          }
+        } catch { /* HEAD failed — try buffering (might be HLS) */ }
       }
 
-      const body = m3u8Res.body;
-      const isHls = body.trimStart().startsWith('#EXTM3U');
+      if (urlIsM3u8 || urlIsTxt || urlIsStream) {
+        // Buffer content to check if it's HLS and rewrite URLs
+        const m3u8Res = await gotScraping.get(targetUrl.href, {
+          headers: proxyHeaders,
+          timeout: { request: 30000 },
+          throwHttpErrors: false,
+          followRedirect: true,
+        });
 
-      if (isHls) {
-        // It's an HLS playlist — rewrite relative URLs to absolute /proxy URLs
-        const rewritten = rewriteM3u8Urls(body, targetUrl, rawReferer, req);
-        res.status(200);
-        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-        res.setHeader('Content-Length', Buffer.byteLength(rewritten));
-        res.send(rewritten);
-        return;
-      }
+        if (m3u8Res.statusCode >= 400) {
+          logger.error(`[${ADDON_NAME}] proxy upstream ${m3u8Res.statusCode} for ${targetUrl.hostname}`);
+          return res.status(m3u8Res.statusCode).send(`Upstream error: ${m3u8Res.statusCode}`);
+        }
 
-      // .txt file but not HLS — serve as-is (could be subtitles or other text)
-      if (urlIsTxt) {
-        res.status(200);
-        const ct = m3u8Res.headers['content-type'] || 'text/plain';
-        res.setHeader('Content-Type', ct);
-        res.setHeader('Content-Length', Buffer.byteLength(body));
-        res.send(body);
-        return;
+        const body = m3u8Res.body;
+        const isHls = body.trimStart().startsWith('#EXTM3U');
+
+        if (isHls) {
+          // It's an HLS playlist — rewrite relative URLs to absolute /proxy URLs
+          const rewritten = rewriteM3u8Urls(body, targetUrl, rawReferer, req);
+          res.status(200);
+          res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+          res.setHeader('Content-Length', Buffer.byteLength(rewritten));
+          res.send(rewritten);
+          return;
+        }
+
+        // .txt file but not HLS — serve as-is (could be subtitles or other text)
+        if (urlIsTxt) {
+          res.status(200);
+          const ct = m3u8Res.headers['content-type'] || 'text/plain';
+          res.setHeader('Content-Type', ct);
+          res.setHeader('Content-Length', Buffer.byteLength(body));
+          res.send(body);
+          return;
+        }
+
+        // /stream/ path but not HLS — could be an MP4 or other video format.
+        // If the content is small (< 1MB), it might be a redirect page or error.
+        // If it's large, stream it directly.
+        if (urlIsStream) {
+          const contentLength = parseInt(m3u8Res.headers['content-length'] || '0');
+          if (contentLength > 0 && contentLength < 1024 * 1024) {
+            // Small response — serve as-is (might be a redirect or error page)
+            res.status(200);
+            const ct = m3u8Res.headers['content-type'] || 'application/octet-stream';
+            res.setHeader('Content-Type', ct);
+            res.setHeader('Content-Length', Buffer.byteLength(body));
+            res.send(body);
+            return;
+          }
+          // Large response — fall through to streaming mode
+        }
       }
     }
 

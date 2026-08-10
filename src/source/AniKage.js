@@ -28,7 +28,10 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 // Provider priority order — neko (default) first, then koto (often 1080p),
 // then dib (BD), wave (Vidplay), megg (MP4 fallback)
-const PROVIDER_PRIORITY = ['neko', 'koto', 'dib', 'wave', 'megg'];
+// megg provider removed — its /stream/ MP4 tokens expire too quickly and
+// cause 502 errors. Other providers (neko, koto, dib, wave) use /m3u8/ HLS
+// which is more reliable.
+const PROVIDER_PRIORITY = ['neko', 'koto', 'dib', 'wave'];
 
 // Normalize for fuzzy title matching
 const normalize = (s) => (s || '').toLowerCase()
@@ -62,7 +65,7 @@ export class AniKage extends Source {
     this.fetcher = fetcher;
     // Override the default 12h TTL — AniKage stream tokens expire quickly
     // (within minutes). Caching stale tokens causes 404 errors on playback.
-    this.ttl = 5 * 60 * 1000; // 5min
+    this.ttl = 3 * 60 * 1000; // 3min — megg stream tokens expire very quickly
   }
 
   async handleInternal(ctx, _type, id) {
