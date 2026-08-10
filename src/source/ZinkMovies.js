@@ -14,7 +14,7 @@ import { CountryCode } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId, findCountryCodes } from '../utils/index.js';
 import { Source } from './Source.js';
 
-const BASE_URL = 'https://new1.zinkmovies.mobi';
+const BASE_URL = 'https://new2.zinkmovies.mobi';
 const ZINKCLOUD_BASE = 'https://new4.zinkcloud.net';
 
 export class ZinkMovies extends Source {
