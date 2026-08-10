@@ -5,6 +5,95 @@ import { Format } from '../types.js';
 import { getClosestResolution } from './resolution.js';
 import { flagFromCountryCode, languageFromCountryCode } from './language.js';
 
+// Parse metadata from stream title and URL when the source doesn't provide it.
+// This enriches the display without modifying any source files or stream URLs.
+// Only fills in MISSING fields — never overwrites existing meta values.
+function enrichMeta(urlResult) {
+  const meta = { ...urlResult.meta };
+  const title = meta.title || '';
+  const url = urlResult.url?.href || '';
+  const titleLower = title.toLowerCase();
+  const urlLower = url.toLowerCase();
+
+  // 1. Parse height from title if not in meta
+  if (!meta.height) {
+    if (/4k|2160p|uhd/i.test(title)) meta.height = 2160;
+    else if (/1080p/i.test(title)) meta.height = 1080;
+    else if (/720p/i.test(title)) meta.height = 720;
+    else if (/480p/i.test(title)) meta.height = 480;
+    else if (/360p/i.test(title)) meta.height = 360;
+    else {
+      const m = title.match(/(\d{3,4})p/i);
+      if (m) meta.height = parseInt(m[1]);
+    }
+  }
+
+  // 2. Parse codec from title if not in meta
+  if (!meta.codec && !meta.codecs) {
+    if (/hevc|x265|h\.?265/i.test(title)) meta.codec = 'HEVC';
+    else if (/x264|h264|avc/i.test(title)) meta.codec = 'AVC';
+  }
+
+  // 3. Parse file size from title if not in meta
+  if (!meta.bytes) {
+    // Match patterns like "6.7 GB", "900 MB", "1.2GB", "[410 MB]"
+    const sizeMatch = title.match(/(\d+(?:\.\d+)?)\s*(GB|MB)/i);
+    if (sizeMatch) {
+      const val = parseFloat(sizeMatch[1]);
+      meta.bytes = sizeMatch[2].toUpperCase() === 'GB'
+        ? val * 1024 * 1024 * 1024
+        : val * 1024 * 1024;
+    }
+  }
+
+  // 4. Infer format from URL if not set
+  if (!urlResult.format || urlResult.format === Format.unknown) {
+    if (urlLower.includes('.m3u8') || urlLower.includes('/m3u8/') ||
+        urlLower.includes('/hls/') || urlLower.includes('/playlist/')) {
+      urlResult.format = Format.hls;
+    } else if (urlLower.includes('.mp4') || urlLower.includes('.mkv')) {
+      urlResult.format = Format.mp4;
+    }
+  }
+
+  // 5. Parse audio languages from title if countryCodes is minimal
+  // Only add if we don't already have specific language codes
+  // Use word-boundary matching to avoid false positives (e.g., "rus" in "Icarus")
+  if (!meta.countryCodes || meta.countryCodes.length <= 1) {
+    const codes = new Set(meta.countryCodes || []);
+    if (/\bhindi\b/i.test(titleLower)) codes.add('hi');
+    if (/\benglish\b/i.test(titleLower)) codes.add('en');
+    if (/\bjapanese\b/i.test(titleLower)) codes.add('ja');
+    if (/\bkorean\b/i.test(titleLower)) codes.add('ko');
+    if (/\bspanish\b/i.test(titleLower)) codes.add('es');
+    if (/\bfrench\b/i.test(titleLower)) codes.add('fr');
+    if (/\btamil\b/i.test(titleLower)) codes.add('ta');
+    if (/\btelugu\b/i.test(titleLower)) codes.add('te');
+    if (/\bchinese\b|\bmandarin\b/i.test(titleLower)) codes.add('zh');
+    if (/\brussian\b/i.test(titleLower)) codes.add('ru');
+    if (codes.size > 0) meta.countryCodes = [...codes];
+  }
+
+  // 6. Parse sub-source name from URL hostname
+  // Skip if URL is a proxy URL (localhost or addon's own host)
+  if (!meta.serverName && !meta.subSource) {
+    try {
+      const hostname = new URL(url).hostname;
+      // Skip localhost/proxy URLs — they don't indicate the actual provider
+      if (hostname !== 'localhost' && !hostname.includes('127.0.0.1') &&
+          !urlLower.includes('/proxy?')) {
+        const shortName = hostname.replace(/^www\./, '').split('.')[0];
+        if (shortName && shortName.length > 2 && shortName !== meta.sourceLabel?.toLowerCase()) {
+          meta.subSource = shortName.charAt(0).toUpperCase() + shortName.slice(1);
+        }
+      }
+    } catch { /* not a valid URL */ }
+  }
+
+  urlResult.meta = meta;
+  return urlResult;
+}
+
 export class StreamResolver {
   constructor(logger, extractorRegistry) {
     this.logger = logger;
@@ -61,6 +150,11 @@ export class StreamResolver {
 
     // Run all sources in parallel — total wall time bounded by SOURCE_TIMEOUT_MS
     await Promise.all(sources.map(s => handleSource(s)));
+
+    // Enrich metadata for all results (parse from title/URL — no source changes)
+    for (const r of urlResults) {
+      if (!r.error) enrichMeta(r);
+    }
 
     // Sort: errors first, then by height desc, then bytes desc, then priority
     urlResults.sort((a, b) => {
