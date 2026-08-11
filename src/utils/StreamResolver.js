@@ -76,6 +76,8 @@ function enrichMeta(urlResult) {
 
   // 6. Parse sub-source name from URL hostname
   // Skip if URL is a proxy URL (localhost or addon's own host)
+  // Skip hash-like hostnames (e.g., da194e3e41011e58ea95b0914c6212d3.example.com)
+  // Skip generic CDN prefixes (e.g., cdn, www, api)
   if (!meta.serverName && !meta.subSource) {
     try {
       const hostname = new URL(url).hostname;
@@ -83,7 +85,16 @@ function enrichMeta(urlResult) {
       if (hostname !== 'localhost' && !hostname.includes('127.0.0.1') &&
           !urlLower.includes('/proxy?')) {
         const shortName = hostname.replace(/^www\./, '').split('.')[0];
-        if (shortName && shortName.length > 2 && shortName !== meta.sourceLabel?.toLowerCase()) {
+        // Only use shortName if it's a meaningful provider name:
+        // - Not a hash (hex strings longer than 12 chars)
+        // - Not a generic CDN/api prefix
+        // - Not too short (<= 2 chars)
+        // - Not the same as the source label
+        const isHash = /^[a-f0-9]{12,}$/i.test(shortName);
+        const isGeneric = ['cdn', 'api', 'www', 'static', 'media', 'video', 'stream', 'proxy'].includes(shortName.toLowerCase());
+        const hasCdnInName = /cdn/i.test(shortName);
+        if (shortName && shortName.length > 2 && !isHash && !isGeneric && !hasCdnInName &&
+            shortName.toLowerCase() !== meta.sourceLabel?.toLowerCase()) {
           meta.subSource = shortName.charAt(0).toUpperCase() + shortName.slice(1);
         }
       }
@@ -205,12 +216,12 @@ export class StreamResolver {
 
   buildName(urlResult) {
     const meta = urlResult.meta || {};
-    const parts = ['PhoeniX'];
+    const parts = ['🐦‍🔥 PhoeniX'];
 
-    // Quality emoji + resolution label
+    // Quality label (phoenix emoji for all resolutions)
     const height = meta.height;
-    if (height >= 2160) parts.push('❄️ 4K');
-    else if (height >= 1080) parts.push('🧊 1080p');
+    if (height >= 2160) parts.push('4K');
+    else if (height >= 1080) parts.push('1080p');
     else if (height >= 720) parts.push('720p');
     else if (height >= 480) parts.push('480p');
     else if (height > 0) parts.push(getClosestResolution(height));
