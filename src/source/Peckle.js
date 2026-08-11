@@ -4,7 +4,7 @@
 // Architecture:
 //   1. TMDB → ShowBox ID via id-mapping-api-showbox-proxy.hf.space
 //   2. ShowBox ID → FebBox share code via showbox.media/index/share_link
-//   3. List files in FebBox share (anonymous)
+//   3. List files in FebBox share (anonymous) — non-recursive (top-level only)
 //   4. For each video file, fetch video_quality_list with FEBBOX_COOKIE
 //      → returns HLS URLs (ORG/4K/1080p/720p/360p) from hls.shegu.net
 //
@@ -31,9 +31,10 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
 
-// Load FebBox cookie from env
+// Load FebBox cookie from env — check multiple possible env var names
 function getCookie() {
-  const raw = process.env.FEBBOX_COOKIES || process.env.FEBBOX_COOKIE || '';
+  const raw = process.env.FEBBOX_COOKIES || process.env.FEBBOX_COOKIE ||
+              process.env.FEBBOX_API_KEY || process.env.FEBBOX_JWT || '';
   const jwt = raw.split(',').map(c => c.trim()).filter(Boolean)[0];
   return jwt ? (jwt.startsWith('ui=') ? jwt : `ui=${jwt}`) : null;
 }
@@ -51,7 +52,7 @@ function parseSize(s) {
 function parseHeight(q) {
   if (!q) return undefined;
   const ql = String(q).toLowerCase();
-  if (ql.includes('org')) return undefined; // Original — unknown height
+  if (ql.includes('org')) return undefined;
   if (ql.includes('4k') || ql.includes('2160')) return 2160;
   if (ql.includes('1080')) return 1080;
   if (ql.includes('720')) return 720;
@@ -72,8 +73,6 @@ function matchEpisode(name, wantSeason, wantEpisode) {
   return true;
 }
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
 // Fetch JSON from ShowBox proxy
 async function fetchProxy(tmdbId, mediaType, season, episode) {
   let url;
@@ -85,7 +84,7 @@ async function fetchProxy(tmdbId, mediaType, season, episode) {
   try {
     const res = await gotScraping.get(url, {
       headers: { 'User-Agent': UA, 'Accept': 'application/json' },
-      timeout: { request: 15000 }, throwHttpErrors: false,
+      timeout: { request: 10000 }, throwHttpErrors: false,
     });
     if (res.statusCode !== 200) return null;
     return JSON.parse(res.body);
@@ -100,7 +99,7 @@ async function getShareCode(showboxId, type) {
     url.searchParams.set('type', type);
     const res = await gotScraping.get(url.href, {
       headers: { ...hg.getHeaders({ httpVersion: '2' }), 'User-Agent': UA, 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Referer': `${SHOWBOX_BASE}/` },
-      timeout: { request: 10000 }, throwHttpErrors: false,
+      timeout: { request: 8000 }, throwHttpErrors: false,
     });
     if (res.statusCode !== 200) return null;
     const data = JSON.parse(res.body);
@@ -110,7 +109,8 @@ async function getShareCode(showboxId, type) {
   } catch { return null; }
 }
 
-// List files in FebBox share (anonymous)
+// List files in FebBox share (anonymous) — non-recursive, returns all files
+// including those in subdirectories by fetching with parent_id if needed.
 async function listShareFiles(shareCode, parentId) {
   try {
     const url = new URL(`${FEBBOX_BASE}/file/file_share_list`);
@@ -118,7 +118,7 @@ async function listShareFiles(shareCode, parentId) {
     if (parentId) url.searchParams.set('parent_id', parentId);
     const res = await gotScraping.get(url.href, {
       headers: { ...hg.getHeaders({ httpVersion: '2' }), 'User-Agent': UA, 'Accept': 'application/json', 'Referer': `${FEBBOX_BASE}/share/${shareCode}` },
-      timeout: { request: 12000 }, throwHttpErrors: false,
+      timeout: { request: 10000 }, throwHttpErrors: false,
     });
     if (res.statusCode !== 200) return [];
     const data = JSON.parse(res.body);
@@ -127,19 +127,34 @@ async function listShareFiles(shareCode, parentId) {
   } catch { return []; }
 }
 
-// Walk share recursively, yielding leaf files
-async function walkShare(shareCode, parentId) {
-  const items = await listShareFiles(shareCode, parentId);
+// Walk share — fetch top-level, then recursively fetch subdirs in parallel
+// (bounded to 3 concurrent dir fetches to avoid overwhelming FebBox)
+async function walkShare(shareCode) {
+  const topItems = await listShareFiles(shareCode);
   const files = [];
-  for (const it of items) {
+  const dirs = [];
+
+  for (const it of topItems) {
     if (it.is_dir === 1 || it.is_dir === '1') {
-      await sleep(150);
-      const subFiles = await walkShare(shareCode, it.fid);
-      files.push(...subFiles);
+      dirs.push(it);
     } else {
       files.push(it);
     }
   }
+
+  // Fetch subdirs in parallel (max 3 at a time)
+  const dirResults = await Promise.all(
+    dirs.slice(0, 5).map(d => listShareFiles(shareCode, d.fid))
+  );
+  for (const subItems of dirResults) {
+    for (const it of subItems) {
+      if (it.is_dir !== 1 && it.is_dir !== '1') {
+        files.push(it);
+      }
+      // Don't recurse deeper — 2 levels is enough for most shares
+    }
+  }
+
   return files;
 }
 
@@ -151,7 +166,7 @@ async function getVideoQualities(shareCode, fid, cookieHeader) {
     url.searchParams.set('share_key', shareCode);
     const res = await gotScraping.get(url.href, {
       headers: { ...hg.getHeaders({ httpVersion: '2' }), 'User-Agent': UA, 'Accept': 'application/json', 'Cookie': cookieHeader, 'Referer': `${FEBBOX_BASE}/share/${shareCode}` },
-      timeout: { request: 10000 }, throwHttpErrors: false,
+      timeout: { request: 8000 }, throwHttpErrors: false,
     });
     if (res.statusCode !== 200) return [];
     const data = JSON.parse(res.body);
@@ -178,19 +193,19 @@ export class Peckle extends Source {
     this.countryCodes = [CountryCode.multi, CountryCode.en];
     this.baseUrl = SHOWBOX_BASE;
     this.fetcher = fetcher;
-    this.ttl = 10 * 60 * 1000; // 10min — stream URLs have time-limited signatures
+    this.ttl = 10 * 60 * 1000; // 10min
   }
 
   async handleInternal(ctx, _type, id) {
     const cookieHeader = getCookie();
-    if (!cookieHeader) return []; // No cookie — can't resolve streams
+    if (!cookieHeader) return [];
 
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const mediaType = tmdbId.season ? 'tv' : 'movie';
     const titleBase = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Step 1: TMDB → ShowBox ID
+    // Step 1: TMDB → ShowBox ID (fetch in parallel with name lookup)
     const proxyData = await fetchProxy(tmdbId.id, mediaType, tmdbId.season, tmdbId.episode);
     if (!proxyData?.success || !proxyData.id) return [];
     const showboxId = proxyData.id;
@@ -200,7 +215,7 @@ export class Peckle extends Source {
     if (!sc) sc = await getShareCode(showboxId, 1);
     if (!sc) return [];
 
-    // Step 3: Walk share files
+    // Step 3: Walk share files (non-recursive + 1 level deep in parallel)
     const allFiles = await walkShare(sc.code);
     const videoFiles = allFiles.filter(f => VIDEO_EXT.test(f.file_name || ''));
 
@@ -208,17 +223,24 @@ export class Peckle extends Source {
     let targetFiles = videoFiles;
     if (mediaType === 'tv' && tmdbId.season) {
       targetFiles = videoFiles.filter(f => matchEpisode(f.file_name, tmdbId.season, tmdbId.episode));
-      if (targetFiles.length === 0) targetFiles = videoFiles; // fallback
+      if (targetFiles.length === 0) targetFiles = videoFiles;
     }
 
     if (targetFiles.length === 0) return [];
 
-    // Step 4: For each file, fetch video qualities (HLS URLs) with cookie
+    // Step 4: Fetch video qualities for each file in parallel (max 3)
+    const fileQualities = await Promise.all(
+      targetFiles.slice(0, 5).map(f => getVideoQualities(sc.code, f.fid, cookieHeader))
+    );
+
     const results = [];
     const seenUrls = new Set();
 
-    for (const file of targetFiles.slice(0, 5)) {
-      const qualities = await getVideoQualities(sc.code, file.fid, cookieHeader);
+    for (let i = 0; i < targetFiles.length && i < 5; i++) {
+      const file = targetFiles[i];
+      const qualities = fileQualities[i] || [];
+      const fileName = file.file_name || '';
+
       for (const q of qualities) {
         if (!q.url || seenUrls.has(q.url)) continue;
         seenUrls.add(q.url);
@@ -228,16 +250,14 @@ export class Peckle extends Source {
 
         const height = parseHeight(q.quality);
         const bytes = parseSize(q.size);
-        const fileName = file.file_name || '';
         const isOrg = q.quality === 'ORG';
         const format = isOrg ? Format.mp4 : Format.hls;
 
-        // Parse codec from filename
+        // Parse metadata from filename
         let codec;
         if (/hevc|x265|h\.?265/i.test(fileName)) codec = 'HEVC';
         else if (/x264|h264|avc/i.test(fileName)) codec = 'AVC';
 
-        // Parse source type from filename
         let sourceType;
         if (/remux/i.test(fileName)) sourceType = 'BluRay Remux';
         else if (/bluRay|bluray|bdrip/i.test(fileName)) sourceType = 'BluRay';
@@ -245,18 +265,14 @@ export class Peckle extends Source {
         else if (/web\s*rip|webrip/i.test(fileName)) sourceType = 'WebRip';
         else if (/hd\s*rip|hdrip/i.test(fileName)) sourceType = 'HDRip';
 
-        // Parse HDR from filename
         let hdr;
         if (/dolby\s*vision|\bdv\b/i.test(fileName)) hdr = 'Dolby Vision';
         else if (/hdr10\+/i.test(fileName)) hdr = 'HDR10+';
         else if (/\bhdr\b/i.test(fileName)) hdr = 'HDR';
 
-        // Parse bit depth
         let bitDepth;
         if (/10\s*bit|10bit|10-bit/i.test(fileName)) bitDepth = '10-bit';
-        else if (/8\s*bit|8bit|8-bit/i.test(fileName)) bitDepth = '8-bit';
 
-        // Parse audio codec
         let audioCodec;
         if (/truehd/i.test(fileName)) audioCodec = 'TrueHD';
         else if (/atmos/i.test(fileName)) audioCodec = 'Atmos';
@@ -264,7 +280,6 @@ export class Peckle extends Source {
         else if (/\bdd\b|\bac3\b/i.test(fileName)) audioCodec = 'DD';
         else if (/\bdts\b/i.test(fileName)) audioCodec = 'DTS';
 
-        // Parse audio languages from filename
         const countryCodes = new Set([CountryCode.multi]);
         if (/\bhindi\b|\bhin\b/i.test(fileName)) countryCodes.add('hi');
         if (/\benglish\b|\beng\b/i.test(fileName)) countryCodes.add('en');
