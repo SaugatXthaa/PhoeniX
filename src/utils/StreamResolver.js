@@ -39,6 +39,21 @@ function enrichMeta(urlResult) {
     }
   }
 
+  // 1b. If still no height, try parsing from URL path
+  // Common patterns: /1080/, /720/, /480/, /hls3/01/0720, /quality=1080
+  if (!meta.height) {
+    const urlHeightMatch = urlLower.match(/\/(1080|720|480|360|2160)\b/);
+    if (urlHeightMatch) meta.height = parseInt(urlHeightMatch[1]);
+  }
+
+  // 1c. If still no height and it's a video stream (HLS/MP4), default to 1080p
+  // Most anime/movie HLS streams are 1080p — this ensures all sources show
+  // a quality label in the enriched metadata.
+  if (!meta.height && (urlResult.format === Format.hls || urlResult.format === Format.mp4 ||
+      urlLower.includes('.m3u8') || urlLower.includes('/hls') || urlLower.includes('.mp4') || urlLower.includes('.mkv'))) {
+    meta.height = 1080;
+  }
+
   // 2. Parse video codec from title if not in meta
   if (!meta.codec && !meta.codecs) {
     if (/\bhevc\b|\bx265\b|\bh\.?265\b/i.test(title)) meta.codec = 'HEVC';
