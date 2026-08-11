@@ -102,17 +102,33 @@ export class ZinkMovies extends Source {
           candidates.push({ href, text, altAttr });
         });
 
-        // Try exact match first
+        // Try exact match first — require candidate text to be at least 60% of name length
+        // to prevent "the last house" from matching "the last wish" (short text match)
         for (const c of candidates) {
-          if (c.text === nameNorm || c.altAttr === nameNorm ||
-              c.text.includes(nameNorm) || c.altAttr.includes(nameNorm) ||
-              nameNorm.includes(c.text) || nameNorm.includes(c.altAttr)) {
+          if (c.text === nameNorm || c.altAttr === nameNorm) {
+            return c.href;
+          }
+          // Contains match — but only if candidate text is substantial
+          if (c.text.length > 10 && (c.text.includes(nameNorm) || c.altAttr.includes(nameNorm))) {
+            return c.href;
+          }
+          // Name contains candidate — but only if candidate is at least 60% of name length
+          // This prevents "the last" (8 chars) from matching "the last house" (15 chars)
+          if (c.text.length > 5 && c.text.length >= nameNorm.length * 0.6 &&
+              nameNorm.includes(c.text)) {
+            return c.href;
+          }
+          if (c.altAttr.length > 5 && c.altAttr.length >= nameNorm.length * 0.6 &&
+              nameNorm.includes(c.altAttr)) {
             return c.href;
           }
         }
 
         // Try partial word match — match first 2-3 significant words
-        const nameWords = nameNorm.split(/\s+/).filter(w => w.length > 2);
+        // Filter out common stop words ("the", "a", "an", "last", "house" etc.)
+        // that cause false matches
+        const STOP_WORDS = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'is', 'it', 'my', 'last', 'first', 'new', 'day', 'night', 'house', 'blood', 'movie', 'story']);
+        const nameWords = nameNorm.split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.has(w));
         if (nameWords.length >= 2) {
           const firstWords = nameWords.slice(0, Math.min(3, nameWords.length)).join(' ');
           for (const c of candidates) {
@@ -122,20 +138,13 @@ export class ZinkMovies extends Source {
           }
         }
 
-        // Try single most significant word (e.g., "Spider" from "Spider-Man: No Way Home")
-        if (nameWords.length > 0) {
+        // Try single significant word match — ONLY with year disambiguation
+        // This prevents "The Last House" from matching "Rambo: Last Blood"
+        if (nameWords.length > 0 && year) {
           const firstWord = nameWords[0];
           for (const c of candidates) {
-            if (c.text.includes(firstWord) || c.altAttr.includes(firstWord)) {
-              // Year disambiguation — prefer matching year
-              if (year && (c.text.includes(String(year)) || c.altAttr.includes(String(year)))) {
-                return c.href;
-              }
-            }
-          }
-          // If no year match, return first match of first word
-          for (const c of candidates) {
-            if (c.text.includes(firstWord) || c.altAttr.includes(firstWord)) {
+            if ((c.text.includes(firstWord) || c.altAttr.includes(firstWord)) &&
+                (c.text.includes(String(year)) || c.altAttr.includes(String(year)))) {
               return c.href;
             }
           }
@@ -143,6 +152,7 @@ export class ZinkMovies extends Source {
       } catch { /* continue to next query */ }
     }
 
+    console.error('[zinkmovies] findPost: no match for "' + name + '" (' + year + ')');
     return null;
   }
 
