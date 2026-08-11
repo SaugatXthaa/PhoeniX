@@ -255,8 +255,30 @@ export class StreamResolver {
       if (seen.has(urlKey)) continue;
       seen.add(urlKey);
 
+      // Route CDN URLs through /proxy if they're not already proxied
+      // and don't have proxyHeaders set. CDN servers (cdn.valentine.guru,
+      // cdn.fukggl.buzz, etc.) often reset connections when Stremio's
+      // ffmpeg player fetches them directly.
+      let finalUrl = urlResult.url;
+      let finalMeta = urlResult.meta;
+      const isAlreadyProxied = finalUrl.href.includes('/proxy?');
+      const hasProxyHeaders = !!urlResult.requestHeaders;
+      // Route CDN/streaming URLs through /proxy to avoid "Connection reset by peer"
+      // errors from Stremio's ffmpeg player. Includes:
+      // - cdn.* (valentine.guru, fukggl.buzz, etc.)
+      // - *.workers.dev (cloud-dl, azurecloud, etc.)
+      // - hubcloud.cx, r2.cloudflarestorage.com (HubCloud CDNs)
+      // - pixeldrain.dev, fileshub, cdnfilm, etc.
+      const isCdnUrl = /cdn\.|\.workers\.dev|hubcloud|r2\.cloudflarestorage|azurecloud|valentine|fukggl|pixeldrain|fileshub|cdnfilm|videoco|jioc|goldmine|movies\./.test(finalUrl.hostname);
+
+      if (!isAlreadyProxied && !hasProxyHeaders && isCdnUrl) {
+        const proxyUrl = new URL('/proxy', ctx.hostUrl);
+        proxyUrl.searchParams.set('url', finalUrl.href);
+        finalUrl = proxyUrl;
+      }
+
       const stream = {
-        ...this.buildUrl(urlResult),
+        ...(urlResult.isExternal ? { externalUrl: finalUrl.href } : { url: finalUrl.href }),
         name: this.buildName(urlResult),
         title: this.buildTitle(urlResult),
         behaviorHints: {
