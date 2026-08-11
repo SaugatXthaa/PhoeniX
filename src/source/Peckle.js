@@ -198,7 +198,10 @@ export class Peckle extends Source {
 
   async handleInternal(ctx, _type, id) {
     const cookieHeader = getCookie();
-    if (!cookieHeader) return [];
+    if (!cookieHeader) {
+      console.error('[peckle] No FEBBOX_COOKIE env var set');
+      return [];
+    }
 
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
 
@@ -212,7 +215,10 @@ export class Peckle extends Source {
     const mediaType = tmdbId.season ? 'tv' : 'movie';
     const titleBase = (name || `TMDB ${tmdbId.id}`) + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year || ''})`);
 
-    if (!proxyData?.success || !proxyData.id) return [];
+    if (!proxyData?.success || !proxyData.id) {
+      console.error('[peckle] Proxy lookup failed for TMDB', tmdbId.id);
+      return [];
+    }
     const showboxId = proxyData.id;
 
     // Step 2: ShowBox ID → FebBox share code

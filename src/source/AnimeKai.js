@@ -96,13 +96,22 @@ export class AnimeKai extends Source {
     });
     if (!results.length) return [];
 
-    // Pick best match
+    // Pick best match — require fuzzy score >= 60 to avoid false matches
     const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     const nameNorm = normalize(name);
-    let best = results[0];
+    let best = null;
+    let bestScore = 0;
     for (const r of results) {
-      if (normalize(r.title) === nameNorm) { best = r; break; }
+      const tNorm = normalize(r.title);
+      if (!tNorm) continue;
+      let score = 0;
+      if (tNorm === nameNorm) score = 100;
+      else if (tNorm.includes(nameNorm) || nameNorm.includes(tNorm)) {
+        score = Math.min(tNorm.length, nameNorm.length) / Math.max(tNorm.length, nameNorm.length) * 90;
+      }
+      if (score > bestScore) { bestScore = score; best = r; }
     }
+    if (!best || bestScore < 60) return [];
 
     // Step 2: Get anime info (POST_ID, MAL_ID) via curl
     const watchUrl = `${BASE}/watch/${best.slug}/`;
