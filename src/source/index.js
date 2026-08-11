@@ -71,6 +71,7 @@ import { AniPriv8 } from './AniPriv8.js';
 import { ZXCStream } from './ZXCStream.js';
 import { HDGharTV } from './HDGharTV.js';
 import { Cinejoy } from './Cinejoy.js';
+import { Pantyflix } from './Pantyflix.js';
 
 export { Source } from './Source.js';
 
@@ -170,5 +171,7 @@ export const createSources = (fetcher) => {
     new HDGharTV(fetcher),
     // cinejoy.to — movies/series via shegu.st encrypted API + scrypt PoW (4K/1080p/720p/360p)
     new Cinejoy(fetcher),
+    // pantyflix.org — movies/series/anime via /api/streamrip/download (direct MP4/MKV)
+    new Pantyflix(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };

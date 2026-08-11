@@ -49,6 +49,9 @@ import { HDGharTV as HDGharTVExtractor } from './HDGharTV.js';
 import { AniPriv8 as AniPriv8Extractor } from './AniPriv8.js';
 // Cinejoy — routes help.earthcleaner.cc HLS through /proxy with Referer
 import { Cinejoy as CinejoyExtractor } from './Cinejoy.js';
+// Pantyflix — passthrough for direct MP4/MKV URLs (must come before Netlio
+// to prevent Netlio from claiming *.workers.dev URLs from Pantyflix source)
+import { Pantyflix as PantyflixExtractor } from './Pantyflix.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -72,6 +75,8 @@ export const createExtractors = (fetcher, logger) => {
     new AniPriv8Extractor(fetcher, logger),
     // Cinejoy — routes help.earthcleaner.cc HLS through /proxy with Referer
     new CinejoyExtractor(fetcher, logger),
+    // Pantyflix — passthrough for direct MP4/MKV URLs (must come before Netlio)
+    new PantyflixExtractor(fetcher, logger),
     // Netlio — passthrough for direct HLS URLs (claim before ExternalUrl)
     new Netlio(fetcher, logger),
     // AnimeDirect — passthrough for anime HLS/MP4 URLs
