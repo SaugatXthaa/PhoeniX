@@ -33,15 +33,11 @@ export class AcerMovies extends Extractor {
     return url.hostname === 'video-downloads.googleusercontent.com';
   }
 
-  async extractInternal(ctx, url, meta) {
-    // Route through /proxy to enable Range-request seeking.
-    // The /proxy endpoint passes through Range headers and returns 206
-    // responses with Content-Range, which Stremio needs for seeking.
-    const proxyUrl = new URL('/proxy', ctx.hostUrl);
-    proxyUrl.searchParams.set('url', url.href);
-
+  async extractInternal(_ctx, url, meta) {
+    // Return direct URL — googleusercontent.com supports Range requests
+    // directly. Proxying causes "network connection was lost" on downloads.
     return [{
-      url: proxyUrl,
+      url,
       format: Format.mp4,
       label: this.label,
       meta: { ...meta },

@@ -263,15 +263,13 @@ export class StreamResolver {
       let finalMeta = urlResult.meta;
       const isAlreadyProxied = finalUrl.href.includes('/proxy?');
       const hasProxyHeaders = !!urlResult.requestHeaders;
-      // Route CDN/streaming URLs through /proxy to avoid "Connection reset by peer"
-      // errors from Stremio's ffmpeg player. Includes:
-      // - cdn.* (valentine.guru, fukggl.buzz, etc.)
-      // - *.workers.dev (cloud-dl, azurecloud, etc.)
-      // - hubcloud.cx, r2.cloudflarestorage.com (HubCloud CDNs)
-      // - pixeldrain.dev, fileshub, cdnfilm, etc.
-      const isCdnUrl = /cdn\.|\.workers\.dev|hubcloud|r2\.cloudflarestorage|azurecloud|valentine|fukggl|pixeldrain|fileshub|cdnfilm|videoco|jioc|goldmine|movies\./.test(finalUrl.hostname);
-
-      if (!isAlreadyProxied && !hasProxyHeaders && isCdnUrl) {
+      // Route URLs through /proxy ONLY if they are known to fail with direct access.
+      // Proxying everything causes "network connection was lost" on Render when
+      // downloading large files — Render kills long-running proxy connections.
+      // Only proxy CDNs that return "Connection reset by peer" to Stremio's player.
+      const needsProxy = /valentine|fukggl/.test(finalUrl.hostname);
+      
+      if (!isAlreadyProxied && !hasProxyHeaders && needsProxy) {
         const proxyUrl = new URL('/proxy', ctx.hostUrl);
         proxyUrl.searchParams.set('url', finalUrl.href);
         finalUrl = proxyUrl;

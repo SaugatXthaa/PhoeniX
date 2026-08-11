@@ -81,15 +81,12 @@ export class DirectStream extends Extractor {
     return isDirectCdnHost(url.hostname);
   }
 
-  async extractInternal(ctx, url, meta) {
-    // Route through /proxy for reliable playback and seeking support.
-    // Some CDNs (hakunaymatata.com) block direct Stremio requests or
-    // don't support Range headers properly without a proxy.
-    const proxyUrl = new URL('/proxy', ctx.hostUrl);
-    proxyUrl.searchParams.set('url', url.href);
-
+  async extractInternal(_ctx, url, meta) {
+    // Return direct URL — these CDNs support direct access with Range headers.
+    // Proxying causes "network connection was lost" on large file downloads
+    // because Render kills long-running proxy connections.
     return [{
-      url: proxyUrl,
+      url,
       format: inferFormat(url),
       label: this.label,
       meta: { ...meta },
