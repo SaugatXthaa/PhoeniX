@@ -70,9 +70,14 @@ export class ZinkMovies extends Source {
   }
 
   async findPost(ctx, name, year) {
+    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const nameNorm = normalize(name);
+
+    // Build search queries — try multiple variants
     const queries = [
       name,
       name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(),
+      name.split(/[:\-\s]+/).slice(0, 2).join(' '), // e.g. "Spider-Man" → "Spider Man"
     ].filter((q, i, arr) => q && arr.indexOf(q) === i);
 
     for (const query of queries) {
@@ -84,45 +89,57 @@ export class ZinkMovies extends Source {
         });
 
         const $ = cheerio.load(html);
-        // Normalize: remove punctuation and extra spaces for matching
-        const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-        const nameNorm = normalize(name);
 
-        // Find post links (exclude non-post URLs)
-        let bestMatch = null;
+        // Collect all movie page URLs with their text
+        const candidates = [];
         $('a[href*="/movies/"]').each((_i, el) => {
-          if (bestMatch) return;
           const href = $(el).attr('href');
-          if (!href || href.includes('category/') || href.includes('?s=') || href === BASE_URL + '/movies/' || href === '/movies/') return;
-
+          if (!href || href.includes('category/') || href.includes('?s=') ||
+              href === BASE_URL + '/movies/' || href === '/movies/' ||
+              href.endsWith('/movies/')) return;
           const text = normalize($(el).text());
-          const titleAttr = normalize($(el).attr('title') || '');
           const altAttr = normalize($(el).find('img').attr('alt') || '');
-
-          if (text.includes(nameNorm) || titleAttr.includes(nameNorm) || altAttr.includes(nameNorm)) {
-            bestMatch = href;
-          }
+          candidates.push({ href, text, altAttr });
         });
 
-        // Try partial word match
-        if (!bestMatch) {
-          const nameWords = nameNorm.split(/\s+/).filter(w => w.length > 2);
-          const firstWords = nameWords.slice(0, Math.min(3, nameWords.length)).join(' ');
-          if (firstWords.length > 3) {
-            $('a[href*="/movies/"]').each((_i, el) => {
-              if (bestMatch) return;
-              const href = $(el).attr('href');
-              if (!href || href.includes('category/') || href.includes('?s=') || href === BASE_URL + '/movies/' || href === '/movies/') return;
-              const text = normalize($(el).text());
-              const altAttr = normalize($(el).find('img').attr('alt') || '');
-              if (text.includes(firstWords) || altAttr.includes(firstWords)) {
-                bestMatch = href;
-              }
-            });
+        // Try exact match first
+        for (const c of candidates) {
+          if (c.text === nameNorm || c.altAttr === nameNorm ||
+              c.text.includes(nameNorm) || c.altAttr.includes(nameNorm) ||
+              nameNorm.includes(c.text) || nameNorm.includes(c.altAttr)) {
+            return c.href;
           }
         }
 
-        if (bestMatch) return bestMatch;
+        // Try partial word match — match first 2-3 significant words
+        const nameWords = nameNorm.split(/\s+/).filter(w => w.length > 2);
+        if (nameWords.length >= 2) {
+          const firstWords = nameWords.slice(0, Math.min(3, nameWords.length)).join(' ');
+          for (const c of candidates) {
+            if (c.text.includes(firstWords) || c.altAttr.includes(firstWords)) {
+              return c.href;
+            }
+          }
+        }
+
+        // Try single most significant word (e.g., "Spider" from "Spider-Man: No Way Home")
+        if (nameWords.length > 0) {
+          const firstWord = nameWords[0];
+          for (const c of candidates) {
+            if (c.text.includes(firstWord) || c.altAttr.includes(firstWord)) {
+              // Year disambiguation — prefer matching year
+              if (year && (c.text.includes(String(year)) || c.altAttr.includes(String(year)))) {
+                return c.href;
+              }
+            }
+          }
+          // If no year match, return first match of first word
+          for (const c of candidates) {
+            if (c.text.includes(firstWord) || c.altAttr.includes(firstWord)) {
+              return c.href;
+            }
+          }
+        }
       } catch { /* continue to next query */ }
     }
 
