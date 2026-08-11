@@ -54,6 +54,8 @@ import { Cinejoy as CinejoyExtractor } from './Cinejoy.js';
 import { Pantyflix as PantyflixExtractor } from './Pantyflix.js';
 // AnimeGG — routes animegg.org MP4 through /proxy with Referer
 import { AnimeGG as AnimeGGExtractor } from './AnimeGG.js';
+// 2Peckle — passthrough for shegu.net direct MKV/HLS URLs
+import { Peckle as PeckleExtractor } from './Peckle.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -81,6 +83,8 @@ export const createExtractors = (fetcher, logger) => {
     new PantyflixExtractor(fetcher, logger),
     // AnimeGG — routes animegg.org MP4 through /proxy with Referer
     new AnimeGGExtractor(fetcher, logger),
+    // 2Peckle — passthrough for shegu.net direct MKV/HLS URLs
+    new PeckleExtractor(fetcher, logger),
     // Netlio — passthrough for direct HLS URLs (claim before ExternalUrl)
     new Netlio(fetcher, logger),
     // AnimeDirect — passthrough for anime HLS/MP4 URLs

@@ -73,6 +73,7 @@ import { HDGharTV } from './HDGharTV.js';
 import { Cinejoy } from './Cinejoy.js';
 import { Pantyflix } from './Pantyflix.js';
 import { AnimeGG } from './AnimeGG.js';
+import { Peckle } from './Peckle.js';
 
 export { Source } from './Source.js';
 
@@ -176,5 +177,7 @@ export const createSources = (fetcher) => {
     new Pantyflix(fetcher),
     // animegg.org — anime sub+dub direct MP4 (720p/1080p)
     new AnimeGG(fetcher),
+    // 2peckle / ShowBox — movies/series via FebBox (requires FEBBOX_COOKIE)
+    new Peckle(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
