@@ -201,12 +201,17 @@ export class Peckle extends Source {
     if (!cookieHeader) return [];
 
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
-    const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
-    const mediaType = tmdbId.season ? 'tv' : 'movie';
-    const titleBase = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Step 1: TMDB → ShowBox ID (fetch in parallel with name lookup)
-    const proxyData = await fetchProxy(tmdbId.id, mediaType, tmdbId.season, tmdbId.episode);
+    // Fetch TMDB name + ShowBox proxy ID in parallel (saves ~2s)
+    const [tmdbInfo, proxyData] = await Promise.all([
+      getTmdbNameAndYear(this.fetcher, ctx, tmdbId).catch(() => [null, null]),
+      fetchProxy(tmdbId.id, tmdbId.season ? 'tv' : 'movie', tmdbId.season, tmdbId.episode),
+    ]);
+
+    const [name, year] = tmdbInfo;
+    const mediaType = tmdbId.season ? 'tv' : 'movie';
+    const titleBase = (name || `TMDB ${tmdbId.id}`) + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year || ''})`);
+
     if (!proxyData?.success || !proxyData.id) return [];
     const showboxId = proxyData.id;
 
@@ -215,29 +220,37 @@ export class Peckle extends Source {
     if (!sc) sc = await getShareCode(showboxId, 1);
     if (!sc) return [];
 
-    // Step 3: Walk share files (non-recursive + 1 level deep in parallel)
-    const allFiles = await walkShare(sc.code);
-    const videoFiles = allFiles.filter(f => VIDEO_EXT.test(f.file_name || ''));
+    // Step 3: List top-level files only (skip subdirs for speed)
+    const topFiles = await listShareFiles(sc.code);
+    const videoFiles = topFiles.filter(f => VIDEO_EXT.test(f.file_name || ''));
+
+    // If no video files at top level, try walking one level deep
+    let targetFiles = videoFiles;
+    if (targetFiles.length === 0) {
+      const allFiles = await walkShare(sc.code);
+      targetFiles = allFiles.filter(f => VIDEO_EXT.test(f.file_name || ''));
+    }
 
     // For TV: filter by SxxExx
-    let targetFiles = videoFiles;
     if (mediaType === 'tv' && tmdbId.season) {
-      targetFiles = videoFiles.filter(f => matchEpisode(f.file_name, tmdbId.season, tmdbId.episode));
-      if (targetFiles.length === 0) targetFiles = videoFiles;
+      const filtered = targetFiles.filter(f => matchEpisode(f.file_name, tmdbId.season, tmdbId.episode));
+      if (filtered.length > 0) targetFiles = filtered;
     }
 
     if (targetFiles.length === 0) return [];
 
-    // Step 4: Fetch video qualities for each file in parallel (max 3)
+    // Step 4: Fetch video qualities for first 2 files only (parallel)
+    // Limiting to 2 keeps total time under 15s on Render's free tier
+    const filesToProcess = targetFiles.slice(0, 2);
     const fileQualities = await Promise.all(
-      targetFiles.slice(0, 5).map(f => getVideoQualities(sc.code, f.fid, cookieHeader))
+      filesToProcess.map(f => getVideoQualities(sc.code, f.fid, cookieHeader))
     );
 
     const results = [];
     const seenUrls = new Set();
 
-    for (let i = 0; i < targetFiles.length && i < 5; i++) {
-      const file = targetFiles[i];
+    for (let i = 0; i < filesToProcess.length; i++) {
+      const file = filesToProcess[i];
       const qualities = fileQualities[i] || [];
       const fileName = file.file_name || '';
 
