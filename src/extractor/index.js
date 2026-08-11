@@ -52,6 +52,8 @@ import { Cinejoy as CinejoyExtractor } from './Cinejoy.js';
 // Pantyflix — passthrough for direct MP4/MKV URLs (must come before Netlio
 // to prevent Netlio from claiming *.workers.dev URLs from Pantyflix source)
 import { Pantyflix as PantyflixExtractor } from './Pantyflix.js';
+// AnimeGG — routes animegg.org MP4 through /proxy with Referer
+import { AnimeGG as AnimeGGExtractor } from './AnimeGG.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -77,6 +79,8 @@ export const createExtractors = (fetcher, logger) => {
     new CinejoyExtractor(fetcher, logger),
     // Pantyflix — passthrough for direct MP4/MKV URLs (must come before Netlio)
     new PantyflixExtractor(fetcher, logger),
+    // AnimeGG — routes animegg.org MP4 through /proxy with Referer
+    new AnimeGGExtractor(fetcher, logger),
     // Netlio — passthrough for direct HLS URLs (claim before ExternalUrl)
     new Netlio(fetcher, logger),
     // AnimeDirect — passthrough for anime HLS/MP4 URLs

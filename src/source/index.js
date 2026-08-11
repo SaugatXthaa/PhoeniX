@@ -72,6 +72,7 @@ import { ZXCStream } from './ZXCStream.js';
 import { HDGharTV } from './HDGharTV.js';
 import { Cinejoy } from './Cinejoy.js';
 import { Pantyflix } from './Pantyflix.js';
+import { AnimeGG } from './AnimeGG.js';
 
 export { Source } from './Source.js';
 
@@ -173,5 +174,7 @@ export const createSources = (fetcher) => {
     new Cinejoy(fetcher),
     // pantyflix.org — movies/series/anime via /api/streamrip/download (direct MP4/MKV)
     new Pantyflix(fetcher),
+    // animegg.org — anime sub+dub direct MP4 (720p/1080p)
+    new AnimeGG(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
