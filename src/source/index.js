@@ -18,10 +18,6 @@ import { Frembed } from './Frembed.js';
 import { FrenchCloud } from './FrenchCloud.js';
 import { HDHub4u } from './HDHub4u.js';
 import { HDHub4uNew } from './HDHub4uNew.js';
-import { HiAnime } from './HiAnime.js';
-// HiAnime removed — gn1r5n.org is a React SPA (can't extract server-side),
-// playmogo.com is DoodStream with Turnstile captcha. Produces 0 playable streams.
-// import { HiAnime } from './HiAnime.js';
 import { HomeCine } from './HomeCine.js';
 import { KinoGer } from './KinoGer.js';
 import { Kokoshka } from './Kokoshka.js';
@@ -74,6 +70,7 @@ import { Cinejoy } from './Cinejoy.js';
 import { Pantyflix } from './Pantyflix.js';
 import { AnimeGG } from './AnimeGG.js';
 import { Peckle } from './Peckle.js';
+import { HiAnime } from './HiAnime.js';
 
 export { Source } from './Source.js';
 
@@ -113,8 +110,6 @@ export const createSources = (fetcher) => {
     // anime
     new NineAnime(fetcher),
     new AnimeWorld(fetcher),
-    // HiAnime removed — gn1r5n.org is a React SPA (can't extract server-side),
-    // playmogo.com is DoodStream with Turnstile captcha. Produces 0 playable streams.
     new AnimeFlix(fetcher),
     new AniDB(fetcher),
     new AniNeko(fetcher),
@@ -179,5 +174,7 @@ export const createSources = (fetcher) => {
     new AnimeGG(fetcher),
     // 2peckle / ShowBox — movies/series via FebBox (requires FEBBOX_COOKIE)
     new Peckle(fetcher),
+    // hianime.at — anime sub+dub HLS (pure JS, no Playwright)
+    new HiAnime(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };

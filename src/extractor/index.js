@@ -56,6 +56,8 @@ import { Pantyflix as PantyflixExtractor } from './Pantyflix.js';
 import { AnimeGG as AnimeGGExtractor } from './AnimeGG.js';
 // 2Peckle — passthrough for shegu.net direct MKV/HLS URLs
 import { Peckle as PeckleExtractor } from './Peckle.js';
+// HiAnime — routes aniwatchtv.uk HLS through /proxy with Referer
+import { HiAnime as HiAnimeExtractor } from './HiAnime.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -85,6 +87,8 @@ export const createExtractors = (fetcher, logger) => {
     new AnimeGGExtractor(fetcher, logger),
     // 2Peckle — passthrough for shegu.net direct MKV/HLS URLs
     new PeckleExtractor(fetcher, logger),
+    // HiAnime — routes aniwatchtv.uk HLS through /proxy with Referer
+    new HiAnimeExtractor(fetcher, logger),
     // Netlio — passthrough for direct HLS URLs (claim before ExternalUrl)
     new Netlio(fetcher, logger),
     // AnimeDirect — passthrough for anime HLS/MP4 URLs
