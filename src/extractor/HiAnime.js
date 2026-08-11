@@ -5,11 +5,9 @@
 //   https://hls2.aniwatchtv.uk/v/.../master.m3u8
 //
 // These URLs require Referer: https://zokoanime.video/ to play.
-// The m3u8 has relative segment URLs which resolve against the m3u8's URL.
-//
-// We return the DIRECT m3u8 URL with proxyHeaders (Referer) instead of
-// routing through /proxy. This avoids Render proxy timeouts — Stremio's
-// internal player sends the Referer header natively.
+// Stremio's desktop player (ffmpeg) doesn't support proxyHeaders for HLS,
+// causing "Error in the pull function" / "Connection reset by peer".
+// Routing through /proxy ensures the Referer is sent correctly.
 
 import { Format } from '../types.js';
 import { Extractor } from './Extractor.js';
@@ -28,12 +26,18 @@ export class HiAnime extends Extractor {
     return meta?.sourceId === this.id;
   }
 
-  async extractInternal(_ctx, url, meta) {
-    // Return direct URL — Stremio handles Referer via behaviorHints.proxyHeaders
+  async extractInternal(ctx, url, meta) {
+    // Route through /proxy with Referer — Stremio's ffmpeg player doesn't
+    // support proxyHeaders for HLS streams, so we must proxy server-side.
+    // The proxy fetches the m3u8, rewrites relative segment URLs to /proxy
+    // URLs, and sends the Referer header when fetching segments.
+    const proxyUrl = new URL('/proxy', ctx.hostUrl);
+    proxyUrl.searchParams.set('url', url.href);
+    proxyUrl.searchParams.set('referer', REFERER);
+
     return [{
-      url,
+      url: proxyUrl,
       format: Format.hls,
-      requestHeaders: { Referer: REFERER },
       meta: { ...meta },
     }];
   }

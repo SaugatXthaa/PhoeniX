@@ -1,8 +1,6 @@
 // src/extractor/AnimeKai.js
 // Extractor for AnimeKai (animekai.at → zokoanime.video) HLS streams.
-//
-// Same as HiAnime — returns direct m3u8 URL with proxyHeaders (Referer).
-// Avoids Render proxy timeouts.
+// Same as HiAnime — routes through /proxy with Referer.
 
 import { Format } from '../types.js';
 import { Extractor } from './Extractor.js';
@@ -21,12 +19,14 @@ export class AnimeKai extends Extractor {
     return meta?.sourceId === this.id;
   }
 
-  async extractInternal(_ctx, url, meta) {
-    // Return direct URL — Stremio handles Referer via behaviorHints.proxyHeaders
+  async extractInternal(ctx, url, meta) {
+    const proxyUrl = new URL('/proxy', ctx.hostUrl);
+    proxyUrl.searchParams.set('url', url.href);
+    proxyUrl.searchParams.set('referer', REFERER);
+
     return [{
-      url,
+      url: proxyUrl,
       format: Format.hls,
-      requestHeaders: { Referer: REFERER },
       meta: { ...meta },
     }];
   }

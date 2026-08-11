@@ -6,7 +6,9 @@
 //   - dl.animeshrine.xyz (AnimeShrine)
 //   - bcdnxw.hakunaymatata.com (MovieBox)
 //
-// These URLs play directly without Referer/Auth — verified with Range requests.
+// Some of these URLs get "Connection reset by peer" when Stremio's ffmpeg
+// tries to fetch them directly. Routing through /proxy ensures the addon
+// fetches the content and streams it back to Stremio reliably.
 // Must come BEFORE Netlio to prevent Netlio from claiming *.workers.dev URLs.
 
 import { Format } from '../types.js';
@@ -25,12 +27,18 @@ export class Pantyflix extends Extractor {
     return meta?.sourceId === this.id;
   }
 
-  async extractInternal(_ctx, url, meta) {
-    // Pantyflix URLs are direct playable CDN URLs — pass through as-is.
-    // No Referer/Auth needed (verified with HTTP 206 + valid MKV/MP4 data).
+  async extractInternal(ctx, url, meta) {
+    // Route through /proxy to avoid "Connection reset by peer" errors
+    // when Stremio's ffmpeg player tries to fetch directly.
+    // The proxy fetches the content server-side and streams it back.
+    const proxyUrl = new URL('/proxy', ctx.hostUrl);
+    proxyUrl.searchParams.set('url', url.href);
+
+    // Determine format from URL
+    const isHls = url.pathname.includes('.m3u8') || url.pathname.includes('/hls/');
     return [{
-      url,
-      format: Format.mp4,
+      url: proxyUrl,
+      format: isHls ? Format.hls : Format.mp4,
       meta: { ...meta },
     }];
   }
