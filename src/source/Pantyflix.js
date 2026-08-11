@@ -177,7 +177,9 @@ export class Pantyflix extends Source {
       let parsed;
       try { parsed = new URL(directUrl); } catch { return null; }
 
-      const sourceName = d.source || d.server || 'Unknown';
+      // Use server name (has audio info like "Bollyflix [Hindi-English]") 
+      // instead of source name (just "Bollyflix") for richer metadata
+      const sourceName = d.server || d.source || 'Unknown';
       const height = parseHeight(d.quality);
       const bytes = parseSize(d.size);
       const countryCodes = inferCountryCodes(sourceName);
