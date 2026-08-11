@@ -110,15 +110,21 @@ function decryptBlob(blobBase64) {
 
 // Solve the scrypt PoW challenge with a time limit
 // On Render's free tier (0.1 CPU), scrypt is ~5-10x slower than local
-function solvePoW(challenge) {
+// Uses async setImmediate to avoid blocking the event loop (lets other
+// sources run in parallel while we solve the PoW)
+async function solvePoW(challenge) {
   const { b, s, n, r, p, d } = challenge;
   const saltHash = crypto.createHash('sha256').update(`pow2-salt|${s}|${b}`).digest();
   const maxmem = 128 * r * (n + p) * 2;
   const startTime = Date.now();
-  const TIME_LIMIT_MS = 8000; // 8s max — leave room for other steps
+  const TIME_LIMIT_MS = 12000; // 12s — Render free tier is slow
   for (let i = 0; i < 1000000; i++) {
-    if (i % 50 === 0 && Date.now() - startTime > TIME_LIMIT_MS) {
-      throw new Error('PoW solver timed out');
+    if (i % 10 === 0) {
+      if (Date.now() - startTime > TIME_LIMIT_MS) {
+        throw new Error('PoW solver timed out');
+      }
+      // Yield to event loop every 10 iterations so other sources can run
+      await new Promise(resolve => setImmediate(resolve));
     }
     const hash = crypto.scryptSync(`pow2|${b}|${s}|${i}`, saltHash, 32, { N: n, r, p, maxmem });
     let lz = 0;
@@ -228,7 +234,7 @@ export class Cinejoy extends Source {
 
     // Step 5: Solve PoW (scrypt — CPU intensive, ~1-5s)
     let c;
-    try { c = solvePoW(challenge); } catch { return []; }
+    try { c = await solvePoW(challenge); } catch { return []; }
 
     // Step 6: Build X-At token
     const xAt = Buffer.from(JSON.stringify({ ...challenge, c })).toString('base64');

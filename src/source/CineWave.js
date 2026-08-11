@@ -107,16 +107,14 @@ export class CineWave extends Source {
           const nameTitle = `${stream.name || ''} ${stream.description || ''}`;
 
           // Filter out streams that clearly belong to a different movie.
-          // The HdHub API sometimes returns mismatched content (e.g.,
-          // "Coriolanus" streams for an "Inception" request). We check if
-          // the stream name/title contains the requested movie name.
+          // Only apply filter when the stream text is long enough to contain
+          // a movie title (not just "HdHub VM 1080p" which is a server label).
           const streamText = (nameTitle + ' ' + (stream.title || '')).toLowerCase();
           const nameLower = name.toLowerCase();
           const nameNormalized = nameLower.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
           const streamNormalized = streamText.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-          // Skip if the stream text doesn't contain the movie name
-          // (but allow streams with no clear title text)
-          if (nameNormalized.length > 3 && streamNormalized.length > 10 &&
+          // Only filter if stream text is substantial (has a real title, not just quality info)
+          if (nameNormalized.length > 3 && streamNormalized.length > 30 &&
               !streamNormalized.includes(nameNormalized) &&
               !nameNormalized.includes(streamNormalized.split(' ').slice(0, 3).join(' '))) {
             continue;
@@ -175,7 +173,9 @@ export class CineWave extends Source {
         meta: {
           countryCodes: [CountryCode.multi],
           title: `${title} (${source.label})`,
-          vidking: vidkingMeta,
+          sourceId: 'cinewave',
+          sourceLabel: 'CineWave',
+          ...(vidkingMeta && { vidking: vidkingMeta }),
         },
       });
     }
