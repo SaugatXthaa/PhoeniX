@@ -53,6 +53,8 @@ export class VegaMovies extends Source {
       meta: {
         countryCodes: [CountryCode.multi, CountryCode.hi, CountryCode.en],
         title,
+        sourceId: this.id,
+        sourceLabel: this.label,
         ...(vidkingMeta && { vidking: vidkingMeta }),
       },
     }];

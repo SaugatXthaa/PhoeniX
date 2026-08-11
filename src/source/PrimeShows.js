@@ -42,25 +42,35 @@ export class PrimeShows extends Source {
     const results = [];
     const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
 
-    for (const server of SERVERS) {
-      const watchUrl = new URL(`${watchPath}?server=${server.key}`, this.baseUrl);
-      try {
+    // Fetch all servers in parallel for speed
+    const serverResults = await Promise.allSettled(
+      SERVERS.map(async (server) => {
+        const watchUrl = new URL(`${watchPath}?server=${server.key}`, this.baseUrl);
         const html = await this.fetcher.text(ctx, watchUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
           timeout: 8000,
         });
         const iframeMatch = html.match(/<iframe[^>]*id="playerFrame"[^>]*src="([^"]+)"/i);
         if (iframeMatch && iframeMatch[1]) {
-          results.push({
-            url: new URL(iframeMatch[1].replace(/&amp;/g, '&')),
-            meta: {
-              countryCodes: [CountryCode.multi],
-              title: `${title} (${server.label})`,
-              ...(vidkingMeta && { vidking: vidkingMeta }),
-            },
-          });
+          return { server, url: new URL(iframeMatch[1].replace(/&amp;/g, '&')) };
         }
-      } catch { /* skip failed server */ }
+        return null;
+      })
+    );
+
+    for (const r of serverResults) {
+      if (r.status === 'fulfilled' && r.value) {
+        results.push({
+          url: r.value.url,
+          meta: {
+            countryCodes: [CountryCode.multi],
+            title: `${title} (${r.value.server.label})`,
+            sourceId: this.id,
+            sourceLabel: this.label,
+            ...(vidkingMeta && { vidking: vidkingMeta }),
+          },
+        });
+      }
     }
 
     return results;

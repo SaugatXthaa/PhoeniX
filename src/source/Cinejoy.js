@@ -108,12 +108,18 @@ function decryptBlob(blobBase64) {
   return JSON.parse(decrypted.toString('utf8'));
 }
 
-// Solve the scrypt PoW challenge
+// Solve the scrypt PoW challenge with a time limit
+// On Render's free tier (0.1 CPU), scrypt is ~5-10x slower than local
 function solvePoW(challenge) {
   const { b, s, n, r, p, d } = challenge;
   const saltHash = crypto.createHash('sha256').update(`pow2-salt|${s}|${b}`).digest();
   const maxmem = 128 * r * (n + p) * 2;
+  const startTime = Date.now();
+  const TIME_LIMIT_MS = 8000; // 8s max — leave room for other steps
   for (let i = 0; i < 1000000; i++) {
+    if (i % 50 === 0 && Date.now() - startTime > TIME_LIMIT_MS) {
+      throw new Error('PoW solver timed out');
+    }
     const hash = crypto.scryptSync(`pow2|${b}|${s}|${i}`, saltHash, 32, { N: n, r, p, maxmem });
     let lz = 0;
     for (const byte of hash) {
