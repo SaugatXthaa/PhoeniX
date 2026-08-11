@@ -71,6 +71,7 @@ import { Pantyflix } from './Pantyflix.js';
 import { AnimeGG } from './AnimeGG.js';
 import { Peckle } from './Peckle.js';
 import { HiAnime } from './HiAnime.js';
+import { AnimeKai } from './AnimeKai.js';
 
 export { Source } from './Source.js';
 
@@ -176,5 +177,7 @@ export const createSources = (fetcher) => {
     new Peckle(fetcher),
     // hianime.at — anime sub+dub HLS (pure JS, no Playwright)
     new HiAnime(fetcher),
+    // animekai.at — anime sub+dub HLS via zokoanime.video (pure JS, uses curl)
+    new AnimeKai(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };

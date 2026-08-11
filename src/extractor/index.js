@@ -58,6 +58,8 @@ import { AnimeGG as AnimeGGExtractor } from './AnimeGG.js';
 import { Peckle as PeckleExtractor } from './Peckle.js';
 // HiAnime — routes aniwatchtv.uk HLS through /proxy with Referer
 import { HiAnime as HiAnimeExtractor } from './HiAnime.js';
+// AnimeKai — routes aniwatchtv.uk HLS through /proxy with Referer (same backend as HiAnime)
+import { AnimeKai as AnimeKaiExtractor } from './AnimeKai.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -89,6 +91,8 @@ export const createExtractors = (fetcher, logger) => {
     new PeckleExtractor(fetcher, logger),
     // HiAnime — routes aniwatchtv.uk HLS through /proxy with Referer
     new HiAnimeExtractor(fetcher, logger),
+    // AnimeKai — routes aniwatchtv.uk HLS through /proxy with Referer
+    new AnimeKaiExtractor(fetcher, logger),
     // Netlio — passthrough for direct HLS URLs (claim before ExternalUrl)
     new Netlio(fetcher, logger),
     // AnimeDirect — passthrough for anime HLS/MP4 URLs
