@@ -8,6 +8,17 @@ import { flagFromCountryCode, languageFromCountryCode } from './language.js';
 // Parse metadata from stream title and URL when the source doesn't provide it.
 // This enriches the display without modifying any source files or stream URLs.
 // Only fills in MISSING fields — never overwrites existing meta values.
+//
+// Parsed fields (from the user's metadata spec):
+//   - Quality: 2160p, 1080p, 720p, 480p
+//   - Source Type: BluRay Remux, BluRay, WebDL, WebRip, HDRip
+//   - Video Codecs: HEVC, x264, AVC, AV1
+//   - Audio Codecs: TrueHD, Atmos, DD+, DD, DTS, AAC, AC3
+//   - HDR: Dolby Vision, HDR10+, HDR
+//   - Bit Depth: 10-bit, 8-bit
+//   - Audio Language: hindi-english, english, hindi, etc.
+//   - Size: 64.04GB, 17.5GB, etc.
+//   - Release Group: FraMeSToR, ROEN-Ionicboy (after ~ or -)
 function enrichMeta(urlResult) {
   const meta = { ...urlResult.meta };
   const title = meta.title || '';
@@ -15,7 +26,7 @@ function enrichMeta(urlResult) {
   const titleLower = title.toLowerCase();
   const urlLower = url.toLowerCase();
 
-  // 1. Parse height from title if not in meta
+  // 1. Parse height (Quality) from title if not in meta
   if (!meta.height) {
     if (/4k|2160p|uhd/i.test(title)) meta.height = 2160;
     else if (/1080p/i.test(title)) meta.height = 1080;
@@ -28,15 +39,50 @@ function enrichMeta(urlResult) {
     }
   }
 
-  // 2. Parse codec from title if not in meta
+  // 2. Parse video codec from title if not in meta
   if (!meta.codec && !meta.codecs) {
-    if (/hevc|x265|h\.?265/i.test(title)) meta.codec = 'HEVC';
-    else if (/x264|h264|avc/i.test(title)) meta.codec = 'AVC';
+    if (/\bhevc\b|\bx265\b|\bh\.?265\b/i.test(title)) meta.codec = 'HEVC';
+    else if (/\bx264\b|\bh264\b|\bavc\b/i.test(title)) meta.codec = 'AVC';
+    else if (/\bav1\b/i.test(title)) meta.codec = 'AV1';
   }
 
-  // 3. Parse file size from title if not in meta
+  // 3. Parse source type from title (BluRay Remux, WebDL, etc.)
+  if (!meta.sourceType) {
+    if (/bluRay\s*remux|remux/i.test(title)) meta.sourceType = 'BluRay Remux';
+    else if (/bluRay|bluray|bdrip/i.test(title)) meta.sourceType = 'BluRay';
+    else if (/web\s*dl|web-dl|webdl/i.test(title)) meta.sourceType = 'WebDL';
+    else if (/web\s*rip|webrip/i.test(title)) meta.sourceType = 'WebRip';
+    else if (/hd\s*rip|hdrip/i.test(title)) meta.sourceType = 'HDRip';
+    else if (/dvdrip/i.test(title)) meta.sourceType = 'DVDRip';
+    else if (/cam|ts\s*rip|tsrip/i.test(title)) meta.sourceType = 'CAM';
+  }
+
+  // 4. Parse audio codec from title
+  if (!meta.audioCodec) {
+    if (/truehd/i.test(title)) meta.audioCodec = 'TrueHD';
+    else if (/atmos/i.test(title)) meta.audioCodec = 'Atmos';
+    else if (/dd\+|ddp|eac3/i.test(title)) meta.audioCodec = 'DD+';
+    else if (/\bdd\b|\bac3\b|dolby\s*digital\b/i.test(title)) meta.audioCodec = 'DD';
+    else if (/\bdts\b/i.test(title)) meta.audioCodec = 'DTS';
+    else if (/\baac\b/i.test(title)) meta.audioCodec = 'AAC';
+  }
+
+  // 5. Parse HDR info from title
+  if (!meta.hdr) {
+    if (/dolby\s*vision|\bdv\b/i.test(title)) meta.hdr = 'Dolby Vision';
+    else if (/hdr10\+/i.test(title)) meta.hdr = 'HDR10+';
+    else if (/\bhdr\b/i.test(title)) meta.hdr = 'HDR';
+  }
+
+  // 6. Parse bit depth from title
+  if (!meta.bitDepth) {
+    if (/10\s*bit|10bit|10-bit/i.test(title)) meta.bitDepth = '10-bit';
+    else if (/8\s*bit|8bit|8-bit/i.test(title)) meta.bitDepth = '8-bit';
+  }
+
+  // 7. Parse file size from title if not in meta
   if (!meta.bytes) {
-    // Match patterns like "6.7 GB", "900 MB", "1.2GB", "[410 MB]"
+    // Match patterns like "6.7 GB", "900 MB", "1.2GB", "[410 MB]", "31.4GB"
     const sizeMatch = title.match(/(\d+(?:\.\d+)?)\s*(GB|MB)/i);
     if (sizeMatch) {
       const val = parseFloat(sizeMatch[1]);
@@ -46,7 +92,20 @@ function enrichMeta(urlResult) {
     }
   }
 
-  // 4. Infer format from URL if not set
+  // 8. Parse release group from title (after ~ or at end in parentheses)
+  if (!meta.releaseGroup) {
+    // Pattern: "Title ~GroupName" or "Title (GroupName)" or "Title - GroupName"
+    const tildeMatch = title.match(/~\s*([A-Za-z0-9._-]+)/);
+    if (tildeMatch) {
+      meta.releaseGroup = tildeMatch[1];
+    } else {
+      // Try parentheses at end: "Title (FraMeSToR-LUMiX)"
+      const parenMatch = title.match(/\(([A-Za-z0-9._-]+)\)\s*\.?\s*$/);
+      if (parenMatch) meta.releaseGroup = parenMatch[1];
+    }
+  }
+
+  // 9. Infer format from URL if not set
   if (!urlResult.format || urlResult.format === Format.unknown) {
     if (urlLower.includes('.m3u8') || urlLower.includes('/m3u8/') ||
         urlLower.includes('/hls/') || urlLower.includes('/playlist/')) {
@@ -56,25 +115,25 @@ function enrichMeta(urlResult) {
     }
   }
 
-  // 5. Parse audio languages from title if countryCodes is minimal
-  // Only add if we don't already have specific language codes
+  // 10. Parse audio languages from title if countryCodes is minimal
   // Use word-boundary matching to avoid false positives (e.g., "rus" in "Icarus")
   if (!meta.countryCodes || meta.countryCodes.length <= 1) {
     const codes = new Set(meta.countryCodes || []);
-    if (/\bhindi\b/i.test(titleLower)) codes.add('hi');
-    if (/\benglish\b/i.test(titleLower)) codes.add('en');
-    if (/\bjapanese\b/i.test(titleLower)) codes.add('ja');
-    if (/\bkorean\b/i.test(titleLower)) codes.add('ko');
-    if (/\bspanish\b/i.test(titleLower)) codes.add('es');
-    if (/\bfrench\b/i.test(titleLower)) codes.add('fr');
-    if (/\btamil\b/i.test(titleLower)) codes.add('ta');
-    if (/\btelugu\b/i.test(titleLower)) codes.add('te');
-    if (/\bchinese\b|\bmandarin\b/i.test(titleLower)) codes.add('zh');
-    if (/\brussian\b/i.test(titleLower)) codes.add('ru');
+    if (/\bhindi\b|\bhin\b/i.test(titleLower)) codes.add('hi');
+    if (/\benglish\b|\beng\b/i.test(titleLower)) codes.add('en');
+    if (/\bjapanese\b|\bjpn\b/i.test(titleLower)) codes.add('ja');
+    if (/\bkorean\b|\bkor\b/i.test(titleLower)) codes.add('ko');
+    if (/\bspanish\b|\besp\b/i.test(titleLower)) codes.add('es');
+    if (/\bfrench\b|\bfra\b/i.test(titleLower)) codes.add('fr');
+    if (/\btamil\b|\btam\b/i.test(titleLower)) codes.add('ta');
+    if (/\btelugu\b|\btel\b/i.test(titleLower)) codes.add('te');
+    if (/\bchinese\b|\bmandarin\b|\bchi\b/i.test(titleLower)) codes.add('zh');
+    if (/\brussian\b|\brus\b/i.test(titleLower)) codes.add('ru');
+    if (/\bgerman\b|\bger\b/i.test(titleLower)) codes.add('de');
     if (codes.size > 0) meta.countryCodes = [...codes];
   }
 
-  // 6. Parse sub-source name from URL hostname
+  // 11. Parse sub-source name from URL hostname
   // Skip if URL is a proxy URL (localhost or addon's own host)
   // Skip hash-like hostnames (e.g., da194e3e41011e58ea95b0914c6212d3.example.com)
   // Skip generic CDN prefixes (e.g., cdn, www, api)
@@ -120,11 +179,6 @@ export class StreamResolver {
     const urlResults = [];
     let sourceErrorCount = 0;
 
-    // Per-source timeout — ensures one slow source can't make Stremio's entire
-    // request hang. Sources that haven't returned within SOURCE_TIMEOUT_MS are
-    // abandoned (their partial results, if any, are still collected).
-    // 30s matches Stremio's default request timeout — gives sources maximum
-    // time on Render's free tier while still returning before Stremio gives up.
     const SOURCE_TIMEOUT_MS = 30_000;
 
     const withTimeout = (promise, ms, sourceId) => {
@@ -139,7 +193,6 @@ export class StreamResolver {
       try {
         const sourceResults = await withTimeout(source.handle(ctx, type, id), SOURCE_TIMEOUT_MS, source.id);
         this.logger.info(`Source ${source.id} returned ${sourceResults.length} results`);
-        // Extractor phase — also bounded by the same timeout (reset per source)
         const sourceUrlResults = await Promise.all(
           sourceResults.map(({ url, meta, requestHeaders }) =>
             this.extractorRegistry.handle(ctx, url, { sourceLabel: source.label, sourceId: source.id, priority: source.priority, ...(requestHeaders && { requestHeaders }), ...meta }, true)
@@ -153,13 +206,11 @@ export class StreamResolver {
         urlResults.push(...sourceUrlResults.flat());
       } catch (error) {
         sourceErrorCount++;
-        // Some errors (NotFoundError, etc.) have empty .message — include constructor name for diagnostics
         const msg = error?.message || error?.constructor?.name || String(error);
         this.logger.warn(`Source ${source.id} error: ${msg}`);
       }
     };
 
-    // Run all sources in parallel — total wall time bounded by SOURCE_TIMEOUT_MS
     await Promise.all(sources.map(s => handleSource(s)));
 
     // Enrich metadata for all results (parse from title/URL — no source changes)
@@ -253,23 +304,38 @@ export class StreamResolver {
     // Line 1: Movie/show title (from source meta)
     if (meta.title) titleLines.push(meta.title);
 
-    // Line 2: Technical specs — Quality · Codec · Format · Bitrate
+    // Line 2: Technical specs — Quality · SourceType · Codec · AudioCodec · HDR · BitDepth
     const specs = [];
+
+    // Quality
     const height = meta.height;
-    if (height >= 2160) specs.push('4K');
+    if (height >= 2160) specs.push('2160p');
     else if (height >= 1080) specs.push('1080p');
     else if (height >= 720) specs.push('720p');
     else if (height >= 480) specs.push('480p');
     else if (height > 0) specs.push(getClosestResolution(height));
 
-    // Codec info (HEVC, AVC, etc.)
-    if (meta.codec) specs.push(meta.codec);
-    else if (meta.codecs) {
-      // Parse codecs string from HLS manifest (e.g., "mp4a.40.2,avc1.64001f")
+    // Source Type (BluRay Remux, WebDL, etc.)
+    if (meta.sourceType) specs.push(meta.sourceType);
+
+    // Video Codec (HEVC, AVC, AV1)
+    if (meta.codec) {
+      specs.push(meta.codec);
+    } else if (meta.codecs) {
       const codecStr = meta.codecs;
       if (codecStr.includes('avc1')) specs.push('AVC');
       else if (codecStr.includes('hvc1') || codecStr.includes('hev1')) specs.push('HEVC');
+      else if (codecStr.includes('av01')) specs.push('AV1');
     }
+
+    // Audio Codec (TrueHD, Atmos, DD+, DTS, etc.)
+    if (meta.audioCodec) specs.push(meta.audioCodec);
+
+    // HDR (Dolby Vision, HDR10+, HDR)
+    if (meta.hdr) specs.push(meta.hdr);
+
+    // Bit Depth (10-bit, 8-bit)
+    if (meta.bitDepth) specs.push(meta.bitDepth);
 
     // Container/stream format
     if (urlResult.format === Format.hls) specs.push('HLS');
@@ -297,7 +363,12 @@ export class StreamResolver {
       }
     }
 
-    // Line 5: Source link
+    // Line 5: Release group (if parsed from filename)
+    if (meta.releaseGroup) {
+      titleLines.push(`🏷️ ${meta.releaseGroup}`);
+    }
+
+    // Line 6: Source link
     const sl = meta.sourceLabel;
     if (sl && sl !== urlResult.label) {
       titleLines.push(`🔗 ${urlResult.label} from ${sl}`);
