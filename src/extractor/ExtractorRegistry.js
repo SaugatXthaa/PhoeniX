@@ -26,7 +26,7 @@ export class ExtractorRegistry {
 
     const normalizedUrl = extractor.normalize(url);
     const canonicalUrl = await extractor.normalizeAsync(ctx, normalizedUrl);
-    const cacheKey = `${extractor.id}_${canonicalUrl.href}${extractor.cacheVersion ? `_${extractor.cacheVersion}` : ''}`;
+    const cacheKey = `${extractor.id}_${canonicalUrl.href}${extractor.cacheVersion ? `_${extractor.cacheVersion}` : ''}${meta?.sourceId ? `__${meta.sourceId}` : ''}`;
 
     // Check cache
     const cached = this.urlResultCache.get(cacheKey);

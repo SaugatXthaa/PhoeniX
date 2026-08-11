@@ -249,7 +249,9 @@ export class StreamResolver {
     for (const urlResult of urlResults) {
       if (urlResult.error) continue;
 
-      const urlKey = urlResult.url.href;
+      // Dedup by URL + sourceId — allows the same URL from different sources
+      // (e.g., HiAnime and AnimeKai both use zokoanime.video backend)
+      const urlKey = `${urlResult.url.href}__${urlResult.meta?.sourceId || ''}`;
       if (seen.has(urlKey)) continue;
       seen.add(urlKey);
 
