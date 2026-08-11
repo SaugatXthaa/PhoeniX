@@ -1,28 +1,29 @@
 // src/source/Movie4kTo.js
 // movie4kto.pro — TMDB-based movie/TV streaming site
 //
-// React SPA that uses TMDB IDs and embeds from multiple sources:
-//   vidsrc-embed.ru, moviesapi.club, vidlink.pro, player.videasy.net,
-//   111movies.com, player.vidzee.wtf, vidsrc.to
+// React SPA that uses TMDB IDs and embeds from multiple sources.
+// We ONLY keep embed URLs that have a dedicated extractor:
+//   - vidsrc-embed.ru  → VidSrc extractor  (host matches /vidsrc|vsrc|vsembed/)
+//   - player.vidzee.wtf → Vidzee extractor (host matches *.vidzee.wtf)
+//   - vidsrc.to        → VidSrc extractor  (host matches /vidsrc|vsrc|vsembed/)
 //
-// All embed URLs are TMDB-ID-keyed, so they always return the correct
-// content. We do NOT pass meta.vidking (speedracelight fallback) because
-// the speedracelight API uses fuzzy title matching and returns wrong
-// content for certain TMDB IDs (e.g. "Supergirl" for "Colony" requests).
+// We do NOT pass meta.vidking (speedracelight fallback) because the
+// speedracelight API uses fuzzy title matching and returns wrong content
+// for certain TMDB IDs (e.g. "The Last House" instead of "Minions & Monsters").
+// We also drop embed sources that have no dedicated extractor (moviesapi.club,
+// vidlink.pro, player.videasy.net, 111movies.com) because without vidking they
+// produce 0 streams anyway, and with vidking they produce WRONG movies.
 
 import { CountryCode } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
-// Embed sources used by movie4kto.pro (from JS bundle analysis)
+// Embed sources used by movie4kto.pro that have a dedicated extractor.
+// Each URL is TMDB-ID-keyed, so it always resolves to the correct content.
 const EMBED_SOURCES = [
-  { label: 'VidSrc',    movie: 'https://vidsrc-embed.ru/embed/movie/{id}', tv: 'https://vidsrc-embed.ru/embed/tv/{id}/{s}/{e}' },
-  { label: 'MoviesApi', movie: 'https://moviesapi.club/movie/{id}',        tv: 'https://moviesapi.club/tv/{id}-{s}-{e}' },
-  { label: 'VidLink',   movie: 'https://vidlink.pro/movie/{id}',           tv: 'https://vidlink.pro/tv/{id}/{s}/{e}' },
-  { label: 'Videasy',   movie: 'https://player.videasy.net/movie/{id}',    tv: 'https://player.videasy.net/tv/{id}/{s}/{e}' },
-  { label: '111Movies', movie: 'https://111movies.com/movie/{id}',         tv: 'https://111movies.com/tv/{id}/{s}/{e}' },
-  { label: 'Vidzee',    movie: 'https://player.vidzee.wtf/embed/movie/{id}', tv: 'https://player.vidzee.wtf/embed/tv/{id}?season={s}&episode={e}' },
-  { label: 'VidSrcTo',  movie: 'https://vidsrc.to/embed/movie/{id}',       tv: 'https://vidsrc.to/embed/tv/{id}/{s}/{e}' },
+  { label: 'VidSrc',   movie: 'https://vidsrc-embed.ru/embed/movie/{id}', tv: 'https://vidsrc-embed.ru/embed/tv/{id}/{s}/{e}' },
+  { label: 'VidZee',   movie: 'https://player.vidzee.wtf/embed/movie/{id}', tv: 'https://player.vidzee.wtf/embed/tv/{id}?season={s}&episode={e}' },
+  { label: 'VidSrcTo', movie: 'https://vidsrc.to/embed/movie/{id}',       tv: 'https://vidsrc.to/embed/tv/{id}/{s}/{e}' },
 ];
 
 export class Movie4kTo extends Source {
@@ -42,16 +43,6 @@ export class Movie4kTo extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Pass meta.vidking for movies only — the speedracelight API resolves
-    // streams for embed URLs that have no dedicated extractor (vidlink.pro,
-    // 2embed.cc, vidfast.pro, etc.). Without it, these produce 0 streams.
-    // For series/anime, speedracelight returns wrong content — skip it.
-    const vidkingMeta = tmdbId.season ? null : {
-      name,
-      year,
-      tmdbId: tmdbId.id,
-    };
-
     const results = [];
     for (const source of EMBED_SOURCES) {
       const url = tmdbId.season
@@ -63,7 +54,8 @@ export class Movie4kTo extends Source {
         meta: {
           countryCodes: [CountryCode.multi],
           title: `${title} (${source.label})`,
-          ...(vidkingMeta && { vidking: vidkingMeta }),
+          sourceId: this.id,
+          sourceLabel: this.label,
         },
       });
     }
