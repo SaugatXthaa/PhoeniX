@@ -24,6 +24,10 @@ import { Extractor } from './Extractor.js';
 const NUVIO_SOURCE_IDS = new Set([
   'cineby', 'desiflix', 'goated', 'hindmoviez', 'movieblast',
   'movies4u', 'dahmermovies', 'dahmermovies4k', 'playimdb', 'animezey',
+  // Batch 2: uhdmovies, vidlove, videasy, anikototv, vixsrc2, animesalt,
+  // animeworldindia, animesdigital
+  'uhdmovies', 'vidlove', 'videasy', 'anikototv', 'vixsrc2',
+  'animesalt', 'animeworldindia', 'animesdigital',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

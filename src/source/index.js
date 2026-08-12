@@ -83,6 +83,15 @@ import { DahmerMovies } from './DahmerMovies.js';
 import { DahmerMovies4k } from './DahmerMovies4k.js';
 import { PlayImdb } from './PlayImdb.js';
 import { AnimeZeY } from './AnimeZeY.js';
+// Nuvio provider sources — Batch 2 (each has its own dedicated source file)
+import { UHDMovies } from './UHDMovies.js';
+import { VidLove } from './VidLove.js';
+import { VidEasy } from './VidEasy.js';
+import { AnikotoTV } from './AnikotoTV.js';
+import { VixSrc2 } from './VixSrc2.js';
+import { AnimeSalt } from './AnimeSalt.js';
+import { AnimeWorldIN } from './AnimeWorldIN.js';
+import { AnimesDigital } from './AnimesDigital.js';
 
 export { Source } from './Source.js';
 
@@ -215,5 +224,22 @@ export const createSources = (fetcher) => {
     new PlayImdb(fetcher),
     // animezey — anime-only sub+dub (workers.dev, movies don't work)
     new AnimeZeY(fetcher),
+    // ─── Nuvio provider sources — Batch 2 ───
+    // uhdmovies — movies-only (googleusercontent, 4K/1080p, Referer: driveseed.org)
+    new UHDMovies(fetcher),
+    // vidlove — movies/TV HLS (ballerinacappuccino..., 1080p, Referer: player.vidlove.cc)
+    new VidLove(fetcher),
+    // videasy — movies/TV HLS (moon.ironwallnet.net, 10 speedracelight servers, Referer: vidking.net)
+    new VidEasy(fetcher),
+    // anikototv — anime-only sub+dub (megap.akirax.buzz, Referer: megaplay.buzz)
+    new AnikotoTV(fetcher),
+    // vixsrc2 — movies/TV HLS (komiknostalgia.id, direct provider — no MediaFlowProxy needed)
+    new VixSrc2(fetcher),
+    // animesalt — anime-only (as-cdn21.top, 720p, Referer: as-cdn21.top)
+    new AnimeSalt(fetcher),
+    // animeworldindia — anime-only (play.zephyrix.top, 1080p, watchanimeworld.top)
+    new AnimeWorldIN(fetcher),
+    // animesdigital — anime-only (cdn.imagesskill.com, Portuguese sub/dub)
+    new AnimesDigital(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
