@@ -103,6 +103,12 @@ export function cleanFilenameForDisplay(filename) {
   // If it's a "bulk" endpoint (dahmermovies p.111477.xyz/bulk) → empty
   if (f === 'bulk' || f.startsWith('bulk?')) return '';
 
+  // If the base name (without extension) is a long hash-like string → empty
+  // e.g. "ma9ylsUHLd1oEUKmveBRDzgXvby4MyCQsteH9ZA1O0g0XZIbx0AtmD0IuVuAbN64B7T05nUYhK2jGUqK9_4aLzGatRb1WfVZMOGqdJ9hid36lg5MVVjVMnn.m3u8"
+  // → empty (VidEasy URLs from moon.ironwallnet.net have hash-based filenames)
+  const baseName = f.replace(/\.(m3u8|mp4|mkv|webm|avi|mov)$/i, '');
+  if (baseName.length > 30 && /^[a-zA-Z0-9_-]+$/.test(baseName)) return '';
+
   // If it's a very long string with mostly random characters (>50% non-readable)
   // → empty. We check if it looks like a real filename (has dots, readable words)
   // vs a hash string (long alphanumeric with no readable words)

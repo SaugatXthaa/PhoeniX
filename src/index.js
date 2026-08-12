@@ -17,7 +17,7 @@ const __dirname = dirname(__filename);
 const PORT = process.env.PORT || 7000;
 const HOST = process.env.HOST || '0.0.0.0';
 const ADDON_NAME = process.env.ADDON_NAME || 'PhoeniX';
-const VERSION = '4.0.0';
+const VERSION = '1.2.8';
 
 const logger = console;
 
