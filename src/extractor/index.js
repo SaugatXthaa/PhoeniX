@@ -60,6 +60,10 @@ import { Peckle as PeckleExtractor } from './Peckle.js';
 import { HiAnime as HiAnimeExtractor } from './HiAnime.js';
 // AnimeKai — routes aniwatchtv.uk HLS through /proxy with Referer (same backend as HiAnime)
 import { AnimeKai as AnimeKaiExtractor } from './AnimeKai.js';
+// Nuvio — wraps Nuvio provider streams with /proxy when Referer is needed
+// (matches by meta.sourceId for: cineby, desiflix, goated, hindmoviez,
+// movieblast, movies4u, dahmermovies, dahmermovies4k, playimdb, animezey)
+import { NuvioExtractor } from './NuvioExtractor.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -93,6 +97,11 @@ export const createExtractors = (fetcher, logger) => {
     new HiAnimeExtractor(fetcher, logger),
     // AnimeKai — routes aniwatchtv.uk HLS through /proxy with Referer
     new AnimeKaiExtractor(fetcher, logger),
+    // Nuvio — wraps Nuvio provider streams with /proxy when Referer is needed
+    // (must come before Netlio/DirectStream/ExternalUrl so it claims Nuvio URLs
+    // by meta.sourceId — matches: cineby, desiflix, goated, hindmoviez,
+    // movieblast, movies4u, dahmermovies, dahmermovies4k, playimdb, animezey)
+    new NuvioExtractor(fetcher, logger),
     // Netlio — passthrough for direct HLS URLs (claim before ExternalUrl)
     new Netlio(fetcher, logger),
     // AnimeDirect — passthrough for anime HLS/MP4 URLs

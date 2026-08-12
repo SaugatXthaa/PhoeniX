@@ -157,6 +157,11 @@ app.get('/extract', async (req, res) => {
 app.get('/proxy', async (req, res) => {
   const rawUrl = req.query.url;
   const rawReferer = req.query.referer;
+  // forceHls=1: when set, the proxy buffers the response and checks if it's
+  // HLS (regardless of URL pattern). Used by Nuvio source adapters for URLs
+  // that return HLS content but don't have .m3u8 in the path (e.g. vidlove
+  // returns application/vnd.apple.mpegurl from /api?d=... endpoint).
+  let forceHls = req.query.forceHls === '1';
 
   if (!rawUrl) {
     return res.status(400).send('Missing url parameter');
@@ -204,14 +209,15 @@ app.get('/proxy', async (req, res) => {
     const hostLower = targetUrl.hostname.toLowerCase();
     const urlIsM3u8 = pathLower.endsWith('.m3u8') ||
                       pathLower.includes('.m3u8') ||
-                      pathLower.includes('/m3u8/');
+                      pathLower.includes('/m3u8/') ||
+                      pathLower.includes('/playlist');  // goated cdn.reallyfast.xyz/playlist/, DesiFlix vixsrc.to/playlist/
     const urlIsStream = pathLower.includes('/stream/');  // AniKage: could be HLS or MP4
     const urlIsTxt = pathLower.endsWith('.txt');
     const urlIsAniPriv8 = pathLower.includes('/api/secure/pipeline/');
     // Berkas: *.berkas*.workers.dev — master m3u8 and variant playlists
     const urlIsBerkas = hostLower.includes('berkas') && hostLower.endsWith('.workers.dev');
 
-    if (urlIsM3u8 || urlIsTxt || urlIsStream || urlIsAniPriv8 || urlIsBerkas) {
+    if (forceHls || urlIsM3u8 || urlIsTxt || urlIsStream || urlIsAniPriv8 || urlIsBerkas) {
       // Buffer content to check if it's HLS and rewrite URLs.
       // For /stream/ paths, use a HEAD request first to check content-type —
       // if it's video/mp4, stream directly (avoid buffering large MP4 files).
@@ -250,14 +256,52 @@ app.get('/proxy', async (req, res) => {
         } catch { /* HEAD failed — try buffering (might be playlist) */ }
       }
 
-      if (urlIsM3u8 || urlIsTxt || urlIsStream || urlIsAniPriv8 || urlIsBerkas) {
-        // Buffer content to check if it's HLS and rewrite URLs
-        const m3u8Res = await gotScraping.get(targetUrl.href, {
-          headers: proxyHeaders,
-          timeout: { request: 30000 },
-          throwHttpErrors: false,
-          followRedirect: true,
-        });
+      // For forceHls (ambiguous URL): do a HEAD request first to check
+      // Content-Type. If it's a video file (MP4/MKV), skip buffering to
+      // avoid OOM on Render's 512MB tier.
+      if (forceHls) {
+        try {
+          const headRes = await gotScraping.head(targetUrl.href, {
+            headers: proxyHeaders,
+            timeout: { request: 8000 },
+            throwHttpErrors: false,
+            followRedirect: true,
+          });
+          const ct = (headRes.headers['content-type'] || '').toLowerCase();
+          if (ct.includes('video/') || ct.includes('application/octet-stream')) {
+            // Video file — stream directly (skip buffering)
+            forceHls = false; // fall through to streaming mode
+          }
+        } catch { /* HEAD failed — try buffering (might be HLS) */ }
+      }
+
+      if (forceHls || urlIsM3u8 || urlIsTxt || urlIsStream || urlIsAniPriv8 || urlIsBerkas) {
+        // Buffer content to check if it's HLS and rewrite URLs.
+        // Use HTTP/1.1 (http2: false) to avoid "GOAWAY" errors from some
+        // servers (e.g. vidlove) that close HTTP/2 connections aggressively.
+        // Add 1 retry to handle transient GOAWAY errors.
+        let m3u8Res, lastErr;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            m3u8Res = await gotScraping.get(targetUrl.href, {
+              headers: proxyHeaders,
+              timeout: { request: 30000 },
+              throwHttpErrors: false,
+              followRedirect: true,
+              http2: false,
+            });
+            break;
+          } catch (e) {
+            lastErr = e;
+            const msg = e?.message || String(e);
+            if (msg.includes('GOAWAY') || msg.includes('stream') || msg.includes('HTTP/2')) {
+              await new Promise(r => setTimeout(r, 500));
+              continue;
+            }
+            throw e;
+          }
+        }
+        if (!m3u8Res) throw lastErr;
 
         if (m3u8Res.statusCode >= 400) {
           logger.error(`[${ADDON_NAME}] proxy upstream ${m3u8Res.statusCode} for ${targetUrl.hostname}`);
@@ -303,6 +347,19 @@ app.get('/proxy', async (req, res) => {
           }
           // Large response — fall through to streaming mode
         }
+
+        // forceHls but response wasn't HLS (HEAD said it might be, but body
+        // doesn't start with #EXTM3U). Serve the buffered body directly.
+        // HEAD already confirmed it's not a large video file (Content-Type
+        // would have been video/* and forceHls would have been cleared).
+        if (forceHls) {
+          res.status(200);
+          const ct = m3u8Res.headers['content-type'] || 'application/octet-stream';
+          res.setHeader('Content-Type', ct);
+          res.setHeader('Content-Length', Buffer.byteLength(body));
+          res.send(body);
+          return;
+        }
       }
     }
 
@@ -313,6 +370,7 @@ app.get('/proxy', async (req, res) => {
       throwHttpErrors: false,
       followRedirect: true,
       isStream: true,
+      http2: false,  // Avoid GOAWAY errors from HTTP/2 servers
     });
 
     // Wait for the response headers

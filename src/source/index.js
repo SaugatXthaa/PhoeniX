@@ -72,6 +72,17 @@ import { AnimeGG } from './AnimeGG.js';
 import { Peckle } from './Peckle.js';
 import { HiAnime } from './HiAnime.js';
 import { AnimeKai } from './AnimeKai.js';
+// Nuvio provider sources (additive — each has its own dedicated source file)
+import { Cineby } from './Cineby.js';
+import { DesiFlix } from './DesiFlix.js';
+import { Goated } from './Goated.js';
+import { HindMoviez } from './HindMoviez.js';
+import { MovieBlast } from './MovieBlast.js';
+import { Movies4u } from './Movies4u.js';
+import { DahmerMovies } from './DahmerMovies.js';
+import { DahmerMovies4k } from './DahmerMovies4k.js';
+import { PlayImdb } from './PlayImdb.js';
+import { AnimeZeY } from './AnimeZeY.js';
 
 export { Source } from './Source.js';
 
@@ -179,5 +190,30 @@ export const createSources = (fetcher) => {
     new HiAnime(fetcher),
     // animekai.at — anime sub+dub HLS via zokoanime.video (pure JS, uses curl)
     new AnimeKai(fetcher),
+    // ─── Nuvio provider sources (each has its own dedicated source file) ───
+    // All purely additive — no existing source modified. Each loads a CommonJS
+    // provider module from src/nuvio/*.cjs and returns URL results with proper
+    // meta for enriched metadata (quality, codec, sourceType, audioCodec, etc.)
+    // Routing: HLS+Referer → /proxy, MP4+Referer → requestHeaders, direct → direct
+    // cineby.at — movies/TV HLS (4K, speedracelight API + XOR encryption)
+    new Cineby(fetcher),
+    // desiflix — movies/TV/anime HLS (multi-audio, manifest.desitvhub.eu.org)
+    new DesiFlix(fetcher),
+    // goated.cx — movies/TV HLS (cdn.reallyfast.xyz)
+    new Goated(fetcher),
+    // hindmoviez — movies/TV MKV (hshare.ink → workers.dev, 4K/1080p)
+    new HindMoviez(fetcher),
+    // movieblast — movies/TV HLS (mblinkmove.mycdn-mb.xyz, 1080p)
+    new MovieBlast(fetcher),
+    // movies4u — movies-only MKV (r2.dev + googleusercontent, 4K/1080p)
+    new Movies4u(fetcher),
+    // dahmermovies — movies/TV (p.111477.xyz bulk proxy, 4K/1080p)
+    new DahmerMovies(fetcher),
+    // dahmermovies-4k — movies/TV 4K-focused (p.111477.xyz bulk proxy)
+    new DahmerMovies4k(fetcher),
+    // playimdb — movies/TV HLS (scalableimpactgroup.site, 1080p)
+    new PlayImdb(fetcher),
+    // animezey — anime-only sub+dub (workers.dev, movies don't work)
+    new AnimeZeY(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
