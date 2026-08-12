@@ -49,7 +49,7 @@ export class Movies4u extends Source {
       mediaType: 'movie',
       season: null,
       episode: null,
-      timeoutMs: 18000, // movies4u is slow, cap at 18s to avoid blocking response
+      timeoutMs: 25000, // movies4u is slow, cap at 25s
     });
 
     return buildStreamResults({
