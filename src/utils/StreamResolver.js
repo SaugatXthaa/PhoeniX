@@ -183,12 +183,38 @@ export class StreamResolver {
   constructor(logger, extractorRegistry) {
     this.logger = logger;
     this.extractorRegistry = extractorRegistry;
+    // Dedupe concurrent stream requests — Stremio sends 2-3 duplicate
+    // requests for the same content in parallel. Without dedup, each
+    // request runs all 85 sources simultaneously (3×85=255 concurrent
+    // fetches), overwhelming Render's single CPU and causing sources to
+    // timeout/error. With dedup, the 2nd/3rd request waits for the 1st
+    // to complete and reuses its result.
+    this.inFlight = new Map();
   }
 
   async resolve(ctx, sources, type, id) {
     if (sources.length === 0) {
       return { streams: [{ name: 'PhoeniX', title: '⚠️ No sources found', externalUrl: ctx.hostUrl.href }] };
     }
+
+    // Dedup key: type + id (ignore hostUrl — same content, same result)
+    const dedupKey = `${type}:${id.id || id}`;
+    const existing = this.inFlight.get(dedupKey);
+    if (existing) {
+      this.logger.info(`StreamResolver: dedup hit for ${dedupKey}, reusing in-flight request`);
+      return existing;
+    }
+
+    const promise = this._resolveInternal(ctx, sources, type, id);
+    this.inFlight.set(dedupKey, promise);
+    try {
+      return await promise;
+    } finally {
+      this.inFlight.delete(dedupKey);
+    }
+  }
+
+  async _resolveInternal(ctx, sources, type, id) {
 
     const streams = [];
     const urlResults = [];
