@@ -152,6 +152,8 @@ function enrichMeta(urlResult) {
   // Skip if URL is a proxy URL (localhost or addon's own host)
   // Skip hash-like hostnames (e.g., da194e3e41011e58ea95b0914c6212d3.example.com)
   // Skip generic CDN prefixes (e.g., cdn, www, api)
+  // Skip Cloudflare R2 bucket IDs (pub-XXXX.r2.dev)
+  // Skip googleusercontent download hashes
   if (!meta.serverName && !meta.subSource) {
     try {
       const hostname = new URL(url).hostname;
@@ -161,13 +163,20 @@ function enrichMeta(urlResult) {
         const shortName = hostname.replace(/^www\./, '').split('.')[0];
         // Only use shortName if it's a meaningful provider name:
         // - Not a hash (hex strings longer than 12 chars)
+        // - Not a Cloudflare R2 bucket ID (pub-XXXX)
+        // - Not a googleusercontent download hash (ADGPM2...)
         // - Not a generic CDN/api prefix
         // - Not too short (<= 2 chars)
         // - Not the same as the source label
         const isHash = /^[a-f0-9]{12,}$/i.test(shortName);
+        const isR2Bucket = /^pub-[a-f0-9]{8,}/i.test(shortName);
+        const isGoogleHash = /^adgpm2/i.test(shortName);
         const isGeneric = ['cdn', 'api', 'www', 'static', 'media', 'video', 'stream', 'proxy'].includes(shortName.toLowerCase());
         const hasCdnInName = /cdn/i.test(shortName);
-        if (shortName && shortName.length > 2 && !isHash && !isGeneric && !hasCdnInName &&
+        // Skip random 3-letter worker subdomains (e.g., abc., ger., cvb. from
+        // hindmoviez workers.dev URLs) — these are random and not meaningful
+        const isRandomWorker = /^[a-z]{3}$/i.test(shortName) && hostname.endsWith('.workers.dev');
+        if (shortName && shortName.length > 2 && !isHash && !isR2Bucket && !isGoogleHash && !isGeneric && !hasCdnInName && !isRandomWorker &&
             shortName.toLowerCase() !== meta.sourceLabel?.toLowerCase()) {
           meta.subSource = shortName.charAt(0).toUpperCase() + shortName.slice(1);
         }

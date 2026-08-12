@@ -65,6 +65,57 @@ export function extractFilename(url) {
 }
 
 /**
+ * Clean a filename for display — removes hash-like strings, long random IDs,
+ * and technical suffixes that clutter the stream title.
+ *
+ * Examples:
+ *   "ADGPM2IzbD60Hu_XUAZoxoFP..." (googleusercontent hash) → ""
+ *   "Pub-35214751cbf1431ba7b6d74f519e61d2.r2.dev_..." → ""
+ *   "index-s2160p-v1-a1.m3u8" → "" (technical playlist index)
+ *   "Dune.Part.Two.2024.1080p.AMZN.WEB-DL.DUAL.DDP5.1.ESubs.mkv" → kept (has metadata)
+ *
+ * The original filename is still used for enrichMeta parsing (quality, codec, etc.)
+ * — this function only cleans the display title.
+ */
+export function cleanFilenameForDisplay(filename) {
+  if (!filename || typeof filename !== 'string') return '';
+  // Remove query string if present
+  const f = filename.split('?')[0].split('#')[0];
+
+  // If it's a hash-like string (no dots, all alphanumeric, >20 chars) → empty
+  // e.g. "ADGPM2IzbD60Hu_XUAZoxoFP..."
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(f)) return '';
+
+  // If it starts with a hash prefix like "Pub-35214751cbf1431ba7b6d74f519e61d2"
+  // → empty (Cloudflare R2 bucket ID)
+  if (/^pub-[a-f0-9]{20,}/i.test(f)) return '';
+
+  // If it's a technical playlist index like "index-s2160p-v1-a1.m3u8" → empty
+  // (the quality info is already parsed by enrichMeta and shown on Line 2)
+  if (/^index-s\d+p-/i.test(f)) return '';
+
+  // If it's a "master.m3u8" or similar generic playlist name → empty
+  if (/^(master|playlist|index)\.(m3u8|mp4|mkv)$/i.test(f)) return '';
+
+  // If it's a download.aspx or api endpoint → empty
+  if (/\.aspx$|\.php$/i.test(f)) return '';
+
+  // If it's a "bulk" endpoint (dahmermovies p.111477.xyz/bulk) → empty
+  if (f === 'bulk' || f.startsWith('bulk?')) return '';
+
+  // If it's a very long string with mostly random characters (>50% non-readable)
+  // → empty. We check if it looks like a real filename (has dots, readable words)
+  // vs a hash string (long alphanumeric with no readable words)
+  if (f.length > 40) {
+    // Count readable segments (separated by dots, at least 2 chars, has letters)
+    const segments = f.split(/[._\-]/).filter(s => s.length >= 2 && /[a-z]/i.test(s) && !/^[a-f0-9]{8,}$/i.test(s));
+    if (segments.length === 0) return '';
+  }
+
+  return f;
+}
+
+/**
  * Convert Nuvio provider streams to PhoeniX Source result format.
  *
  * Returns ORIGINAL stream URLs (not /proxy URLs) with meta flags that the
@@ -102,13 +153,21 @@ export function buildStreamResults({ streams, title, sourceId, sourceLabel, coun
     const videoFile = isVideoFileUrl(url);
     const filename = extractFilename(url);
 
-    // Build a rich title for enrichMeta parsing — include filename which
-    // often contains quality/codec/sourceType/audio info
+    // Build a rich title for enrichMeta parsing — include raw filename which
+    // often contains quality/codec/sourceType/audio info (e.g.
+    // "Dune.Part.Two.2024.1080p.AMZN.WEB-DL.DUAL.DDP5.1.ESubs.mkv")
+    // For DISPLAY, use the cleaned filename (without hash strings, technical
+    // playlist indices, etc.) to avoid clutter in the stream title.
     const streamTitle = s.title || s.quality || '';
+    const displayFilename = cleanFilenameForDisplay(filename);
     const titleParts = [title];
     if (streamTitle) titleParts.push(streamTitle);
-    if (filename && filename !== streamTitle) titleParts.push(filename);
+    if (displayFilename && displayFilename !== streamTitle) titleParts.push(displayFilename);
     const richTitle = titleParts.join(' — ');
+
+    // For metadata parsing, use the raw filename (may contain quality/codec info
+    // even if it's too cluttered for display)
+    const metaFilename = filename;
 
     const allCountryCodes = [...countryCodes, ...findCountryCodes(streamTitle + ' ' + s.name + ' ' + filename)];
     const height = parseHeight(s.quality) || parseHeight(s.title) || parseHeight(filename);
