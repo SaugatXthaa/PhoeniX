@@ -46,7 +46,7 @@ export class DahmerMovies4k extends Source {
       mediaType,
       season: tmdbId.season || null,
       episode: tmdbId.episode || null,
-      timeoutMs: 28000, // dahmermovies-4k is slower for TV, stay under 30s source timeout
+      timeoutMs: 20000, // dahmermovies-4k is slow for TV, cap at 20s to avoid blocking
     });
 
     return buildStreamResults({

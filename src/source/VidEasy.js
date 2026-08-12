@@ -44,7 +44,7 @@ export class VidEasy extends Source {
       mediaType,
       season: tmdbId.season || null,
       episode: tmdbId.episode || null,
-      timeoutMs: 28000, // Videasy queries 10 servers in parallel, stay under 30s
+      timeoutMs: 20000, // Videasy queries 10 servers, cap at 20s to avoid blocking
     });
 
     return buildStreamResults({
