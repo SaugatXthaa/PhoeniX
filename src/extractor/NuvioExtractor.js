@@ -28,6 +28,8 @@ const NUVIO_SOURCE_IDS = new Set([
   // animeworldindia, animesdigital
   'uhdmovies', 'vidlove', 'videasy', 'anikototv', 'vixsrc2',
   'animesalt', 'animeworldindia', 'animesdigital',
+  // AniChan — anime sub+dub HLS via AniList ID + anichan.net API
+  'anichan',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)
@@ -66,7 +68,9 @@ export class NuvioExtractor extends Extractor {
     //   - HLS + Referer → /proxy (proxy rewrites m3u8 URLs + sends Referer)
     //   - Ambiguous URL + Referer → /proxy with forceHls=1
     //   - MP4/MKV + Referer → direct URL with requestHeaders (proxyHeaders)
-    //   - No Referer → direct URL
+    //   - forceHls (no Referer) → /proxy with forceHls=1 (AniChan: m3u8 with
+    //     relative variant URLs that need rewriting, but no Referer needed)
+    //   - No Referer, no forceHls → direct URL
     if (referer && hls) {
       const proxyUrl = new URL('/proxy', ctx.hostUrl);
       proxyUrl.searchParams.set('url', url.href);
@@ -81,6 +85,17 @@ export class NuvioExtractor extends Extractor {
       const proxyUrl = new URL('/proxy', ctx.hostUrl);
       proxyUrl.searchParams.set('url', url.href);
       proxyUrl.searchParams.set('referer', referer);
+      proxyUrl.searchParams.set('forceHls', '1');
+      return [{
+        url: proxyUrl,
+        format: Format.hls,
+        meta: { ...meta },
+      }];
+    } else if (forceHls) {
+      // forceHls without Referer — route through /proxy with forceHls=1
+      // (AniChan m3u8 has relative variant URLs that need rewriting)
+      const proxyUrl = new URL('/proxy', ctx.hostUrl);
+      proxyUrl.searchParams.set('url', url.href);
       proxyUrl.searchParams.set('forceHls', '1');
       return [{
         url: proxyUrl,

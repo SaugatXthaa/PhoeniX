@@ -210,6 +210,7 @@ app.get('/proxy', async (req, res) => {
     const urlIsM3u8 = pathLower.endsWith('.m3u8') ||
                       pathLower.includes('.m3u8') ||
                       pathLower.includes('/m3u8/') ||
+                      pathLower.includes('/m3u8?') ||  // AniChan /api/watch/m3u8?sh=...
                       pathLower.includes('/playlist');  // goated cdn.reallyfast.xyz/playlist/, DesiFlix vixsrc.to/playlist/
     const urlIsStream = pathLower.includes('/stream/');  // AniKage: could be HLS or MP4
     // AniDB disguises HLS playlists with .txt and .xls extensions
@@ -455,10 +456,12 @@ function rewriteM3u8Urls(m3u8Text, baseUrl, referer, req) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) {
       // Rewrite URI= inside #EXT-X-STREAM-INF, #EXT-X-I-FRAME-STREAM-INF,
-      // and #EXT-X-MAP tags (all use URI="..." for variant/segment references)
+      // #EXT-X-MAP, and #EXT-X-MEDIA tags (all use URI="..." for variant/
+      // segment/audio/subtitle references)
       if (trimmed.startsWith('#EXT-X-STREAM-INF') ||
           trimmed.startsWith('#EXT-X-I-FRAME-STREAM-INF') ||
-          trimmed.startsWith('#EXT-X-MAP')) {
+          trimmed.startsWith('#EXT-X-MAP') ||
+          trimmed.startsWith('#EXT-X-MEDIA')) {
         return line.replace(/URI="([^"]+)"/g, (match, uri) => {
           const absoluteUrl = new URL(uri, baseUrl).href;
           const proxyUrl = new URL(proxyBase);

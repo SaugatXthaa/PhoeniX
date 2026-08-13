@@ -72,6 +72,7 @@ import { AnimeGG } from './AnimeGG.js';
 import { Peckle } from './Peckle.js';
 import { HiAnime } from './HiAnime.js';
 import { AnimeKai } from './AnimeKai.js';
+import { AniChan } from './AniChan.js';
 // Nuvio provider sources (additive — each has its own dedicated source file)
 import { Cineby } from './Cineby.js';
 import { DesiFlix } from './DesiFlix.js';
@@ -241,5 +242,7 @@ export const createSources = (fetcher) => {
     new AnimeWorldIN(fetcher),
     // animesdigital — anime-only (cdn.imagesskill.com, Portuguese sub/dub)
     new AnimesDigital(fetcher),
+    // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
+    new AniChan(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
