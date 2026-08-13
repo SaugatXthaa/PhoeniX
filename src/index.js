@@ -322,10 +322,19 @@ app.get('/proxy', async (req, res) => {
         }
 
         // .txt file but not HLS — serve as-is (could be subtitles or other text)
+        // But override Content-Type to video/mp2t for segment-like .txt files
+        // to prevent Stremio from refusing to play them as video.
         if (urlIsTxt) {
           res.status(200);
           const ct = m3u8Res.headers['content-type'] || 'text/plain';
-          res.setHeader('Content-Type', ct);
+          // If the .txt URL path looks like a segment (contains /content/ or
+          // page- or .html), override to video/mp2t (PlayIMDb-style segments)
+          const segPath = targetUrl.pathname.toLowerCase();
+          if (ct.includes('text/html') && (segPath.includes('/content/') || segPath.endsWith('.html') || segPath.includes('page-'))) {
+            res.setHeader('Content-Type', 'video/mp2t');
+          } else {
+            res.setHeader('Content-Type', ct);
+          }
           res.setHeader('Content-Length', Buffer.byteLength(body));
           res.send(body);
           return;
@@ -399,10 +408,22 @@ app.get('/proxy', async (req, res) => {
     // (server bug). The body is valid MPEG-TS — override Content-Type so
     // Stremio's HLS player accepts it.
     if (urlIsAniPriv8) {
-      const ct = (response.headers['content-type'] || '').toLowerCase();
-      if (ct.includes('image/png') || ct.includes('application/octet-stream') || !ct) {
+      const ct2 = (response.headers['content-type'] || '').toLowerCase();
+      if (ct2.includes('image/png') || ct2.includes('application/octet-stream') || !ct2) {
         res.setHeader('Content-Type', 'video/mp2t');
       }
+    }
+
+    // PlayIMDb segments return Content-Type: text/html (server quirk).
+    // The body is valid MPEG-TS data — override to video/mp2t so Stremio's
+    // HLS player accepts it. Without this, Stremio shows "stuck on loading"
+    // because it refuses to play text/html as video.
+    // Also apply to any .html segment URLs from HLS playlists (PlayIMDb uses
+    // page-N.html for segment names).
+    const ct = (response.headers['content-type'] || '').toLowerCase();
+    const segPath = targetUrl.pathname.toLowerCase();
+    if (ct.includes('text/html') && (segPath.includes('/content/') || segPath.endsWith('.html') || segPath.includes('page-'))) {
+      res.setHeader('Content-Type', 'video/mp2t');
     }
 
     // Stream the body — pipe directly to avoid buffering in memory

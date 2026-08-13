@@ -302,7 +302,7 @@ export class StreamResolver {
       // Proxying everything causes "network connection was lost" on Render when
       // downloading large files — Render kills long-running proxy connections.
       // Only proxy CDNs that return "Connection reset by peer" to Stremio's player.
-      const needsProxy = /valentine|fukggl|fileserver/.test(finalUrl.hostname);
+      const needsProxy = /valentine|fukggl|fileserver|hakunaymatata/.test(finalUrl.hostname);
       
       if (!isAlreadyProxied && !hasProxyHeaders && needsProxy) {
         const proxyUrl = new URL('/proxy', ctx.hostUrl);

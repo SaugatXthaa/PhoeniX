@@ -62,6 +62,24 @@ export class ZXCStream extends Extractor {
       }];
     }
 
+    // Icarus servers (1icarus): route through /proxy.
+    // Icarus returns URLs like:
+    //   https://{random-subdomain}.icarus0NN.workers.dev/?data=...
+    //   https://{random-subdomain}.wubbalubbadubdubN.workers.dev/proxy?data=...
+    // These rotating subdomains frequently go 404/dead. Routing through /proxy
+    // allows the proxy to handle failures gracefully and the next request
+    // will get a fresh subdomain.
+    if (meta?.serverId === '1icarus' || /icarus\d*\.workers\.dev|wubbalubbadubdub\d*\.workers\.dev/i.test(url.hostname)) {
+      const proxyUrl = new URL('/proxy', ctx.hostUrl);
+      proxyUrl.searchParams.set('url', url.href);
+
+      return [{
+        url: proxyUrl,
+        format: inferFormat(url),
+        meta: { ...meta },
+      }];
+    }
+
     // All other servers: direct passthrough.
     // URLs are direct playable CDN URLs (workers.dev, devcorp.me).
     // They work without Referer/Auth — verified with Range requests (HTTP 206).

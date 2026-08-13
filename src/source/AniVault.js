@@ -122,6 +122,20 @@ export class AniVault extends Source {
           const data = await apiGet(`/watch/${source}/${anilistId}/${epNum}/${type}`);
           if (!data) continue;
 
+          // Verify the stream title from the API matches the requested anime
+          // to prevent "playing random anime but showing requested title" bug.
+          // The AniVault API sometimes returns wrong content for a given
+          // AniList ID — skip if the title doesn't match.
+          const apiTitle = data.title || data.animeTitle || '';
+          if (apiTitle) {
+            const apiNorm = normalize(apiTitle);
+            if (apiNorm && !apiNorm.includes(nameNorm) && !nameNorm.includes(apiNorm) &&
+                apiNorm.split(' ')[0] !== nameNorm.split(' ')[0]) {
+              // Title doesn't match — skip this stream to avoid wrong content
+              continue;
+            }
+          }
+
           const streamUrl = data.m3u8 || data.mp4 || data.rawStreamUrl;
           if (!streamUrl) continue;
           if (seenUrls.has(streamUrl)) continue;

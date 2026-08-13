@@ -33,6 +33,7 @@ const DIRECT_HLS_HOSTS = [
   'megap.shiora.top',
   'megap.shiora.site',
   'megap.mikora.top',
+  'megap.akirax.buzz',   // 2Dhive + StreamXTV use this
 ];
 
 // CDN host suffixes that serve direct HLS (AniNeko + Netlio + VidSpark CDNs)
@@ -93,6 +94,7 @@ export class AnimeDirect extends Extractor {
         : url.hostname === 'prox.anicore.tv' ? 'https://anikage.cc/'
         : url.hostname === 'playeng.animeapps.top' ? 'https://anibd.app/'
         : url.hostname.endsWith('.netrocdn.site') ? 'https://vidspark.to/'
+        : url.hostname.startsWith('megap.') ? 'https://megaplay.buzz/'
         : 'https://anineko.to/');
 
       // Route through /proxy for CDN hosts that need Referer
