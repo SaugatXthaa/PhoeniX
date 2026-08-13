@@ -35,9 +35,10 @@ export class Netlio extends Extractor {
   }
 
   async extractInternal(ctx, url, meta) {
-    // Route through the addon's /proxy endpoint so the Referer header
-    // is added server-side. Without the proxy, Stremio's plain HTTP
-    // requests get 404 from the CDN (it requires Referer to play).
+    // Cloudflare-protected CDN (aurorionacademy.site, professionalidentity.cyou, etc.)
+    // returns 403 to server-side requests. Route through /proxy which uses
+    // got-scraping with HeaderGenerator for CF bypass.
+    // The proxy also rewrites relative URLs in the m3u8 playlist.
     const proxyUrl = new URL('/proxy', ctx.hostUrl);
     proxyUrl.searchParams.set('url', url.href);
     proxyUrl.searchParams.set('referer', REFERER);

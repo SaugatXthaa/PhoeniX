@@ -48,10 +48,13 @@ export class AniNeko extends Source {
     if (servers.length === 0) return [];
 
     // Step 4: For each server, fetch the embed and extract HLS URL
+    // Limit to first 3 servers to avoid slow loading (each server requires
+    // a fetch to otakuvid.online + eval unpacking)
     const results = [];
     const seenUrls = new Set();
+    const maxServers = 3;
 
-    for (const server of servers) {
+    for (const server of servers.slice(0, maxServers)) {
       if (!server.embedUrl) continue;
 
       try {
