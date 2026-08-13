@@ -162,9 +162,17 @@ export class MovieBox extends Source {
 
       const height = parseInt(s.resolutions) || undefined;
 
+      // hakunaymatata.com CDN returns 429 (Too Many Requests) when accessed
+      // without a Referer. Route through /proxy with movie-box.co Referer to
+      // avoid the rate limit.
+      const requestHeaders = parsed.hostname.endsWith('.hakunaymatata.com')
+        ? { Referer: 'https://movie-box.co/' }
+        : undefined;
+
       results.push({
         url: parsed,
         format: Format.mp4,
+        ...(requestHeaders && { requestHeaders }),
         meta: {
           countryCodes: [CountryCode.multi],
           title: `${title} (${s.resolutions}p)`,

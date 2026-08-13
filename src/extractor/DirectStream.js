@@ -27,7 +27,8 @@ const DIRECT_CDN_HOSTS = [
   'pixeldrain.dev',
   'cdn.fsl-buckets.work',
   'cdn.fukggl.buzz',
-  // MovieBox — direct MP4 on hakunaymatata.com CDN
+  // MovieBox — direct MP4 on hakunaymatata.com CDN (but often rate-limited
+  // with 429 — needsProxy in StreamResolver routes these through /proxy)
   'bcdnxw2.hakunaymatata.com',
   'bcdnxw.hakunaymatata.com',
   // FilmeOnlineHD — file hosts from linksdrive
@@ -39,8 +40,11 @@ const DIRECT_CDN_HOSTS = [
   'vcloud.fit',
   'new26.gdtot.dad',
   'gdtot.dad',
-  // AniVault — AnimeHeaven direct MP4
+  // AniVault — AnimeHeaven direct MP4 (but returns Connection reset by peer
+  // when Stremio's player accesses directly — needsProxy in StreamResolver
+  // routes these through /proxy)
   'rt.animeheaven.me',
+  'co.animeheaven.me',  // AniVault API returns co.animeheaven.me for some sources
   // AniPriv8 — handled by dedicated AniPriv8 extractor (needs proxy for m3u8 rewriting)
 ];
 

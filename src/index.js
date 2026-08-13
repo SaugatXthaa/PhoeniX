@@ -212,7 +212,9 @@ app.get('/proxy', async (req, res) => {
                       pathLower.includes('/m3u8/') ||
                       pathLower.includes('/playlist');  // goated cdn.reallyfast.xyz/playlist/, DesiFlix vixsrc.to/playlist/
     const urlIsStream = pathLower.includes('/stream/');  // AniKage: could be HLS or MP4
-    const urlIsTxt = pathLower.endsWith('.txt');
+    // AniDB disguises HLS playlists with .txt and .xls extensions
+    // (e.g. file-1-f1-v1-a1.xls, master.txt). These are actually m3u8 playlists.
+    const urlIsTxt = pathLower.endsWith('.txt') || pathLower.endsWith('.xls');
     const urlIsAniPriv8 = pathLower.includes('/api/secure/pipeline/');
     // Berkas: *.berkas*.workers.dev — master m3u8 and variant playlists
     const urlIsBerkas = hostLower.includes('berkas') && hostLower.endsWith('.workers.dev');
@@ -420,9 +422,14 @@ app.get('/proxy', async (req, res) => {
     // because it refuses to play text/html as video.
     // Also apply to any .html segment URLs from HLS playlists (PlayIMDb uses
     // page-N.html for segment names).
+    // AniDB segments return Content-Type: application/vnd.ms-excel (.xls extension)
+    // — the body is valid MPEG-TS, override to video/mp2t.
     const ct = (response.headers['content-type'] || '').toLowerCase();
     const segPath = targetUrl.pathname.toLowerCase();
     if (ct.includes('text/html') && (segPath.includes('/content/') || segPath.endsWith('.html') || segPath.includes('page-'))) {
+      res.setHeader('Content-Type', 'video/mp2t');
+    }
+    if (ct.includes('vnd.ms-excel') || (ct.includes('application/vnd.ms-excel') && segPath.endsWith('.xls'))) {
       res.setHeader('Content-Type', 'video/mp2t');
     }
 

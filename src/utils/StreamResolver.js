@@ -302,11 +302,23 @@ export class StreamResolver {
       // Proxying everything causes "network connection was lost" on Render when
       // downloading large files — Render kills long-running proxy connections.
       // Only proxy CDNs that return "Connection reset by peer" to Stremio's player.
-      const needsProxy = /valentine|fukggl|fileserver|hakunaymatata/.test(finalUrl.hostname);
-      
+      const needsProxy = /valentine|fukggl|fileserver|animeheaven/.test(finalUrl.hostname);
+
       if (!isAlreadyProxied && !hasProxyHeaders && needsProxy) {
         const proxyUrl = new URL('/proxy', ctx.hostUrl);
         proxyUrl.searchParams.set('url', finalUrl.href);
+        finalUrl = proxyUrl;
+      }
+
+      // hakunaymatata.com (MovieBox CDN) returns 429 (Too Many Requests) when
+      // accessed without a Referer. If the source set requestHeaders with a
+      // Referer, route through /proxy WITH the Referer param so the proxy
+      // sends it. This avoids the 429 rate limit.
+      if (!isAlreadyProxied && hasProxyHeaders && /hakunaymatata/.test(finalUrl.hostname)) {
+        const proxyUrl = new URL('/proxy', ctx.hostUrl);
+        proxyUrl.searchParams.set('url', finalUrl.href);
+        const referer = urlResult.requestHeaders.Referer || urlResult.requestHeaders.referer;
+        if (referer) proxyUrl.searchParams.set('referer', referer);
         finalUrl = proxyUrl;
       }
 
