@@ -1,7 +1,6 @@
 // src/source/index.js
 // Ported from research/webstreamr-mbg/src/source/index.ts
 
-import { CineHDPlus } from './CineHDPlus.js';
 import { CineWave } from './CineWave.js';
 import { AnimeFlix } from './AnimeFlix.js';
 import { AnimeWorld } from './AnimeWorld.js';
@@ -15,7 +14,6 @@ import { Fmovies } from './Fmovies.js';
 import { FourKHDHub } from './FourKHDHub.js';
 import { FrenchCloud } from './FrenchCloud.js';
 import { HDHub4u } from './HDHub4u.js';
-import { HDHub4uNew } from './HDHub4uNew.js';
 import { MegaKino } from './MegaKino.js';
 import { MeineCloud } from './MeineCloud.js';
 import { MostraGuarda } from './MostraGuarda.js';
@@ -30,7 +28,6 @@ import { NineAnime } from './NineAnime.js';
 import { PrimeShows } from './PrimeShows.js';
 import { VerHdLink } from './VerHdLink.js';
 import { VidSrc } from './VidSrc.js';
-import { VidSpark } from './VidSpark.js';
 import { VidSrcSbs } from './VidSrcSbs.js';
 import { WatchSeries } from './WatchSeries.js';
 import { ZinkMovies } from './ZinkMovies.js';
@@ -40,7 +37,6 @@ import { VidLink } from './VidLink.js';
 import { VidSrcTo } from './VidSrcTo.js';
 import { VegaMovies } from './VegaMovies.js';
 import { Vidzee } from './Vidzee.js';
-import { VixSrc } from './VixSrc.js';
 // Cinepro-org/core ports (additive — no existing source modified)
 import { Fshare } from './Fshare.js';
 // New sources (additive — no existing source modified)
@@ -57,7 +53,6 @@ import { AniVault } from './AniVault.js';
 import { AniPriv8 } from './AniPriv8.js';
 import { ZXCStream } from './ZXCStream.js';
 import { HDGharTV } from './HDGharTV.js';
-import { Cinejoy } from './Cinejoy.js';
 import { Pantyflix } from './Pantyflix.js';
 import { AnimeGG } from './AnimeGG.js';
 import { Peckle } from './Peckle.js';
@@ -94,10 +89,7 @@ export const createSources = (fetcher) => {
     // multi
     new FourKHDHub(fetcher),
     new HDHub4u(fetcher),
-    new HDHub4uNew(fetcher),
-    new VixSrc(fetcher),
     new VidSrc(),
-    new VidSpark(fetcher),
     new Vidzee(fetcher),
     new MovieBox(fetcher),
     new Movie4kTo(fetcher),
@@ -127,7 +119,6 @@ export const createSources = (fetcher) => {
     new AniNeko(fetcher),
     // AL
     // ES / MX
-    new CineHDPlus(fetcher),
     new Cuevana(fetcher),
     new VerHdLink(fetcher),
     // DE
@@ -171,7 +162,6 @@ export const createSources = (fetcher) => {
     // hdghartv.cc — movies/series/anime with multi-audio HLS (Hindi/English/Tamil/Telugu)
     new HDGharTV(fetcher),
     // cinejoy.to — movies/series via shegu.st encrypted API + scrypt PoW (4K/1080p/720p/360p)
-    new Cinejoy(fetcher),
     // pantyflix.org — movies/series/anime via /api/streamrip/download (direct MP4/MKV)
     new Pantyflix(fetcher),
     // animegg.org — anime sub+dub direct MP4 (720p/1080p)

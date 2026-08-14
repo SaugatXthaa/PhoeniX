@@ -31,8 +31,7 @@ import { Fshare } from './Fshare.js';
 import { AcerMovies } from './AcerMovies.js';
 // DirectStream — passthrough for direct playable CDN URLs (CineWave HdHub, Fmovies)
 import { DirectStream } from './DirectStream.js';
-// HDHub4uNew — passthrough for Sootio-resolved CDN URLs
-import { HDHub4uNew } from './HDHub4uNew.js';
+// HDHub4uNew and Cinejoy extractors removed — sources no longer exist
 // Netlio — passthrough for direct HLS URLs from netlio.vercel.app
 import { Netlio } from './Netlio.js';
 // AnimeDirect — passthrough for anime HLS/MP4 URLs (AniDB, AniNeko, HiAnime, etc.)
@@ -46,8 +45,6 @@ import { ZXCStream as ZXCStreamExtractor } from './ZXCStream.js';
 import { HDGharTV as HDGharTVExtractor } from './HDGharTV.js';
 // AniPriv8 — routes anipriv8.online HLS through /proxy for m3u8 URL rewriting
 import { AniPriv8 as AniPriv8Extractor } from './AniPriv8.js';
-// Cinejoy — routes help.earthcleaner.cc HLS through /proxy with Referer
-import { Cinejoy as CinejoyExtractor } from './Cinejoy.js';
 // Pantyflix — passthrough for direct MP4/MKV URLs (must come before Netlio
 // to prevent Netlio from claiming *.workers.dev URLs from Pantyflix source)
 import { Pantyflix as PantyflixExtractor } from './Pantyflix.js';
@@ -71,12 +68,8 @@ export const createExtractors = (fetcher, logger) => {
   const disabledExtractors = (process.env.DISABLED_EXTRACTORS || '').split(',').filter(Boolean);
 
   const hubExtractor = new HubExtractor(fetcher, logger);
-  const hdHub4uNewExtractor = new HDHub4uNew(fetcher, logger);
 
   return [
-    // HDHub4uNew — must come BEFORE HubExtractor to claim workers.dev URLs
-    // (HubExtractor matches 'hubcloud' in hostname and would claim them first)
-    hdHub4uNewExtractor,
     // ZXCStream — must come BEFORE Netlio to claim *.workers.dev URLs from
     // ZXCStream source (Netlio would otherwise force them to HLS format)
     new ZXCStreamExtractor(fetcher, logger),
@@ -84,8 +77,6 @@ export const createExtractors = (fetcher, logger) => {
     new HDGharTVExtractor(fetcher, logger),
     // AniPriv8 — routes anipriv8.online HLS through /proxy for m3u8 URL rewriting
     new AniPriv8Extractor(fetcher, logger),
-    // Cinejoy — routes help.earthcleaner.cc HLS through /proxy with Referer
-    new CinejoyExtractor(fetcher, logger),
     // Pantyflix — passthrough for direct MP4/MKV URLs (must come before Netlio)
     new PantyflixExtractor(fetcher, logger),
     // AnimeGG — routes animegg.org MP4 through /proxy with Referer
