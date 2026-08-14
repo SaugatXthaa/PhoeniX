@@ -27,7 +27,7 @@ async function apiGet(path) {
   const { gotScraping } = await import('got-scraping');
   const r = await gotScraping.get(`${API_BASE}${path}`, {
     headers: { 'User-Agent': UA, 'X-API-Key': API_KEY, 'Accept': 'application/json' },
-    timeout: { request: 35000 }, throwHttpErrors: false,
+    timeout: { request: 15000 }, throwHttpErrors: false,
   });
   if (r.statusCode !== 200) return null;
   try { return JSON.parse(r.body); } catch { return null; }

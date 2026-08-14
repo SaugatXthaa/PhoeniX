@@ -46,7 +46,7 @@ export class AnimeZeY extends Source {
       mediaType: 'tv',
       season: tmdbId.season,
       episode: tmdbId.episode || 1,
-      timeoutMs: 25000, // animezey can be slow, but stay under 30s source timeout
+      timeoutMs: 13000, // animezey can be slow, but stay under 30s source timeout
     });
 
     return buildStreamResults({

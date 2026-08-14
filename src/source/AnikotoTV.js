@@ -49,7 +49,7 @@ export class AnikotoTV extends Source {
       mediaType: 'tv',
       season: tmdbId.season,
       episode: tmdbId.episode || 1,
-      timeoutMs: 25000, // stay under 30s source timeout
+      timeoutMs: 13000, // stay under 30s source timeout
     });
 
     return buildStreamResults({
