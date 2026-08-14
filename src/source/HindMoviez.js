@@ -46,7 +46,7 @@ export class HindMoviez extends Source {
       mediaType,
       season: tmdbId.season || null,
       episode: tmdbId.episode || null,
-      timeoutMs: 13000, // HindMoviez is slow, cap at 25s
+      timeoutMs: 25000, // HindMoviez is slow, cap at 25s
     });
 
     return buildStreamResults({

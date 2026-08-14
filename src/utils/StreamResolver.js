@@ -307,7 +307,7 @@ export class StreamResolver {
     const urlResults = [];
     let sourceErrorCount = 0;
 
-    const SOURCE_TIMEOUT_MS = 15_000;
+    const SOURCE_TIMEOUT_MS = 30_000;
 
     const withTimeout = (promise, ms, sourceId) => {
       let timer;

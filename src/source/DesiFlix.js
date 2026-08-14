@@ -44,7 +44,7 @@ export class DesiFlix extends Source {
       mediaType,
       season: tmdbId.season || null,
       episode: tmdbId.episode || null,
-      timeoutMs: 13000, // DesiFlix is slow (multiple CDN fallbacks), cap at 25s
+      timeoutMs: 25000, // DesiFlix is slow (multiple CDN fallbacks), cap at 25s
     });
 
     return buildStreamResults({

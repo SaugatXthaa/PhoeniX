@@ -46,7 +46,7 @@ export class UHDMovies extends Source {
       mediaType: 'movie',
       season: null,
       episode: null,
-      timeoutMs: 13000, // cap at 25s
+      timeoutMs: 25000, // cap at 25s
     });
 
     return buildStreamResults({
