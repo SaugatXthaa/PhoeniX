@@ -42,14 +42,14 @@ export class ZinkMovies extends Source {
     const zinkLinks = await this.findZinkCloudLinks(ctx, postUrl, title, tmdbId);
     if (zinkLinks.length === 0) return [];
 
-    // Step 3+4: For each ZinkCloud link, generate token and extract hubcloud links
+    // Step 3+4: For each ZinkCloud/GDFlix link, resolve to download URLs
     const results = [];
     for (const zinkLink of zinkLinks) {
       try {
-        const hubcloudLinks = await this.resolveZinkCloud(ctx, zinkLink.fileId);
-        for (const hubUrl of hubcloudLinks) {
+        // GDFlix links — return the GDFlix URL directly (HubExtractor handles it)
+        if (zinkLink.isGDFlix) {
           try {
-            const url = new URL(hubUrl);
+            const url = new URL(zinkLink.fileId);
             results.push({
               url,
               meta: {
@@ -62,8 +62,27 @@ export class ZinkMovies extends Source {
               },
             });
           } catch { /* skip invalid URL */ }
+        } else {
+          // Old format — ZinkCloud token flow → hubcloud links
+          const hubcloudLinks = await this.resolveZinkCloud(ctx, zinkLink.fileId);
+          for (const hubUrl of hubcloudLinks) {
+            try {
+              const url = new URL(hubUrl);
+              results.push({
+                url,
+                meta: {
+                  countryCodes: [CountryCode.multi, ...findCountryCodes(zinkLink.text)],
+                  ...(zinkLink.height && { height: zinkLink.height }),
+                  ...(zinkLink.bytes && { bytes: zinkLink.bytes }),
+                  title: `${title} — ${zinkLink.quality || ''} ${zinkLink.sizeText || ''}`.trim(),
+                  sourceId: this.id,
+                  sourceLabel: this.label,
+                },
+              });
+            } catch { /* skip invalid URL */ }
+          }
         }
-      } catch { /* skip failed zinkcloud resolution */ }
+      } catch { /* skip failed resolution */ }
     }
 
     return results;
@@ -165,7 +184,57 @@ export class ZinkMovies extends Source {
     const $ = cheerio.load(html);
     const links = [];
 
-    // Find all zinkcloud.net links
+    // ZinkMovies changed their structure — they now use /links/ redirect pages
+    // instead of direct zinkcloud.net links. Each /links/{code} page redirects
+    // to GDFlix (gdflix.io/file/{code}) which then needs the HubExtractor.
+    // Find all /links/ URLs and resolve them to the actual download URL.
+    const linkElements = [];
+    $('a[href*="/links/"]').each((_i, el) => {
+      const href = $(el).attr('href');
+      if (!href || !href.includes('/links/')) return;
+      const parent = $(el).closest('tr');
+      const parentText = parent.text().trim() || $(el).parent().text().trim();
+      linkElements.push({ href, text: parentText });
+    });
+
+    // Resolve /links/ redirect pages to get GDFlix URLs
+    for (const linkEl of linkElements) {
+      try {
+        // Fetch the /links/ page (it 301-redirects to gdflix.io/file/{code})
+        // Use got-scraping directly since fetcher.getFinalRedirectUrl uses HEAD
+        // which may not work for all servers
+        const { gotScraping } = await import('got-scraping');
+        const r = await gotScraping.get(linkEl.href, {
+          headers: { 'Accept': 'text/html' },
+          timeout: { request: 8000 },
+          throwHttpErrors: false,
+          followRedirect: false,
+        });
+        // Get the redirect location
+        const location = r.headers.location;
+        if (location) {
+          const redirectUrl = new URL(location, linkEl.href);
+          // Parse quality from the parent text
+          const text = linkEl.text;
+          const qualityMatch = text.match(/(\d{3,4})p/i);
+          const sizeMatch = text.match(/([\d.]+)\s*(GB|MB)/i);
+          const height = qualityMatch ? parseInt(qualityMatch[1]) : undefined;
+          const fileSize = sizeMatch ? bytes.parse(`${sizeMatch[1]} ${sizeMatch[2]}`) : undefined;
+
+          links.push({
+            fileId: redirectUrl.href, // Store the GDFlix URL
+            text,
+            quality: qualityMatch ? qualityMatch[0] : undefined,
+            height,
+            sizeText: sizeMatch ? `${sizeMatch[1]} ${sizeMatch[2]}` : undefined,
+            bytes: fileSize,
+            isGDFlix: true,
+          });
+        }
+      } catch { /* skip failed redirect */ }
+    }
+
+    // Also check for direct zinkcloud.net links (old format)
     $('a[href*="zinkcloud"]').each((_i, el) => {
       const href = $(el).attr('href');
       const text = $(el).text().trim();
