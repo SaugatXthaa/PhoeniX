@@ -146,6 +146,58 @@ function enrichMeta(urlResult) {
     }
   }
 
+  // 8a. Parse audio channels (5.1, 7.1, 2.0, etc.)
+  if (!meta.audioChannels) {
+    const chMatch = title.match(/\b(\d(?:\.\d)?)\s*(?:ch|channels?)\b/i)
+      || title.match(/\b(\d(?:\.\d)?)\b(?=\s*(?:ddp|dd|truehd|dts|atmos|eac3|ac3))/i)
+      || title.match(/(?:ddp|dd|truehd|dts|atmos|eac3|ac3)\s*(\d(?:\.\d)?)/i);
+    if (chMatch) meta.audioChannels = chMatch[1];
+  }
+
+  // 8b. Parse streaming platform (NF, AMZN, ATVP, Hulu, Disney+, etc.)
+  if (!meta.streamingPlatform) {
+    if (/\bNF\b|\bNetflix\b/i.test(title)) meta.streamingPlatform = 'Netflix';
+    else if (/\bAMZN\b|\bAmazon\b/i.test(title)) meta.streamingPlatform = 'Amazon';
+    else if (/\bATVP\b|\bApple\s*TV/i.test(title)) meta.streamingPlatform = 'Apple TV+';
+    else if (/\bHulu\b/i.test(title)) meta.streamingPlatform = 'Hulu';
+    else if (/\bDisney/i.test(title)) meta.streamingPlatform = 'Disney+';
+    else if (/\bHMAX\b|\bHBO\b/i.test(title)) meta.streamingPlatform = 'HBO Max';
+    else if (/\bPCOK\b|\bPeacock\b/i.test(title)) meta.streamingPlatform = 'Peacock';
+    else if (/\bSTAN\b/i.test(title)) meta.streamingPlatform = 'Stan';
+    else if (/\bBCORE\b/i.test(title)) meta.streamingPlatform = 'BlueMAX';
+    else if (/\bSHO\b/i.test(title)) meta.streamingPlatform = 'Showtime';
+    else if (/\bSTARZ\b/i.test(title)) meta.streamingPlatform = 'Starz';
+    else if (/\bMZKT\b|\bMax\b/i.test(title)) meta.streamingPlatform = 'Max';
+  }
+
+  // 8c. Parse special tags (PROPER, REPACK, UNCUT, UNCENSORED, REMASTERED, etc.)
+  if (!meta.specialTags) {
+    const tags = [];
+    if (/\bPROPER\b/i.test(title)) tags.push('PROPER');
+    if (/\bREPACK\b/i.test(title)) tags.push('REPACK');
+    if (/\bUNCUT\b/i.test(title)) tags.push('UNCUT');
+    if (/\bUNCENSORED\b/i.test(title)) tags.push('UNCENSORED');
+    if (/\bREMASTERED\b/i.test(title)) tags.push('REMASTERED');
+    if (/\bHYBRID\b/i.test(title)) tags.push('HYBRID');
+    if (/\bDC\b|\bDIRECTOR.?S?\s*CUT\b/i.test(title)) tags.push('DC');
+    if (/\bSE\b|\bSPECIAL\s*EDITION\b/i.test(title)) tags.push('SE');
+    if (/\bEXTENDED\b/i.test(title)) tags.push('EXTENDED');
+    if (/\bTHEATRICAL\b/i.test(title)) tags.push('THEATRICAL');
+    if (/\bIMAX\b/i.test(title)) tags.push('IMAX');
+    if (/\bCAM\b/i.test(title) && !/\bcam\s*rip/i.test(title)) tags.push('CAM');
+    if (/\bSUBBED\b/i.test(title)) tags.push('SUBBED');
+    if (/\bDUAL\b/i.test(title)) tags.push('DUAL');
+    if (/\bMULTI\b/i.test(title)) tags.push('MULTI');
+    if (tags.length > 0) meta.specialTags = tags.join(', ');
+  }
+
+  // 8d. Parse resolution label (UHD, HD, FHD, etc.)
+  if (!meta.resolutionLabel) {
+    if (/\bUHD\b/i.test(title)) meta.resolutionLabel = 'UHD';
+    else if (/\bFHD\b/i.test(title)) meta.resolutionLabel = 'FHD';
+    else if (/\bHD\b/i.test(title) && !/\bHDR\b/i.test(title)) meta.resolutionLabel = 'HD';
+  }
+
   // 9. Infer format from URL if not set
   if (!urlResult.format || urlResult.format === Format.unknown) {
     if (urlLower.includes('.m3u8') || urlLower.includes('/m3u8/') ||
@@ -445,6 +497,9 @@ export class StreamResolver {
     // Audio Codec (TrueHD, Atmos, DD+, DTS, etc.)
     if (meta.audioCodec) specs.push(meta.audioCodec);
 
+    // Audio channels (5.1, 7.1, etc.) — show with audio codec
+    if (meta.audioChannels) specs.push(meta.audioChannels);
+
     // HDR (Dolby Vision, HDR10+, HDR)
     if (meta.hdr) specs.push(meta.hdr);
 
@@ -480,6 +535,15 @@ export class StreamResolver {
     // Line 5: Release group (if parsed from filename)
     if (meta.releaseGroup) {
       titleLines.push(`🏷️ ${meta.releaseGroup}`);
+    }
+
+    // Line 5b: Streaming platform + special tags
+    const extraTags = [];
+    if (meta.streamingPlatform) extraTags.push(meta.streamingPlatform);
+    if (meta.specialTags) extraTags.push(meta.specialTags);
+    if (meta.resolutionLabel) extraTags.push(meta.resolutionLabel);
+    if (extraTags.length > 0) {
+      titleLines.push(`📌 ${extraTags.join(' · ')}`);
     }
 
     // Line 6: Source link
