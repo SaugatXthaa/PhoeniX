@@ -92,12 +92,15 @@ export class ZinkMovies extends Source {
     const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     const nameNorm = normalize(name);
 
-    // Build search queries — try multiple variants
+    // Build search queries — try multiple variants including shorter forms
+    // for anime/K-drama titles that may be listed differently on ZinkMovies
+    const nameClean = name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     const queries = [
       name,
-      name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(),
-      name.split(/[:\-\s]+/).slice(0, 2).join(' '), // e.g. "Spider-Man" → "Spider Man"
-    ].filter((q, i, arr) => q && arr.indexOf(q) === i);
+      nameClean,
+      nameClean.split(/[:\-\s]+/).slice(0, 2).join(' '), // e.g. "Spider-Man" → "Spider Man"
+      nameClean.split(/\s+/)[0], // First word only (for broad search)
+    ].filter((q, i, arr) => q && q.length > 2 && arr.indexOf(q) === i);
 
     for (const query of queries) {
       try {
@@ -109,65 +112,80 @@ export class ZinkMovies extends Source {
 
         const $ = cheerio.load(html);
 
-        // Collect all movie page URLs with their text
+        // Collect all movie page URLs with their text — deduplicate by href
+        const seen = new Set();
         const candidates = [];
         $('a[href*="/movies/"]').each((_i, el) => {
           const href = $(el).attr('href');
           if (!href || href.includes('category/') || href.includes('?s=') ||
               href === BASE_URL + '/movies/' || href === '/movies/' ||
-              href.endsWith('/movies/')) return;
+              href.endsWith('/movies/') || seen.has(href)) return;
+          seen.add(href);
           const text = normalize($(el).text());
           const altAttr = normalize($(el).find('img').attr('alt') || '');
           candidates.push({ href, text, altAttr });
         });
 
-        // Try exact match first — require candidate text to be at least 60% of name length
-        // to prevent "the last house" from matching "the last wish" (short text match)
+        // Try exact match first
+        let best = null;
         for (const c of candidates) {
           if (c.text === nameNorm || c.altAttr === nameNorm) {
-            return c.href;
+            best = c.href;
+            break;
           }
           // Contains match — but only if candidate text is substantial
           if (c.text.length > 10 && (c.text.includes(nameNorm) || c.altAttr.includes(nameNorm))) {
-            return c.href;
+            best = c.href;
+            break;
           }
           // Name contains candidate — but only if candidate is at least 60% of name length
-          // This prevents "the last" (8 chars) from matching "the last house" (15 chars)
           if (c.text.length > 5 && c.text.length >= nameNorm.length * 0.6 &&
               nameNorm.includes(c.text)) {
-            return c.href;
+            best = c.href;
+            break;
           }
           if (c.altAttr.length > 5 && c.altAttr.length >= nameNorm.length * 0.6 &&
               nameNorm.includes(c.altAttr)) {
-            return c.href;
+            best = c.href;
+            break;
           }
         }
 
         // Try partial word match — match first 2-3 significant words
-        // Filter out common stop words ("the", "a", "an", "last", "house" etc.)
-        // that cause false matches
         const STOP_WORDS = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'is', 'it', 'my', 'last', 'first', 'new', 'day', 'night', 'house', 'blood', 'movie', 'story']);
         const nameWords = nameNorm.split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.has(w));
-        if (nameWords.length >= 2) {
+        if (!best && nameWords.length >= 2) {
           const firstWords = nameWords.slice(0, Math.min(3, nameWords.length)).join(' ');
           for (const c of candidates) {
             if (c.text.includes(firstWords) || c.altAttr.includes(firstWords)) {
-              return c.href;
+              best = c.href;
+              break;
             }
           }
         }
 
-        // Try single significant word match — ONLY with year disambiguation
-        // This prevents "The Last House" from matching "Rambo: Last Blood"
-        if (nameWords.length > 0 && year) {
+        // Try fuzzy matching — check if all significant words from the name
+        // appear in the candidate text (in any order)
+        if (!best && nameWords.length >= 2) {
+          for (const c of candidates) {
+            const allWordsMatch = nameWords.every(w => c.text.includes(w) || c.altAttr.includes(w));
+            if (allWordsMatch) { best = c.href; break; }
+          }
+        }
+
+        // Try single significant word match with year disambiguation
+        if (!best && nameWords.length > 0 && year) {
           const firstWord = nameWords[0];
           for (const c of candidates) {
             if ((c.text.includes(firstWord) || c.altAttr.includes(firstWord)) &&
                 (c.text.includes(String(year)) || c.altAttr.includes(String(year)))) {
-              return c.href;
+              best = c.href;
+              break;
             }
           }
         }
+
+        if (best) return best;
       } catch { /* continue to next query */ }
     }
 
