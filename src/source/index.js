@@ -11,13 +11,11 @@ import { AcerMovies } from './AcerMovies.js';
 import { Cuevana } from './Cuevana.js';
 import { Einschalten } from './Einschalten.js';
 import { Eurostreaming } from './Eurostreaming.js';
-import { FilmpalastTO } from './FilmpalastTO.js';
 import { Fmovies } from './Fmovies.js';
 import { FourKHDHub } from './FourKHDHub.js';
 import { FrenchCloud } from './FrenchCloud.js';
 import { HDHub4u } from './HDHub4u.js';
 import { HDHub4uNew } from './HDHub4uNew.js';
-import { KinoGer } from './KinoGer.js';
 import { MegaKino } from './MegaKino.js';
 import { MeineCloud } from './MeineCloud.js';
 import { MostraGuarda } from './MostraGuarda.js';
@@ -54,9 +52,7 @@ import { AniBD } from './AniBD.js';
 import { TwoDhive } from './TwoDhive.js';
 import { AniDoor } from './AniDoor.js';
 import { NowHDTime } from './NowHDTime.js';
-import { FilmeOnlineHD } from './FilmeOnlineHD.js';
 import { CineFreak } from './CineFreak.js';
-import { VegaCatering } from './VegaCatering.js';
 import { AniVault } from './AniVault.js';
 import { AniPriv8 } from './AniPriv8.js';
 import { ZXCStream } from './ZXCStream.js';
@@ -73,7 +69,6 @@ import { AnimeSuge } from './AnimeSuge.js';
 import { Cineby } from './Cineby.js';
 import { DesiFlix } from './DesiFlix.js';
 import { Goated } from './Goated.js';
-import { HindMoviez } from './HindMoviez.js';
 import { MovieBlast } from './MovieBlast.js';
 import { Movies4u } from './Movies4u.js';
 import { DahmerMovies } from './DahmerMovies.js';
@@ -137,10 +132,8 @@ export const createSources = (fetcher) => {
     new VerHdLink(fetcher),
     // DE
     new Einschalten(fetcher),
-    new KinoGer(fetcher),
     new MegaKino(fetcher),
     new MeineCloud(fetcher),
-    new FilmpalastTO(fetcher),
     // FR
     new FrenchCloud(fetcher),
     new Movix(fetcher),
@@ -166,11 +159,9 @@ export const createSources = (fetcher) => {
     // nowhdtime.to — movies/series/anime/kdrama via nhdapi.com HLS proxy API
     new NowHDTime(fetcher),
     // filmeonlinehd.digital — Hindi movies/series via linksdrive → HubCloud/GDFlix
-    new FilmeOnlineHD(fetcher),
     // cinefreak.net — movies/series/anime/kdrama → generate.php → r2.dev direct MKV
     new CineFreak(fetcher),
     // vegamovies.catering — WP REST API → nexdrive.fit → file hosts
-    new VegaCatering(fetcher),
     // anivault.co — anime sub/dub via AniVault API (AnimeHeaven MP4 + Anikoto HLS)
     new AniVault(fetcher),
     // anipriv8.online — anime sub/dub via AniPriv8 pipeline API (5 providers)
@@ -203,7 +194,6 @@ export const createSources = (fetcher) => {
     // goated.cx — movies/TV HLS (cdn.reallyfast.xyz)
     new Goated(fetcher),
     // hindmoviez — movies/TV MKV (hshare.ink → workers.dev, 4K/1080p)
-    new HindMoviez(fetcher),
     // movieblast — movies/TV HLS (mblinkmove.mycdn-mb.xyz, 1080p)
     new MovieBlast(fetcher),
     // movies4u — movies-only MKV (r2.dev + googleusercontent, 4K/1080p)
