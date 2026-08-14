@@ -70,6 +70,13 @@ function enrichMeta(urlResult) {
     else if (/hd\s*rip|hdrip/i.test(title)) meta.sourceType = 'HDRip';
     else if (/dvdrip/i.test(title)) meta.sourceType = 'DVDRip';
     else if (/cam|ts\s*rip|tsrip/i.test(title)) meta.sourceType = 'CAM';
+    // Also catch "WEB" as a standalone word (e.g., "WEB h265", "NF WEB")
+    // and "NF" (Netflix), "AMZN" (Amazon), "ATVP" (Apple TV+)
+    else if (/\bWEB\b/i.test(title)) meta.sourceType = 'WebDL';
+    else if (/\bNF\b/i.test(title)) meta.sourceType = 'WebDL';
+    else if (/\bAMZN\b/i.test(title)) meta.sourceType = 'WebDL';
+    else if (/\bATVP\b/i.test(title)) meta.sourceType = 'WebDL';
+    else if (/\biTunes\b/i.test(title)) meta.sourceType = 'WebDL';
   }
 
   // 4. Parse audio codec from title
