@@ -14,13 +14,10 @@ import { Eurostreaming } from './Eurostreaming.js';
 import { FilmpalastTO } from './FilmpalastTO.js';
 import { Fmovies } from './Fmovies.js';
 import { FourKHDHub } from './FourKHDHub.js';
-import { Frembed } from './Frembed.js';
 import { FrenchCloud } from './FrenchCloud.js';
 import { HDHub4u } from './HDHub4u.js';
 import { HDHub4uNew } from './HDHub4uNew.js';
-import { HomeCine } from './HomeCine.js';
 import { KinoGer } from './KinoGer.js';
-import { Kokoshka } from './Kokoshka.js';
 import { MegaKino } from './MegaKino.js';
 import { MeineCloud } from './MeineCloud.js';
 import { MostraGuarda } from './MostraGuarda.js';
@@ -47,7 +44,6 @@ import { VegaMovies } from './VegaMovies.js';
 import { Vidzee } from './Vidzee.js';
 import { VixSrc } from './VixSrc.js';
 // Cinepro-org/core ports (additive — no existing source modified)
-import { CineSu } from './CineSu.js';
 import { Fshare } from './Fshare.js';
 // New sources (additive — no existing source modified)
 import { StreamDuck } from './StreamDuck.js';
@@ -56,7 +52,6 @@ import { Anikoto } from './Anikoto.js';
 import { AniKage } from './AniKage.js';
 import { AniBD } from './AniBD.js';
 import { TwoDhive } from './TwoDhive.js';
-import { AllWish } from './AllWish.js';
 import { AniDoor } from './AniDoor.js';
 import { NowHDTime } from './NowHDTime.js';
 import { FilmeOnlineHD } from './FilmeOnlineHD.js';
@@ -128,7 +123,6 @@ export const createSources = (fetcher) => {
     // Netlio (netlio.vercel.app — HLS streams with Hindi + English audio)
     new Netlio(fetcher),
     // cinepro-org/core ports (additive)
-    new CineSu(fetcher),
     new Fshare(fetcher),
     // anime
     new NineAnime(fetcher),
@@ -137,11 +131,9 @@ export const createSources = (fetcher) => {
     new AniDB(fetcher),
     new AniNeko(fetcher),
     // AL
-    new Kokoshka(fetcher),
     // ES / MX
     new CineHDPlus(fetcher),
     new Cuevana(fetcher),
-    new HomeCine(fetcher),
     new VerHdLink(fetcher),
     // DE
     new Einschalten(fetcher),
@@ -150,7 +142,6 @@ export const createSources = (fetcher) => {
     new MeineCloud(fetcher),
     new FilmpalastTO(fetcher),
     // FR
-    new Frembed(fetcher),
     new FrenchCloud(fetcher),
     new Movix(fetcher),
     // IT — Eurostreaming and MostraGuarda removed (DNS dead)
@@ -170,7 +161,6 @@ export const createSources = (fetcher) => {
     // 2dhive.com — MAL-ID-keyed anime archive via megaplay.buzz (sub/dub)
     new TwoDhive(fetcher),
     // all-wish.me — Animesuge clone with Laravel AJAX → megaplay.buzz (sub/dub)
-    new AllWish(fetcher),
     // anidoor.me — public sources.json templates + AniList GraphQL (sub/dub)
     new AniDoor(fetcher),
     // nowhdtime.to — movies/series/anime/kdrama via nhdapi.com HLS proxy API

@@ -13,7 +13,7 @@ export class CineHDPlus extends Source {
     this.label = 'CineHDPlus';
     this.contentTypes = ['series'];
     this.countryCodes = [CountryCode.es, CountryCode.mx];
-    this.baseUrl = 'https://cinehdplus.zone';
+    this.baseUrl = 'https://cinehdplus.biz';
     this.fetcher = fetcher;
   }
 

@@ -26,7 +26,6 @@ import { VixSrc } from './VixSrc.js';
 import { VidKing } from './VidKing.js';
 import { Voe } from './Voe.js';
 // Cinepro-org/core ports (additive — no existing extractor modified)
-import { CineSu } from './CineSu.js';
 import { Fshare } from './Fshare.js';
 // AcerMovies — passthrough for direct GDrive CDN URLs
 import { AcerMovies } from './AcerMovies.js';
@@ -145,7 +144,6 @@ export const createExtractors = (fetcher, logger) => {
     new VidKing(fetcher, logger),
 
     // Cinepro-org/core ports (additive — placed before fallback)
-    new CineSu(fetcher, logger),
     new Fshare(fetcher, logger),
     // AcerMovies — passthrough for direct GDrive CDN URLs
     new AcerMovies(fetcher, logger),
