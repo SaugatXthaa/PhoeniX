@@ -73,6 +73,7 @@ import { Peckle } from './Peckle.js';
 import { HiAnime } from './HiAnime.js';
 import { AnimeKai } from './AnimeKai.js';
 import { AniChan } from './AniChan.js';
+import { AnimeSuge } from './AnimeSuge.js';
 // Nuvio provider sources (additive — each has its own dedicated source file)
 import { Cineby } from './Cineby.js';
 import { DesiFlix } from './DesiFlix.js';
@@ -244,5 +245,7 @@ export const createSources = (fetcher) => {
     new AnimesDigital(fetcher),
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
+    // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)
+    new AnimeSuge(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
