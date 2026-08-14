@@ -47,12 +47,20 @@ export class VidEasy extends Source {
       timeoutMs: 25000, // Videasy queries 10 servers, cap at 25s
     });
 
+    // For anime (TV with season/episode), the audio is typically Japanese (sub).
+    // For movies, default to English. VidEasy returns "Original Audio" which
+    // means the original language — Japanese for anime, English for movies.
+    const isAnime = !!tmdbId.season;
+    const countryCodes = isAnime
+      ? [CountryCode.multi, CountryCode.ja]
+      : [CountryCode.multi, CountryCode.en];
+
     return buildStreamResults({
       streams,
       title,
       sourceId: this.id,
       sourceLabel: this.label,
-      countryCodes: this.countryCodes,
+      countryCodes,
       ctx,
     });
   }
