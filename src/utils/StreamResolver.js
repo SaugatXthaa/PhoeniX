@@ -77,6 +77,25 @@ function enrichMeta(urlResult) {
     else if (/\bAMZN\b/i.test(title)) meta.sourceType = 'WebDL';
     else if (/\bATVP\b/i.test(title)) meta.sourceType = 'WebDL';
     else if (/\biTunes\b/i.test(title)) meta.sourceType = 'WebDL';
+    // Provider indicators — when the stream comes from a known streaming
+    // provider, the source type is WebDL (streaming-rip)
+    else if (/Provider:\s*CDN|Provider:\s*m4uhd|Provider:\s*lamovie|Provider:\s*1movies|Provider:\s*superflix|Provider:\s*mb-flix/i.test(title)) meta.sourceType = 'WebDL';
+    // HLS streams from speedracelight/VidEasy/VidKing — these are streaming rips
+    else if (urlLower.includes('speedracelight') || urlLower.includes('ironwallnet') || urlLower.includes('vimeos')) meta.sourceType = 'WebDL';
+    // Direct Google Drive / googleusercontent — typically WebDL rips
+    else if (urlLower.includes('googleusercontent.com') || urlLower.includes('driveseed.org')) meta.sourceType = 'WebDL';
+    // Cloudflare R2 / pub-*.r2.dev — typically WebDL rips (CineFreak, Movies4u)
+    else if (urlLower.includes('.r2.dev') || urlLower.includes('.r2.cloudflarestorage.com')) meta.sourceType = 'WebDL';
+    // streamraiwind.stream — HLS streaming rips (HDGharTV)
+    else if (urlLower.includes('streamraiwind')) meta.sourceType = 'WebDL';
+    // Workers.dev proxy URLs — streaming rips (ZXCStream, Pantyflix)
+    // Also catch proxy URLs that wrap workers.dev URLs
+    else if ((urlLower.includes('.workers.dev') || urlLower.includes('devcorp.me')) && !urlLower.includes('/proxy?')) meta.sourceType = 'WebDL';
+    else if (urlLower.includes('workers.dev') && urlLower.includes('/proxy?')) meta.sourceType = 'WebDL';
+    // HLS/MP4 from known streaming CDNs — these are streaming rips
+    else if (urlLower.includes('mycdn-mb.xyz') || urlLower.includes('scalableimpactgroup') || urlLower.includes('strategicgrowthpartners') || urlLower.includes('fsharetv') || urlLower.includes('komiknostalgia') || urlLower.includes('dropcdn') || urlLower.includes('serversicuro') || urlLower.includes('gxplayer')) meta.sourceType = 'WebDL';
+    // HubCloud CDN (4KHDHub pixel.hubcloud.cx) — typically WebDL
+    else if (urlLower.includes('hubcloud.cx')) meta.sourceType = 'WebDL';
   }
 
   // 4. Parse audio codec from title
