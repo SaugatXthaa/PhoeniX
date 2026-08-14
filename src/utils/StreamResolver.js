@@ -206,8 +206,8 @@ export class StreamResolver {
       return { streams: [{ name: 'PhoeniX', title: '⚠️ No sources found', externalUrl: ctx.hostUrl.href }] };
     }
 
-    // Dedup key: type + id (ignore hostUrl — same content, same result)
-    const dedupKey = `${type}:${id.id || id}`;
+    // Dedup key: type + id + season + episode (so S1E1 and S2E1 don't collide)
+    const dedupKey = `${type}:${id.id || id}${id.season ? `:S${id.season}:E${id.episode || 1}` : ''}`;
     const existing = this.inFlight.get(dedupKey);
     if (existing) {
       this.logger.info(`StreamResolver: dedup hit for ${dedupKey}, reusing in-flight request`);

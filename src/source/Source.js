@@ -57,7 +57,8 @@ export class Source {
   }
 
   async handle(ctx, type, id) {
-    const cacheKey = `${this.id}_${id.id || id}`;
+    // Cache key must include season + episode so S1E1 and S2E1 don't collide
+    const cacheKey = `${this.id}_${id.id || id}${id.season ? `_S${id.season}_E${id.episode || 1}` : ''}`;
     const cached = sourceResultCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.ttl) {
       return cached.data;
