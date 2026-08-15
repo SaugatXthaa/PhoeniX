@@ -53,6 +53,7 @@ import { AniVault } from './AniVault.js';
 import { AniPriv8 } from './AniPriv8.js';
 import { ZXCStream } from './ZXCStream.js';
 import { HDGharTV } from './HDGharTV.js';
+import { Cinejoy } from './Cinejoy.js';
 import { Pantyflix } from './Pantyflix.js';
 import { AnimeGG } from './AnimeGG.js';
 import { Peckle } from './Peckle.js';
@@ -152,7 +153,8 @@ export const createSources = (fetcher) => {
     // filmeonlinehd.digital — Hindi movies/series via linksdrive → HubCloud/GDFlix
     // cinefreak.net — movies/series/anime/kdrama → generate.php → r2.dev direct MKV
     new CineFreak(fetcher),
-    // vegamovies.catering — WP REST API → nexdrive.fit → file hosts
+    // cinejoy.to — movies/series via new lumen-gate-v1 protocol (4K/1080p/720p/360p)
+    new Cinejoy(fetcher),
     // anivault.co — anime sub/dub via AniVault API (AnimeHeaven MP4 + Anikoto HLS)
     new AniVault(fetcher),
     // anipriv8.online — anime sub/dub via AniPriv8 pipeline API (5 providers)

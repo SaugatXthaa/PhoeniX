@@ -17,7 +17,7 @@ const __dirname = dirname(__filename);
 const PORT = process.env.PORT || 7000;
 const HOST = process.env.HOST || '0.0.0.0';
 const ADDON_NAME = process.env.ADDON_NAME || 'PhoeniX';
-const VERSION = '1.2.8';
+const VERSION = '1.3.0';
 
 const logger = console;
 
@@ -608,7 +608,7 @@ app.get('/', (req, res) => {
     width: 80vmin;
     height: 80vmin;
     opacity: 0.06;
-    background-image: url('${hostUrl}/public/logo.svg');
+    background-image: url('${hostUrl}/public/logo.png');
     background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
@@ -638,7 +638,7 @@ app.get('/', (req, res) => {
 <div class="phoenix-bg"></div>
 <div id="embers"></div>
 <div class="relative z-10 flex flex-col items-center px-6 w-full max-w-md">
-  <img src="${hostUrl}/public/logo.svg" alt="PhoeniX" class="w-20 h-20 mb-3 drop-shadow-[0_0_25px_rgba(255,100,0,0.5)]">
+  <img src="${hostUrl}/public/logo.png" alt="PhoeniX" class="w-20 h-20 mb-3 drop-shadow-[0_0_25px_rgba(255,100,0,0.5)]">
   <h1 class="text-5xl font-black text-white tracking-tight mb-1">PhoeniX</h1>
   <p class="text-sm text-orange-400/70 font-medium mb-8 tracking-wider uppercase">Stream movies, series & anime in HD</p>
   <div class="w-full rounded-3xl border border-white/10 p-6" style="background: rgba(15,15,20,0.6); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);">

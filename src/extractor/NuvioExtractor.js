@@ -30,6 +30,8 @@ const NUVIO_SOURCE_IDS = new Set([
   'animesalt', 'animeworldindia', 'animesdigital',
   // AniChan — anime sub+dub HLS via AniList ID + anichan.net API
   'anichan',
+  // Cinejoy — movies/series via lumen-gate-v1 protocol, direct HLS on movieboxnoob.cc
+  'cinejoy',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)
