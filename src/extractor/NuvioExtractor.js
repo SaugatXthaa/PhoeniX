@@ -32,6 +32,8 @@ const NUVIO_SOURCE_IDS = new Set([
   'anichan',
   // Cinejoy — movies/series via lumen-gate-v1 protocol, direct HLS on movieboxnoob.cc
   'cinejoy',
+  // ZinkMovies — movies/series via gemma416okl.com API, HLS on rasta428jem.com
+  'zinkmovies',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

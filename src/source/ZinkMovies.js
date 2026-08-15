@@ -1,21 +1,41 @@
 // src/source/ZinkMovies.js
-// new1.zinkmovies.mobi — movies and TV series via ZinkCloud → HubCloud
+// zinkmovies — movies, series, anime, K-drama with multi-quality HLS streams
+//
+// Uses the new ZinkMovies scraper (src/nuvio/zinkmovies_v2.cjs) which bypasses
+// Cloudflare by using the gemma416okl.com player API directly (not behind CF).
 //
 // Flow:
-//   1. Search: /?s={title} → find /movies/{slug}/ post links
-//   2. Movie page → find zinkcloud.net/file/{id} links with quality+size text
-//   3. ZinkCloud: POST /ajax_generate_token.php?random_id={id} → get token
-//   4. Fetch /dl/{token} → extract hubcloud.cx/drive/{id} links
-//   5. HubCloud links resolved by HubExtractor → direct CDN URLs
+//   1. Resolve TMDB ID → IMDB ID
+//   2. GET https://gemma416okl.com/play/{imdb_id} → HDVBPlayer config
+//   3. POST https://rasta428jem.com/playlist/{file} → sources array
+//   4. POST https://rasta428jem.com/playlist/{source_file} → stream URL
+//   5. Fetch HLS master playlist → 360p/480p/720p/1080p variants
+//
+// Stream URLs on i-arch-400.rasta428jem.com require:
+//   Referer: https://i-arch-400.keymi417exx.com/
+//   Origin: https://i-arch-400.keymi417exx.com
+//
+// The scraper has built-in rate-limit retry logic (1s, 5s, 30s, 60s delays).
 
-import bytes from 'bytes';
-import * as cheerio from 'cheerio';
-import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear, TmdbId, findCountryCodes } from '../utils/index.js';
+import { createRequire } from 'module';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { CountryCode, Format } from '../types.js';
+import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
-const BASE_URL = 'https://new2.zinkmovies.mobi';
-const ZINKCLOUD_BASE = 'https://new4.zinkcloud.net';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require_ = createRequire(import.meta.url);
+const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'zinkmovies_v2.cjs');
+
+// Parse quality string to height
+function parseHeight(q) {
+  if (!q) return 1080;
+  const s = String(q).toLowerCase();
+  if (s.includes('4k') || s.includes('2160')) return 2160;
+  const m = s.match(/(\d{3,4})/);
+  return m ? parseInt(m[1]) : 1080;
+}
 
 export class ZinkMovies extends Source {
   constructor(fetcher) {
@@ -24,324 +44,99 @@ export class ZinkMovies extends Source {
     this.label = 'ZinkMovies';
     this.contentTypes = ['movie', 'series'];
     this.countryCodes = [CountryCode.multi, CountryCode.hi, CountryCode.en];
-    this.baseUrl = BASE_URL;
+    this.baseUrl = 'https://new3.zinkmovies.today';
     this.fetcher = fetcher;
+    this.ttl = 5 * 60 * 1000; // 5min — stream URLs have short-lived tokens
   }
 
   async handleInternal(ctx, _type, id) {
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
-
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Step 1: Search for the movie
-    const postUrl = await this.findPost(ctx, name, year);
-    if (!postUrl) return [];
+    // Load the scraper module
+    let Scraper;
+    try {
+      delete require_.cache[require_.resolve(PROVIDER_PATH)];
+      const mod = require_(PROVIDER_PATH);
+      Scraper = mod.ZinkMoviesScraper;
+    } catch (e) {
+      console.error(`[zinkmovies] failed to load scraper: ${e?.message || e}`);
+      return [];
+    }
+    if (!Scraper) return [];
 
-    // Step 2: Fetch movie page → find ZinkCloud links with quality/size
-    const zinkLinks = await this.findZinkCloudLinks(ctx, postUrl, title, tmdbId);
-    if (zinkLinks.length === 0) return [];
+    const scraper = new Scraper(15000);
 
-    // Step 3+4: For each ZinkCloud/GDFlix link, resolve to download URLs
+    // Get streams — the scraper handles IMDB ID resolution internally
+    // Use TMDB ID directly (scraper resolves to IMDB ID via TMDB API)
+    const tmdbOrImdb = tmdbId.id;
+
+    let streams;
+    try {
+      streams = await Promise.race([
+        scraper.getMovieStreams(String(tmdbOrImdb)),
+        new Promise(r => setTimeout(() => r(null), 28000)),
+      ]);
+    } catch (e) {
+      console.error(`[zinkmovies] getStreams error: ${e?.message || e}`);
+      return [];
+    }
+
+    if (!streams || !Array.isArray(streams) || streams.length === 0) return [];
+
     const results = [];
-    for (const zinkLink of zinkLinks) {
-      try {
-        // GDFlix links — return the GDFlix URL directly (HubExtractor handles it)
-        if (zinkLink.isGDFlix) {
-          try {
-            const url = new URL(zinkLink.fileId);
-            results.push({
-              url,
-              meta: {
-                countryCodes: [CountryCode.multi, ...findCountryCodes(zinkLink.text)],
-                ...(zinkLink.height && { height: zinkLink.height }),
-                ...(zinkLink.bytes && { bytes: zinkLink.bytes }),
-                title: `${title} — ${zinkLink.quality || ''} ${zinkLink.sizeText || ''}`.trim(),
-                sourceId: this.id,
-                sourceLabel: this.label,
-              },
-            });
-          } catch { /* skip invalid URL */ }
-        } else {
-          // Old format — ZinkCloud token flow → hubcloud links
-          const hubcloudLinks = await this.resolveZinkCloud(ctx, zinkLink.fileId);
-          for (const hubUrl of hubcloudLinks) {
-            try {
-              const url = new URL(hubUrl);
-              results.push({
-                url,
-                meta: {
-                  countryCodes: [CountryCode.multi, ...findCountryCodes(zinkLink.text)],
-                  ...(zinkLink.height && { height: zinkLink.height }),
-                  ...(zinkLink.bytes && { bytes: zinkLink.bytes }),
-                  title: `${title} — ${zinkLink.quality || ''} ${zinkLink.sizeText || ''}`.trim(),
-                  sourceId: this.id,
-                  sourceLabel: this.label,
-                },
-              });
-            } catch { /* skip invalid URL */ }
-          }
-        }
-      } catch { /* skip failed resolution */ }
+    const seenUrls = new Set();
+
+    for (const s of streams) {
+      if (!s || !s.url || typeof s.url !== 'string') continue;
+      if (!s.url.startsWith('http')) continue;
+      if (seenUrls.has(s.url)) continue;
+      seenUrls.add(s.url);
+
+      let url;
+      try { url = new URL(s.url); } catch { continue; }
+
+      const height = parseHeight(s.quality);
+      const referer = s.headers?.Referer || s.headers?.referer || '';
+      const origin = s.headers?.Origin || s.headers?.origin || '';
+
+      // Route through /proxy with Referer for HLS playback
+      // (Stremio's ffmpeg doesn't send Referer for HLS sub-requests)
+      if (referer) {
+        const proxyUrl = new URL('/proxy', ctx.hostUrl);
+        proxyUrl.searchParams.set('url', url.href);
+        proxyUrl.searchParams.set('referer', referer);
+
+        results.push({
+          url: proxyUrl,
+          format: Format.hls,
+          meta: {
+            countryCodes: [CountryCode.multi, CountryCode.hi, CountryCode.en],
+            title: `${title} (ZinkMovies ${s.quality || 'HLS'})`,
+            sourceId: this.id,
+            sourceLabel: this.label,
+            height,
+            ...(s.bandwidth && { bandwidth: s.bandwidth }),
+          },
+        });
+      } else {
+        // Direct URL — no Referer needed
+        results.push({
+          url,
+          format: Format.hls,
+          meta: {
+            countryCodes: [CountryCode.multi, CountryCode.hi, CountryCode.en],
+            title: `${title} (ZinkMovies ${s.quality || 'HLS'})`,
+            sourceId: this.id,
+            sourceLabel: this.label,
+            height,
+            ...(s.bandwidth && { bandwidth: s.bandwidth }),
+          },
+        });
+      }
     }
 
     return results;
-  }
-
-  async findPost(ctx, name, year) {
-    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    const nameNorm = normalize(name);
-
-    // Build search queries — try multiple variants including shorter forms
-    // for anime/K-drama titles that may be listed differently on ZinkMovies
-    const nameClean = name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    const queries = [
-      name,
-      nameClean,
-      nameClean.split(/[:\-\s]+/).slice(0, 2).join(' '), // e.g. "Spider-Man" → "Spider Man"
-      nameClean.split(/\s+/)[0], // First word only (for broad search)
-    ].filter((q, i, arr) => q && q.length > 2 && arr.indexOf(q) === i);
-
-    for (const query of queries) {
-      try {
-        const searchUrl = new URL(`/?s=${encodeURIComponent(query)}`, BASE_URL);
-        // Use got-scraping with HeaderGenerator for Cloudflare bypass
-        // (zinkmovies.mobi blocks datacenter IPs with CF 403)
-        const { gotScraping } = await import('got-scraping');
-        const { HeaderGenerator } = await import('header-generator');
-        const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
-        const res = await gotScraping.get(searchUrl.href, {
-          headers: { ...hg.getHeaders({ httpVersion: '2' }), 'Accept': 'text/html' },
-          timeout: { request: 10000 }, throwHttpErrors: false, http2: true,
-        });
-        if (res.statusCode !== 200) continue;
-        const html = res.body;
-
-        const $ = cheerio.load(html);
-
-        // Collect all movie page URLs with their text — deduplicate by href
-        const seen = new Set();
-        const candidates = [];
-        $('a[href*="/movies/"]').each((_i, el) => {
-          const href = $(el).attr('href');
-          if (!href || href.includes('category/') || href.includes('?s=') ||
-              href === BASE_URL + '/movies/' || href === '/movies/' ||
-              href.endsWith('/movies/') || seen.has(href)) return;
-          seen.add(href);
-          const text = normalize($(el).text());
-          const altAttr = normalize($(el).find('img').attr('alt') || '');
-          candidates.push({ href, text, altAttr });
-        });
-
-        // Try exact match first
-        let best = null;
-        for (const c of candidates) {
-          if (c.text === nameNorm || c.altAttr === nameNorm) {
-            best = c.href;
-            break;
-          }
-          // Contains match — but only if candidate text is substantial
-          if (c.text.length > 10 && (c.text.includes(nameNorm) || c.altAttr.includes(nameNorm))) {
-            best = c.href;
-            break;
-          }
-          // Name contains candidate — but only if candidate is at least 60% of name length
-          if (c.text.length > 5 && c.text.length >= nameNorm.length * 0.6 &&
-              nameNorm.includes(c.text)) {
-            best = c.href;
-            break;
-          }
-          if (c.altAttr.length > 5 && c.altAttr.length >= nameNorm.length * 0.6 &&
-              nameNorm.includes(c.altAttr)) {
-            best = c.href;
-            break;
-          }
-        }
-
-        // Try partial word match — match first 2-3 significant words
-        const STOP_WORDS = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'is', 'it', 'my', 'last', 'first', 'new', 'day', 'night', 'house', 'blood', 'movie', 'story']);
-        const nameWords = nameNorm.split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.has(w));
-        if (!best && nameWords.length >= 2) {
-          const firstWords = nameWords.slice(0, Math.min(3, nameWords.length)).join(' ');
-          for (const c of candidates) {
-            if (c.text.includes(firstWords) || c.altAttr.includes(firstWords)) {
-              best = c.href;
-              break;
-            }
-          }
-        }
-
-        // Try fuzzy matching — check if all significant words from the name
-        // appear in the candidate text (in any order)
-        if (!best && nameWords.length >= 2) {
-          for (const c of candidates) {
-            const allWordsMatch = nameWords.every(w => c.text.includes(w) || c.altAttr.includes(w));
-            if (allWordsMatch) { best = c.href; break; }
-          }
-        }
-
-        // Try single significant word match with year disambiguation
-        if (!best && nameWords.length > 0 && year) {
-          const firstWord = nameWords[0];
-          for (const c of candidates) {
-            if ((c.text.includes(firstWord) || c.altAttr.includes(firstWord)) &&
-                (c.text.includes(String(year)) || c.altAttr.includes(String(year)))) {
-              best = c.href;
-              break;
-            }
-          }
-        }
-
-        if (best) return best;
-      } catch { /* continue to next query */ }
-    }
-
-    console.error('[zinkmovies] findPost: no match for "' + name + '" (' + year + ')');
-    return null;
-  }
-
-  async findZinkCloudLinks(ctx, postUrl, title, tmdbId) {
-    // Use got-scraping with HeaderGenerator for CF bypass
-    const { gotScraping } = await import('got-scraping');
-    const { HeaderGenerator } = await import('header-generator');
-    const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
-    let html;
-    try {
-      const res = await gotScraping.get(postUrl, {
-        headers: { ...hg.getHeaders({ httpVersion: '2' }), 'Accept': 'text/html' },
-        timeout: { request: 10000 }, throwHttpErrors: false, http2: true,
-      });
-      if (res.statusCode !== 200) return [];
-      html = res.body;
-    } catch { return []; }
-
-    const $ = cheerio.load(html);
-    const links = [];
-
-    // ZinkMovies changed their structure — they now use /links/ redirect pages
-    // instead of direct zinkcloud.net links. Each /links/{code} page redirects
-    // to GDFlix (gdflix.io/file/{code}) which then needs the HubExtractor.
-    // Find all /links/ URLs and resolve them to the actual download URL.
-    const linkElements = [];
-    $('a[href*="/links/"]').each((_i, el) => {
-      const href = $(el).attr('href');
-      if (!href || !href.includes('/links/')) return;
-      const parent = $(el).closest('tr');
-      const parentText = parent.text().trim() || $(el).parent().text().trim();
-      linkElements.push({ href, text: parentText });
-    });
-
-    // Resolve /links/ redirect pages to get GDFlix URLs
-    for (const linkEl of linkElements) {
-      try {
-        // Fetch the /links/ page (it 301-redirects to gdflix.io/file/{code})
-        // Use got-scraping directly since fetcher.getFinalRedirectUrl uses HEAD
-        // which may not work for all servers
-        const { gotScraping } = await import('got-scraping');
-        const r = await gotScraping.get(linkEl.href, {
-          headers: { 'Accept': 'text/html' },
-          timeout: { request: 8000 },
-          throwHttpErrors: false,
-          followRedirect: false,
-        });
-        // Get the redirect location
-        const location = r.headers.location;
-        if (location) {
-          const redirectUrl = new URL(location, linkEl.href);
-          // Parse quality from the parent text
-          const text = linkEl.text;
-          const qualityMatch = text.match(/(\d{3,4})p/i);
-          const sizeMatch = text.match(/([\d.]+)\s*(GB|MB)/i);
-          const height = qualityMatch ? parseInt(qualityMatch[1]) : undefined;
-          const fileSize = sizeMatch ? bytes.parse(`${sizeMatch[1]} ${sizeMatch[2]}`) : undefined;
-
-          links.push({
-            fileId: redirectUrl.href, // Store the GDFlix URL
-            text,
-            quality: qualityMatch ? qualityMatch[0] : undefined,
-            height,
-            sizeText: sizeMatch ? `${sizeMatch[1]} ${sizeMatch[2]}` : undefined,
-            bytes: fileSize,
-            isGDFlix: true,
-          });
-        }
-      } catch { /* skip failed redirect */ }
-    }
-
-    // Also check for direct zinkcloud.net links (old format)
-    $('a[href*="zinkcloud"]').each((_i, el) => {
-      const href = $(el).attr('href');
-      const text = $(el).text().trim();
-      if (!href) return;
-
-      // Extract file ID from URL: https://new4.zinkcloud.net/file/{id}
-      const fileIdMatch = href.match(/\/file\/(\w+)/);
-      if (!fileIdMatch) return;
-
-      const fileId = fileIdMatch[1];
-
-      // Parse quality and size from link text
-      // e.g. "720P Hindi-English BLURAY ESUB 1.99 GB"
-      const qualityMatch = text.match(/(\d{3,4})p/i);
-      const sizeMatch = text.match(/([\d.]+)\s*(GB|MB)/i);
-      const height = qualityMatch ? parseInt(qualityMatch[1]) : undefined;
-      const fileSize = sizeMatch ? bytes.parse(`${sizeMatch[1]} ${sizeMatch[2]}`) : undefined;
-
-      links.push({
-        fileId,
-        text,
-        quality: qualityMatch ? qualityMatch[0] : undefined,
-        height,
-        sizeText: sizeMatch ? `${sizeMatch[1]} ${sizeMatch[2]}` : undefined,
-        bytes: fileSize,
-      });
-    });
-
-    return links;
-  }
-
-  async resolveZinkCloud(ctx, fileId) {
-    // Use got-scraping with HeaderGenerator for CF bypass on ZinkCloud
-    const { gotScraping } = await import('got-scraping');
-    const { HeaderGenerator } = await import('header-generator');
-    const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
-
-    // Step 1: Generate token
-    const tokenUrl = new URL(`/ajax_generate_token.php?random_id=${encodeURIComponent(fileId)}`, ZINKCLOUD_BASE);
-    let tokenData;
-    try {
-      const tokenRes = await gotScraping.post(tokenUrl.href, {
-        headers: {
-          ...hg.getHeaders({ httpVersion: '2' }),
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': `${ZINKCLOUD_BASE}/file/${fileId}`,
-        },
-        body: `random_id=${fileId}`,
-        timeout: { request: 10000 }, throwHttpErrors: false, http2: true,
-      });
-      tokenData = JSON.parse(tokenRes.body);
-    } catch { return []; }
-
-    if (tokenData.status !== 'success' || !tokenData.token) return [];
-
-    // Step 2: Fetch /dl/{token} page → extract hubcloud links
-    const dlUrl = new URL(`/dl/${encodeURIComponent(tokenData.token)}`, ZINKCLOUD_BASE);
-    let dlHtml;
-    try {
-      const dlRes = await gotScraping.get(dlUrl.href, {
-        headers: { ...hg.getHeaders({ httpVersion: '2' }), 'Referer': `${ZINKCLOUD_BASE}/file/${fileId}` },
-        timeout: { request: 10000 }, throwHttpErrors: false, http2: true,
-      });
-      dlHtml = dlRes.body;
-    } catch { return []; }
-
-    // Extract hubcloud links
-    const hubcloudLinks = [];
-    const matches = dlHtml.match(/https?:\/\/[^"'\s]*hubcloud[^"'\s]*/gi) || [];
-    for (const match of matches) {
-      if (!hubcloudLinks.includes(match)) hubcloudLinks.push(match);
-    }
-
-    return hubcloudLinks;
   }
 }
