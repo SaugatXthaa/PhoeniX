@@ -323,6 +323,18 @@ export class StreamResolver {
     // them more actual execution time. Cinejoy needs ~6s of actual execution,
     // so a 15s limit gives it ~15s of slack for queue + execution.
     const MAX_CONCURRENT_SOURCES = 15;
+
+    // Priority sources — these are started FIRST, before other sources, so they
+    // don't get stuck waiting in the queue behind 85+ other sources. Without this,
+    // Cinejoy (which needs ~6s of CPU) would wait 10-15s in the queue, leaving
+    // only 15-20s for execution — tight enough that it sometimes times out.
+    const PRIORITY_SOURCE_IDS = new Set(['cinejoy', 'zinkmovies', '4khdhub', 'playimdb']);
+    const sortedSources = [...sources].sort((a, b) => {
+      const aPriority = PRIORITY_SOURCE_IDS.has(a.id) ? 0 : 1;
+      const bPriority = PRIORITY_SOURCE_IDS.has(b.id) ? 0 : 1;
+      return aPriority - bPriority;
+    });
+
     let activeCount = 0;
     const waitQueue = [];
 
@@ -382,7 +394,7 @@ export class StreamResolver {
       }
     };
 
-    await Promise.all(sources.map(s => handleSource(s)));
+    await Promise.all(sortedSources.map(s => handleSource(s)));
 
     // Stash timings on the instance for the /debug/stream endpoint to read.
     // (Not returned in the normal /stream response to avoid breaking Stremio.)
