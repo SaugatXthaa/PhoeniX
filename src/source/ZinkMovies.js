@@ -5,11 +5,9 @@
 // Cloudflare by using the gemma416okl.com player API directly.
 //
 // Flow:
-//   1. Resolve TMDB ID → IMDB ID
-//   2. GET https://gemma416okl.com/play/{imdb_id} → HDVBPlayer config
-//   3. POST https://rasta428jem.com/playlist/{file} → sources array
-//   4. POST https://rasta428jem.com/playlist/{source_file} → stream URL
-//   5. Fetch HLS master playlist → 360p/480p/720p/1080p variants
+//   1. Resolve TMDB ID (source wrapper) → pass to scraper
+//   2. Scraper: TMDB → IMDB ID → gemma416okl.com player config → HLS streams
+//   3. Returns stream objects with {name, title, url, quality, headers, source}
 //
 // Stream URLs on i-arch-400.rasta428jem.com require:
 //   Referer: https://i-arch-400.keymi417exx.com/
@@ -24,7 +22,7 @@
 //   - sourceType: 'WebDL' (HLS streaming rips)
 //   - bandwidth: from HLS manifest BANDWIDTH attribute
 //   - countryCodes: [multi, hi, en] (ZinkMovies has Hindi + English content)
-//   - title: movie/show title with quality label
+//   - title: movie/show title with quality + audio label
 
 import { createRequire } from 'module';
 import path from 'path';
@@ -50,7 +48,7 @@ function parseHeight(q) {
   return m ? parseInt(m[1]) : 1080;
 }
 
-// Detect audio language from the stream label (e.g., "Hindi", "English", "Tamil")
+// Detect audio language from the stream label/name (e.g., "Hindi", "English", "Tamil")
 function detectCountryCodes(label) {
   const codes = [CountryCode.multi, CountryCode.en]; // default: multi + English
   const labelLower = (label || '').toLowerCase();
@@ -83,28 +81,28 @@ export class ZinkMovies extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Load the scraper module
-    let Scraper;
+    // Load the scraper module — exports { getStreams }
+    let getStreams;
     try {
       delete require_.cache[require_.resolve(PROVIDER_PATH)];
       const mod = require_(PROVIDER_PATH);
-      Scraper = mod.ZinkMoviesScraper;
+      getStreams = mod.getStreams;
     } catch (e) {
       console.error(`[zinkmovies] failed to load scraper: ${e?.message || e}`);
       return [];
     }
-    if (!Scraper) return [];
+    if (!getStreams) return [];
 
-    const scraper = new Scraper(15000);
+    // The scraper takes (tmdbId, type, season, episode) and returns stream objects.
+    // It handles IMDB ID resolution + HLS playlist parsing internally.
+    const scraperType = tmdbId.season ? 'tv' : 'movie';
+    const season = tmdbId.season || undefined;
+    const episode = tmdbId.season ? (tmdbId.episode || 1) : undefined;
 
-    // Get streams — the scraper handles IMDB ID resolution internally.
-    // Pass the display title so the scraper doesn't need to fetch it again.
     let streams;
     try {
       streams = await Promise.race([
-        tmdbId.season
-          ? scraper.getSeriesStreams(String(tmdbId.id), tmdbId.season, tmdbId.episode || 1, title)
-          : scraper.getMovieStreams(String(tmdbId.id), title),
+        getStreams(String(tmdbId.id), scraperType, season, episode),
         new Promise(r => setTimeout(() => r(null), 28000)),
       ]);
     } catch (e) {
@@ -131,7 +129,7 @@ export class ZinkMovies extends Source {
       const referer = s.headers?.Referer || s.headers?.referer || STREAM_REFERER;
 
       // Build the display title with quality + audio label
-      // e.g., "Supergirl (2026) (ZinkMovies Hindi 1080p)"
+      // e.g., "The Dark Knight (2008) (ZinkMovies Hindi 1080p)"
       const audioLabel = s.name?.split('|')[1]?.trim() || '';
       const qualityLabel = s.quality || `${height}p`;
       const displayTitle = audioLabel
