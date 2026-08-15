@@ -49,6 +49,10 @@ async function getTmdbInfo(tmdbId, mediaType) {
 }
 
 // ─── Search AnimeSuge ────────────────────────────────────────────────────────
+// The search API sometimes doesn't return the most relevant results (e.g.
+// searching "Naruto" returns "road-of-naruto" and "boruto" but NOT "naruto"
+// itself). We work around this by ALSO trying a direct slug guess based on
+// the title, and including it in the candidate list.
 async function searchAnimeSuge(query) {
   const url = `${AS_API}/anime/search?keyword=${encodeURIComponent(query)}`;
   console.log(`[AnimeSuge] Search: ${url}`);
@@ -65,20 +69,66 @@ async function searchAnimeSuge(query) {
       results.push({ url: m[1], slug: m[2] });
     }
   }
-  console.log(`[AnimeSuge] Found ${results.length} results`);
+
+  // Workaround: the search API often doesn't return the main series. Add a
+  // direct slug guess based on the title (e.g. "Naruto" → "naruto", "Jujutsu
+  // Kaisen" → "jujutsu-kaisen", "Demon Slayer" → "demon-slayer").
+  // We try multiple common slug patterns:
+  //   1. title-as-slug (lowercase, hyphens)
+  //   2. title-tv (for series)
+  //   3. title-shippuden / title-2nd-season (for sequels — heuristic)
+  const slugBase = query.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  const slugGuesses = [
+    slugBase,                    // e.g. "naruto", "jujutsu-kaisen"
+    `${slugBase}-tv`,            // e.g. "jujutsu-kaisen-tv"
+  ];
+
+  for (const guess of slugGuesses) {
+    if (!seen.has(guess)) {
+      seen.add(guess);
+      results.push({ url: `${AS_BASE}/anime/${guess}`, slug: guess, isGuess: true });
+    }
+  }
+
+  console.log(`[AnimeSuge] Found ${results.length} results (${results.filter(r => r.isGuess).length} guesses)`);
   return results;
 }
 
 // ─── Get Anime ID from Page ──────────────────────────────────────────────────
-async function getAnimeId(slug) {
+// Also returns the full title from the page, which is more accurate than the
+// slug for matching purposes.
+async function getAnimeIdAndTitle(slug) {
   const html = await fetchText(`${AS_BASE}/anime/${slug}`);
   if (!html) return null;
 
   const idMatch = html.match(/data-id="(\d+)"/);
   const id = idMatch ? idMatch[1] : null;
 
-  const titleMatch = html.match(/<title>([^<]+)<\/title>/);
-  const title = titleMatch ? titleMatch[1].replace(/ - AnimeSuge.*$/i, '').replace(/^Watch /i, '').trim() : slug;
+  // Extract the og:title or <title> tag for accurate matching.
+  // Strip "Watch " prefix and " - AnimeSuge" suffix.
+  let title = slug;
+  const ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/);
+  if (ogTitleMatch) {
+    title = ogTitleMatch[1];
+  } else {
+    const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+    if (titleMatch) title = titleMatch[1];
+  }
+  // Clean up HTML entities and prefix/suffix
+  title = title
+    .replace(/&amp;amp;#0?39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&#0?39;/g, "'")
+    .replace(/\s*-\s*Watch on AnimeSuge.*$/i, '')
+    .replace(/\s*-\s*AnimeSuge.*$/i, '')
+    .replace(/^Watch\s+/i, '')
+    .trim();
 
   // Find poster
   let poster = null;
@@ -86,6 +136,11 @@ async function getAnimeId(slug) {
   if (posterMatch) poster = posterMatch[1];
 
   return { id, slug, title, poster };
+}
+
+// ─── Get Anime ID from Page (backward-compatible wrapper) ────────────────────
+async function getAnimeId(slug) {
+  return getAnimeIdAndTitle(slug);
 }
 
 // ─── Get Server List ─────────────────────────────────────────────────────────
@@ -166,6 +221,17 @@ function buildStream(streamData, type, quality, animeTitle, episode) {
   };
 }
 
+// ─── Normalize title for matching ───────────────────────────────────────────
+// Strips punctuation, articles, and case for fuzzy title comparison.
+function normalizeTitle(s) {
+  return String(s || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\b(the|a|an|tv|season|part|specials?|movie|ova|ona|oad)\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // ─── Main: getStreams ────────────────────────────────────────────────────────
 async function getStreams(tmdbId, mediaType, season, episode) {
   console.log(`[AnimeSuge] getStreams: ${tmdbId} ${mediaType} S${season || '?'}E${episode || '?'}`);
@@ -181,13 +247,80 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const results = await searchAnimeSuge(title);
     if (!results.length) return [];
 
-    // 3. Get anime ID from first result
-    const animeInfo = await getAnimeId(results[0].slug);
-    if (!animeInfo || !animeInfo.id) return [];
+    // 3. Fetch the actual title from each search result page and pick the best
+    // match. AnimeSuge's search API doesn't return titles (only slugs), and
+    // the slug order doesn't match relevance. We fetch each page's og:title
+    // to get the real anime title, then match against the TMDB title.
+    //
+    // Limit to first 8 results to avoid too many HTTP requests.
+    const candidates = await Promise.all(
+      results.slice(0, 8).map(async (r) => {
+        const info = await getAnimeIdAndTitle(r.slug);
+        return info ? { ...info, slug: r.slug } : null;
+      })
+    );
+    const validCandidates = candidates.filter(Boolean);
+
+    const queryNorm = normalizeTitle(title);
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const c of validCandidates) {
+      const candidateTitleNorm = normalizeTitle(c.title || c.slug);
+      let score = 0;
+
+      // Exact normalized title match
+      if (candidateTitleNorm === queryNorm) {
+        score = 100;
+        // For S1, prefer "-tv" slugs and penalize non-TV slugs
+        if (!season || season === 1) {
+          if (c.slug.endsWith('-tv') || c.slug.includes('-tv-')) score += 20;
+          if (/specials?$|-special-|-ova-|-oad-|-movie-|0-movie/.test(c.slug)) score -= 25;
+        } else {
+          // For later seasons, prefer season-specific entries
+          if (c.slug.includes(`${season}nd-season`) || c.slug.includes(`${season}rd-season`)) score += 20;
+        }
+      }
+      // Query is substring of candidate title
+      else if (candidateTitleNorm.includes(queryNorm)) {
+        score = 80;
+        if (!season || season === 1) {
+          if (/2nd season|3rd season|culling|0 movie|specials|ova|oad/.test(c.slug)) score -= 30;
+          if (c.slug.endsWith('-tv') || c.slug.includes('-tv-')) score += 10;
+        }
+      }
+      // Candidate title is substring of query
+      else if (queryNorm.includes(candidateTitleNorm)) {
+        score = 70;
+      }
+      // Word overlap
+      else {
+        const queryWords = queryNorm.split(' ').filter(w => w.length > 2);
+        const candidateWords = candidateTitleNorm.split(' ').filter(w => w.length > 2);
+        const overlap = queryWords.filter(w => candidateWords.includes(w)).length;
+        score = (overlap / Math.max(queryWords.length, 1)) * 60;
+      }
+
+      console.log(`[AnimeSuge] Candidate: "${c.title}" slug=${c.slug} score=${score}`);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = c;
+      }
+    }
+
+    if (!bestMatch || bestScore < 40) {
+      console.log(`[AnimeSuge] No confident match found for "${title}" (best score: ${bestScore})`);
+      return [];
+    }
+
+    console.log(`[AnimeSuge] Best match: ${bestMatch.slug} (score: ${bestScore})`);
+
+    if (!bestMatch.id) return [];
 
     // 4. Get servers for the episode
     const ep = parseInt(episode) || 1;
-    const servers = await getServerList(animeInfo.id, ep);
+    const servers = await getServerList(bestMatch.id, ep);
     if (!servers.length) return [];
 
     // 5. Resolve each server to HLS stream
@@ -199,7 +332,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       if (streamData && streamData.url && !seenUrls.has(streamData.url)) {
         seenUrls.add(streamData.url);
         const quality = '1080p';
-        streams.push(buildStream(streamData, server.type, quality, animeInfo.title, ep));
+        streams.push(buildStream(streamData, server.type, quality, bestMatch.title, ep));
       }
     }
 
