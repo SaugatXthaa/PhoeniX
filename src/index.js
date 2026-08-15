@@ -44,7 +44,7 @@ app.get('/manifest.json', (req, res) => {
     version: VERSION,
     name: ADDON_NAME,
     description: 'Stream movies, series and anime in HD.',
-    logo: `${hostUrl}/public/logo.png`,
+    logo: `${hostUrl}/public/logo.png?v=${VERSION}`,
     resources: ['stream'],
     types: ['movie', 'series'],
     idPrefixes: ['tt', 'tmdb:'],
