@@ -590,6 +590,75 @@ app.get('/debug/env', (req, res) => {
   });
 });
 
+// Runs a full /stream resolution and returns per-source timing data.
+// This is the SAME code path as /stream/:type/:id.json, so it captures
+// real-world behavior including concurrency, timeouts, and caching.
+// Usage: /debug/stream?type=movie&id=tmdb:155
+app.get('/debug/stream', async (req, res) => {
+  const type = req.query.type || 'movie';
+  const rawId = req.query.id || 'tmdb:155';
+
+  let parsedId;
+  try {
+    if (rawId.startsWith('tmdb:')) {
+      parsedId = TmdbId.fromString(rawId.replace('tmdb:', ''));
+    } else if (rawId.startsWith('tt')) {
+      parsedId = ImdbId.fromString(rawId);
+    } else {
+      return res.status(400).json({ error: `Unsupported ID: ${rawId}` });
+    }
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
+  const ctx = {
+    hostUrl: new URL(`https://${req.headers.host}`),
+    id: req.headers['x-request-id'] || '',
+    ip: req.ip,
+    config: { multi: 'on', en: 'on' },
+  };
+
+  const t0 = Date.now();
+  try {
+    const { streams } = await streamResolver.resolve(ctx, sources, type, parsedId);
+    const totalMs = Date.now() - t0;
+
+    // Get per-source timing data (stashed by _resolveInternal)
+    const timings = streamResolver._lastSourceTimings || [];
+
+    // Sort by duration descending (slowest first)
+    const sortedTimings = [...timings].sort((a, b) => b.durationMs - a.durationMs);
+
+    return res.json({
+      type,
+      id: rawId,
+      totalMs,
+      totalStreams: streams.length,
+      sourceCount: sources.length,
+      // Per-source timing (slowest first)
+      sources: sortedTimings.map(t => ({
+        id: t.id,
+        status: t.status,
+        count: t.count,
+        durationMs: t.durationMs,
+        queueMs: t.queueMs,
+      })),
+      // Streams from Cinejoy + ZinkMovies specifically
+      cinejoyStreams: streams
+        .filter(s => /cinejoy/i.test(s.name || ''))
+        .map(s => ({ name: s.name, title: (s.title || '').slice(0, 100) })),
+      zinkStreams: streams
+        .filter(s => /zink/i.test(s.name || ''))
+        .map(s => ({ name: s.name, title: (s.title || '').slice(0, 100) })),
+    });
+  } catch (err) {
+    return res.json({
+      error: err.message,
+      totalMs: Date.now() - t0,
+    });
+  }
+});
+
 // Tests a single source by id and returns its raw output + timing + errors.
 // Usage: /debug/source/:sourceId?type=movie&id=tmdb:1081003
 app.get('/debug/source/:sourceId', async (req, res) => {

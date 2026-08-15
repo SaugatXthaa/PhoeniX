@@ -307,6 +307,10 @@ export class StreamResolver {
     const urlResults = [];
     let sourceErrorCount = 0;
 
+    // Per-source timing data — exposed via /debug/stream for diagnostics.
+    // Helps identify which sources are slow or failing under load.
+    const sourceTimings = [];
+
     const SOURCE_TIMEOUT_MS = 30_000;
     // Limit concurrency to prevent CPU starvation on Render's free tier.
     // Without this, all 85+ sources fire simultaneously, causing CPU-intensive
@@ -327,13 +331,19 @@ export class StreamResolver {
 
     const handleSource = async (source) => {
       // Concurrency gate: wait if too many sources are already running
+      const queueStart = Date.now();
       if (activeCount >= MAX_CONCURRENT_SOURCES) {
         await new Promise(resolve => waitQueue.push(resolve));
       }
+      const queueTime = Date.now() - queueStart;
       activeCount++;
 
+      const start = Date.now();
+      let status = 'ok';
+      let resultCount = 0;
       try {
         const sourceResults = await withTimeout(source.handle(ctx, type, id), SOURCE_TIMEOUT_MS, source.id);
+        resultCount = sourceResults.length;
         this.logger.info(`Source ${source.id} returned ${sourceResults.length} results`);
         const sourceUrlResults = await Promise.all(
           sourceResults.map(({ url, meta, requestHeaders }) =>
@@ -347,10 +357,19 @@ export class StreamResolver {
         );
         urlResults.push(...sourceUrlResults.flat());
       } catch (error) {
+        status = error?.message?.includes('timed out') ? 'timeout' : 'error';
         sourceErrorCount++;
         const msg = error?.message || error?.constructor?.name || String(error);
         this.logger.warn(`Source ${source.id} error: ${msg}`);
       } finally {
+        const duration = Date.now() - start;
+        sourceTimings.push({
+          id: source.id,
+          status,
+          count: resultCount,
+          durationMs: duration,
+          queueMs: queueTime,
+        });
         activeCount--;
         // Start next waiting source if any
         const next = waitQueue.shift();
@@ -359,6 +378,10 @@ export class StreamResolver {
     };
 
     await Promise.all(sources.map(s => handleSource(s)));
+
+    // Stash timings on the instance for the /debug/stream endpoint to read.
+    // (Not returned in the normal /stream response to avoid breaking Stremio.)
+    this._lastSourceTimings = sourceTimings;
 
     // Enrich metadata for all results (parse from title/URL — no source changes)
     for (const r of urlResults) {
