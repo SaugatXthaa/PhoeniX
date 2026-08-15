@@ -86,23 +86,25 @@ export class Cinejoy extends Source {
     if (!scraper) return [];
 
     // Get streams — try Lisbon first (has 4K), then Athens as fallback.
-    // IMPORTANT: per-server timeout must be SHORT (8s) because the StreamResolver
+    // IMPORTANT: per-server timeout must be SHORT (12s) because the StreamResolver
     // kills the source at 30s. The previous 25s-per-server schedule meant:
     //   Lisbon (25s) + Solara (25s) + Athens (25s) = 75s worst case
     //   → source always got killed at 30s before reaching Athens/Solara.
-    // With 8s per server: 3 servers × 8s = 24s, well within the 30s limit.
-    // Lisbon usually responds in 1-3s; the 8s timeout is a safety net.
-    const servers = ['Lisbon', 'Athens', 'Solara'];
-    const PER_SERVER_TIMEOUT = 8000;
+    // With 12s for Lisbon + 10s for Athens: 22s total, within the 30s limit.
+    // Lisbon usually responds in 1-3s; the 12s timeout handles CPU contention.
+    const servers = [
+      { name: 'Lisbon', timeout: 12000 },  // has 4K + 1080p
+      { name: 'Athens', timeout: 10000 },   // fallback (720p + 480p only)
+    ];
     let streams = null;
 
-    for (const server of servers) {
+    for (const { name: server, timeout: serverTimeout } of servers) {
       try {
         streams = await Promise.race([
           tmdbId.season
             ? scraper.getSeriesStreams(String(tmdbId.id), tmdbId.season, tmdbId.episode || 1, server)
             : scraper.getMovieStreams(String(tmdbId.id), server),
-          new Promise(r => setTimeout(() => r(null), PER_SERVER_TIMEOUT)),
+          new Promise(r => setTimeout(() => r(null), serverTimeout)),
         ]);
         if (streams && streams.length > 0) break;
       } catch (e) {
