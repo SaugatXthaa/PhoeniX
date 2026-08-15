@@ -102,8 +102,9 @@ function browserHeaders(referer) {
 // Fetch TMDB details (title, year, date, imdb_id) from the ZXC backend
 async function fetchDetails(tmdbId, mediaType, playerUrl) {
   const url = `${BASE}/backend/tmdb/details/${mediaType}/${tmdbId}?language=en-US`;
+  const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
   const res = await gotScraping.get(url, {
-    headers: browserHeaders(playerUrl),
+    headers: { ...hg.getHeaders({ httpVersion: '2' }), ...browserHeaders(playerUrl) },
     timeout: { request: 15000 },
     throwHttpErrors: false,
     http2: true,
@@ -115,8 +116,10 @@ async function fetchDetails(tmdbId, mediaType, playerUrl) {
 // POST /backend/token__ to get the real token + ts
 async function fetchToken(tmdbId, playerUrl) {
   const { xt, rt } = genFrontendToken(String(tmdbId));
+  const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
   const res = await gotScraping.post(`${BASE}/backend/token__`, {
     headers: {
+      ...hg.getHeaders({ httpVersion: '2' }),
       ...browserHeaders(playerUrl),
       'Content-Type': 'application/json',
       'Origin': BASE,
@@ -143,8 +146,9 @@ async function fetchToken(tmdbId, playerUrl) {
 // GET /backend_/servers/{serverId} to get stream links
 async function fetchServer(serverId, params, playerUrl) {
   const url = `${BASE}/backend_/servers/${serverId}?${params.toString()}`;
+  const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
   const res = await gotScraping.get(url, {
-    headers: browserHeaders(playerUrl),
+    headers: { ...hg.getHeaders({ httpVersion: '2' }), ...browserHeaders(playerUrl) },
     timeout: { request: 20000 },
     throwHttpErrors: false,
     http2: true,

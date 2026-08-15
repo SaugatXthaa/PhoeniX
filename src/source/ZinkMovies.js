@@ -105,10 +105,17 @@ export class ZinkMovies extends Source {
     for (const query of queries) {
       try {
         const searchUrl = new URL(`/?s=${encodeURIComponent(query)}`, BASE_URL);
-        const html = await this.fetcher.text(ctx, searchUrl, {
-          headers: { Accept: 'text/html' },
-          timeout: 10000,
+        // Use got-scraping with HeaderGenerator for Cloudflare bypass
+        // (zinkmovies.mobi blocks datacenter IPs with CF 403)
+        const { gotScraping } = await import('got-scraping');
+        const { HeaderGenerator } = await import('header-generator');
+        const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
+        const res = await gotScraping.get(searchUrl.href, {
+          headers: { ...hg.getHeaders({ httpVersion: '2' }), 'Accept': 'text/html' },
+          timeout: { request: 10000 }, throwHttpErrors: false, http2: true,
         });
+        if (res.statusCode !== 200) continue;
+        const html = res.body;
 
         const $ = cheerio.load(html);
 
@@ -194,9 +201,18 @@ export class ZinkMovies extends Source {
   }
 
   async findZinkCloudLinks(ctx, postUrl, title, tmdbId) {
+    // Use got-scraping with HeaderGenerator for CF bypass
+    const { gotScraping } = await import('got-scraping');
+    const { HeaderGenerator } = await import('header-generator');
+    const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
     let html;
     try {
-      html = await this.fetcher.text(ctx, new URL(postUrl));
+      const res = await gotScraping.get(postUrl, {
+        headers: { ...hg.getHeaders({ httpVersion: '2' }), 'Accept': 'text/html' },
+        timeout: { request: 10000 }, throwHttpErrors: false, http2: true,
+      });
+      if (res.statusCode !== 200) return [];
+      html = res.body;
     } catch { return []; }
 
     const $ = cheerio.load(html);
@@ -285,18 +301,25 @@ export class ZinkMovies extends Source {
   }
 
   async resolveZinkCloud(ctx, fileId) {
+    // Use got-scraping with HeaderGenerator for CF bypass on ZinkCloud
+    const { gotScraping } = await import('got-scraping');
+    const { HeaderGenerator } = await import('header-generator');
+    const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
+
     // Step 1: Generate token
     const tokenUrl = new URL(`/ajax_generate_token.php?random_id=${encodeURIComponent(fileId)}`, ZINKCLOUD_BASE);
     let tokenData;
     try {
-      const tokenResponse = await this.fetcher.textPost(ctx, tokenUrl, `random_id=${fileId}`, {
+      const tokenRes = await gotScraping.post(tokenUrl.href, {
         headers: {
+          ...hg.getHeaders({ httpVersion: '2' }),
           'Content-Type': 'application/x-www-form-urlencoded',
           'Referer': `${ZINKCLOUD_BASE}/file/${fileId}`,
         },
-        timeout: 10000,
+        body: `random_id=${fileId}`,
+        timeout: { request: 10000 }, throwHttpErrors: false, http2: true,
       });
-      tokenData = JSON.parse(tokenResponse);
+      tokenData = JSON.parse(tokenRes.body);
     } catch { return []; }
 
     if (tokenData.status !== 'success' || !tokenData.token) return [];
@@ -305,10 +328,11 @@ export class ZinkMovies extends Source {
     const dlUrl = new URL(`/dl/${encodeURIComponent(tokenData.token)}`, ZINKCLOUD_BASE);
     let dlHtml;
     try {
-      dlHtml = await this.fetcher.text(ctx, dlUrl, {
-        headers: { Referer: `${ZINKCLOUD_BASE}/file/${fileId}` },
-        timeout: 10000,
+      const dlRes = await gotScraping.get(dlUrl.href, {
+        headers: { ...hg.getHeaders({ httpVersion: '2' }), 'Referer': `${ZINKCLOUD_BASE}/file/${fileId}` },
+        timeout: { request: 10000 }, throwHttpErrors: false, http2: true,
       });
+      dlHtml = dlRes.body;
     } catch { return []; }
 
     // Extract hubcloud links
