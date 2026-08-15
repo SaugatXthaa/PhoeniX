@@ -62,7 +62,7 @@ async function fetchSourcesJson() {
   return null;
 }
 
-// Resolve AniList ID + MAL ID via AniList GraphQL search by name
+// Resolve AniList ID + MAL ID via AniList GraphQL search by name.
 async function resolveAniList(name) {
   const query = `
     query($search: String) {
@@ -72,6 +72,8 @@ async function resolveAniList(name) {
           idMal
           title { romaji english native userPreferred }
           format
+          episodes
+          duration
         }
       }
     }`;
@@ -93,6 +95,12 @@ async function resolveAniList(name) {
   } catch { return null; }
 }
 
+// AniList formats that count as real anime episodes/movies — NOT music videos.
+// MUSIC = promotional music video, NOVEL = text-only release, etc.
+// These get filtered out because megaplay.buzz has no real stream for them.
+const VALID_MOVIE_FORMATS = new Set(['MOVIE']);
+const VALID_SERIES_FORMATS = new Set(['TV', 'TV_SHORT', 'OVA', 'ONA', 'SPECIAL']);
+
 export class AniDoor extends Source {
   constructor(fetcher) {
     super();
@@ -110,15 +118,30 @@ export class AniDoor extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
+    // The Stremio request type tells us which AniList format we should accept.
+    // - tmdbId.season present → user wants a TV episode → only match series-format anime
+    // - no season → user wants a movie → only match MOVIE-format anime
+    // This prevents AniDoor from emitting anime streams for non-anime content
+    // (e.g. "Supergirl (2026)" the DC movie → would otherwise match the
+    // "SUPERGIRL" AniList entry which is a 3-min MUSIC video).
+    const wantMovie = !tmdbId.season;
+    const allowedFormats = wantMovie ? VALID_MOVIE_FORMATS : VALID_SERIES_FORMATS;
+
     // Step 1: Resolve AniList ID + MAL ID via AniList GraphQL search
     const mediaList = await resolveAniList(name);
     if (!mediaList?.length) return [];
 
-    // Find best match by title
+    // Find best match by title — but ONLY among entries whose format matches
+    // the user's request type. This is the key fix that stops AniDoor from
+    // matching a music video when the user is watching a movie, or matching
+    // a TV anime when the user is watching a movie (and vice versa).
     const nameNorm = normalize(name);
     let bestMedia = null;
     let bestScore = 0;
     for (const m of mediaList) {
+      // Hard filter: skip formats that don't match the request type
+      if (!allowedFormats.has(m.format)) continue;
+
       const titles = [m.title?.english, m.title?.romaji, m.title?.userPreferred].filter(Boolean);
       for (const t of titles) {
         const tNorm = normalize(t);
@@ -134,11 +157,14 @@ export class AniDoor extends Source {
         }
       }
     }
-    if (!bestMedia || bestScore < 60) return [];
+    // Raised threshold from 60 → 75: a 60-score "includes" match is too loose
+    // and causes false positives on titles like "Supergirl" ↔ "SUPERGIRL" (music
+    // video) when the real anime has a different romaji title.
+    if (!bestMedia || bestScore < 75) return [];
 
     const anilistId = bestMedia.id;
     const malId = bestMedia.idMal;
-    const isMovie = bestMedia.format === 'MOVIE';
+    const isMovie = wantMovie;
 
     // Step 2: Fetch sources.json config
     const sources = await fetchSourcesJson();

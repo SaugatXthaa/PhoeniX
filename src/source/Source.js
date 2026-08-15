@@ -60,7 +60,7 @@ export class Source {
     // Cache key must include season + episode so S1E1 and S2E1 don't collide
     const cacheKey = `${this.id}_${id.id || id}${id.season ? `_S${id.season}_E${id.episode || 1}` : ''}`;
     const cached = sourceResultCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < this.ttl) {
+    if (cached && Date.now() - cached.ts < cached.ttl) {
       return cached.data;
     }
 
@@ -86,7 +86,15 @@ export class Source {
       }
     }
 
-    sourceResultCache.set(cacheKey, { data: results, ts: Date.now() });
+    // Cache empty results with a MUCH shorter TTL (60s instead of full this.ttl).
+    // This prevents "cache poisoning" when a source transiently fails (e.g.
+    // network blip, upstream timeout, rate-limit) — without this, an empty `[]`
+    // would be cached for the full ttl (5-12min for most sources) and the user
+    // would see "no streams" until expiry even though the source is now back up.
+    // Non-empty results still get the full this.ttl.
+    const isEmpty = !Array.isArray(results) || results.length === 0;
+    const effectiveTtl = isEmpty ? 60_000 : this.ttl;
+    sourceResultCache.set(cacheKey, { data: results, ts: Date.now(), ttl: effectiveTtl });
     return results;
   }
 

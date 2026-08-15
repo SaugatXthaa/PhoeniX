@@ -130,8 +130,18 @@ class ZinkMoviesScraper {
   }
 
   async _getGemmaStreams(imdbId) {
-    // Retry with exponential backoff when rate-limited
-    const delays = [0, 1000, 5000, 30000, 60000];
+    // Retry with backoff when rate-limited. The rasta428jem.com API returns
+    // the literal string "7" when it's rate-limiting the caller.
+    //
+    // IMPORTANT: keep the retry schedule SHORT. The previous [0,1,5,30,60]
+    // schedule added up to 96s, which:
+    //   - blocks the addon's request slot for too long
+    //   - never actually recovers when the IP is heavily rate-limited (cloud IPs)
+    //   - still gets killed by StreamResolver's 30s SOURCE_TIMEOUT_MS anyway
+    // The new schedule [0, 1, 5] = max 6s. If rasta428jem is rate-limiting us,
+    // the user simply sees "no ZinkMovies streams" and the cache (now 60s for
+    // empty results, see Source.js) will retry sooner on the next request.
+    const delays = [0, 1000, 5000];
 
     for (let attempt = 0; attempt < delays.length; attempt++) {
       if (delays[attempt] > 0) {
