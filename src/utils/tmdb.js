@@ -2,7 +2,7 @@
 
 import { NotFoundError } from '../error/index.js';
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY || '';
+const TMDB_API_KEY = process.env.TMDB_API_KEY || '439c478a771f35c05022f9feabcca01c';
 const TMDB_ACCESS_TOKEN = process.env.TMDB_ACCESS_TOKEN || '';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 

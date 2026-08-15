@@ -77,7 +77,7 @@ export class Cinejoy extends Source {
           tmdbId.season
             ? scraper.getSeriesStreams(String(tmdbId.id), tmdbId.season, tmdbId.episode || 1, server)
             : scraper.getMovieStreams(String(tmdbId.id), server),
-          new Promise(r => setTimeout(() => r(null), 20000)),
+          new Promise(r => setTimeout(() => r(null), 25000)),
         ]);
         if (streams && streams.length > 0) break;
       } catch (e) {
