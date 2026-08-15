@@ -1,8 +1,8 @@
 // src/source/ZinkMovies.js
-// zinkmovies — movies, series, anime, K-drama with multi-quality HLS streams
+// zinkmovies — movies & series with multi-quality HLS streams
 //
-// Uses the new ZinkMovies scraper (src/nuvio/zinkmovies_v2.cjs) which bypasses
-// Cloudflare by using the gemma416okl.com player API directly (not behind CF).
+// Uses the ZinkMovies scraper (src/nuvio/zinkmovies_v2.cjs) which bypasses
+// Cloudflare by using the gemma416okl.com player API directly.
 //
 // Flow:
 //   1. Resolve TMDB ID → IMDB ID
@@ -15,7 +15,16 @@
 //   Referer: https://i-arch-400.keymi417exx.com/
 //   Origin: https://i-arch-400.keymi417exx.com
 //
-// The scraper has built-in rate-limit retry logic (1s, 5s, 30s, 60s delays).
+// The Referer is passed via meta.nuvioReferer so the NuvioExtractor routes
+// the stream through /proxy with the Referer header. This ensures both the
+// master m3u8 AND all segment requests include the correct Referer.
+//
+// Enriched metadata (like 4KHDHub):
+//   - height: 1080, 720, 480, 360
+//   - sourceType: 'WebDL' (HLS streaming rips)
+//   - bandwidth: from HLS manifest BANDWIDTH attribute
+//   - countryCodes: [multi, hi, en] (ZinkMovies has Hindi + English content)
+//   - title: movie/show title with quality label
 
 import { createRequire } from 'module';
 import path from 'path';
@@ -28,13 +37,33 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require_ = createRequire(import.meta.url);
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'zinkmovies_v2.cjs');
 
-// Parse quality string to height
+// The Referer that the stream CDN requires.
+// Without this header, the CDN returns 404 for both the m3u8 and segments.
+const STREAM_REFERER = 'https://i-arch-400.keymi417exx.com/';
+
+// Parse quality string to height (matches enrichMeta expectations)
 function parseHeight(q) {
   if (!q) return 1080;
   const s = String(q).toLowerCase();
   if (s.includes('4k') || s.includes('2160')) return 2160;
   const m = s.match(/(\d{3,4})/);
   return m ? parseInt(m[1]) : 1080;
+}
+
+// Detect audio language from the stream label (e.g., "Hindi", "English", "Tamil")
+function detectCountryCodes(label) {
+  const codes = [CountryCode.multi, CountryCode.en]; // default: multi + English
+  const labelLower = (label || '').toLowerCase();
+  if (labelLower.includes('hindi') || labelLower.includes('hin')) {
+    codes.push(CountryCode.hi);
+  }
+  if (labelLower.includes('tamil') || labelLower.includes('tam')) {
+    codes.push(CountryCode.ta);
+  }
+  if (labelLower.includes('telugu') || labelLower.includes('tel')) {
+    codes.push(CountryCode.te);
+  }
+  return [...new Set(codes)];
 }
 
 export class ZinkMovies extends Source {
@@ -68,14 +97,14 @@ export class ZinkMovies extends Source {
 
     const scraper = new Scraper(15000);
 
-    // Get streams — the scraper handles IMDB ID resolution internally
-    // Use TMDB ID directly (scraper resolves to IMDB ID via TMDB API)
-    const tmdbOrImdb = tmdbId.id;
-
+    // Get streams — the scraper handles IMDB ID resolution internally.
+    // Pass the display title so the scraper doesn't need to fetch it again.
     let streams;
     try {
       streams = await Promise.race([
-        scraper.getMovieStreams(String(tmdbOrImdb)),
+        tmdbId.season
+          ? scraper.getSeriesStreams(String(tmdbId.id), tmdbId.season, tmdbId.episode || 1, title)
+          : scraper.getMovieStreams(String(tmdbId.id), title),
         new Promise(r => setTimeout(() => r(null), 28000)),
       ]);
     } catch (e) {
@@ -98,43 +127,36 @@ export class ZinkMovies extends Source {
       try { url = new URL(s.url); } catch { continue; }
 
       const height = parseHeight(s.quality);
-      const referer = s.headers?.Referer || s.headers?.referer || '';
-      const origin = s.headers?.Origin || s.headers?.origin || '';
+      const countryCodes = detectCountryCodes(s.name || s.title);
+      const referer = s.headers?.Referer || s.headers?.referer || STREAM_REFERER;
 
-      // Route through /proxy with Referer for HLS playback
-      // (Stremio's ffmpeg doesn't send Referer for HLS sub-requests)
-      if (referer) {
-        const proxyUrl = new URL('/proxy', ctx.hostUrl);
-        proxyUrl.searchParams.set('url', url.href);
-        proxyUrl.searchParams.set('referer', referer);
+      // Build the display title with quality + audio label
+      // e.g., "Supergirl (2026) (ZinkMovies Hindi 1080p)"
+      const audioLabel = s.name?.split('|')[1]?.trim() || '';
+      const qualityLabel = s.quality || `${height}p`;
+      const displayTitle = audioLabel
+        ? `${title} (ZinkMovies ${audioLabel} ${qualityLabel})`
+        : `${title} (ZinkMovies ${qualityLabel})`;
 
-        results.push({
-          url: proxyUrl,
-          format: Format.hls,
-          meta: {
-            countryCodes: [CountryCode.multi, CountryCode.hi, CountryCode.en],
-            title: `${title} (ZinkMovies ${s.quality || 'HLS'})`,
-            sourceId: this.id,
-            sourceLabel: this.label,
-            height,
-            ...(s.bandwidth && { bandwidth: s.bandwidth }),
-          },
-        });
-      } else {
-        // Direct URL — no Referer needed
-        results.push({
-          url,
-          format: Format.hls,
-          meta: {
-            countryCodes: [CountryCode.multi, CountryCode.hi, CountryCode.en],
-            title: `${title} (ZinkMovies ${s.quality || 'HLS'})`,
-            sourceId: this.id,
-            sourceLabel: this.label,
-            height,
-            ...(s.bandwidth && { bandwidth: s.bandwidth }),
-          },
-        });
-      }
+      results.push({
+        url,
+        format: Format.hls,
+        meta: {
+          countryCodes,
+          title: displayTitle,
+          sourceId: this.id,
+          sourceLabel: this.label,
+          height,
+          // sourceType: 'WebDL' — these are HLS streaming rips
+          sourceType: 'WebDL',
+          // Pass the Referer via nuvioReferer so the NuvioExtractor routes
+          // through /proxy with the Referer header. This is critical — without
+          // the Referer, the CDN returns 404 for the m3u8 and all segments.
+          nuvioReferer: referer,
+          // bandwidth from HLS manifest (used for sort + display)
+          ...(s.bandwidth && { bandwidth: s.bandwidth }),
+        },
+      });
     }
 
     return results;

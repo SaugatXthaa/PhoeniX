@@ -2,29 +2,23 @@
  * ZinkMovies Scraper — 100% Pure Node.js (NO Playwright, NO Browser)
  * ====================================================================
  * Bypasses Cloudflare by using the gemma416okl.com player API directly,
- * which is NOT behind Cloudflare. The main zinkmovies.today site has CF
- * managed challenge, but the actual streaming infrastructure doesn't.
+ * which is NOT behind Cloudflare.
  *
  * ARCHITECTURE:
  *   1. TMDB API for metadata (get IMDB ID from TMDB ID)
- *   2. GET https://gemma416okl.com/play/{imdb_id}
- *      -> HTML with HDVBPlayer config: {file: "/playlist/XXX.txt", key: "YYY"}
- *   3. POST https://rasta428jem.com/playlist/XXX.txt
- *      Headers: X-CSRF-TOKEN: YYY, Origin: https://gemma416okl.com
- *      -> JSON array of sources: [{title: "Hindi", file: "~ZZZ"}, ...]
- *   4. POST https://rasta428jem.com/playlist/ZZZ.txt
- *      Headers: X-CSRF-TOKEN: YYY, Origin: https://gemma416okl.com
- *      -> Stream URL: https://i-arch-400.rasta428jem.com/.../index.m3u8
- *   5. Fetch HLS master playlist -> 360p, 480p, 720p, 1080p variants
+ *   2. GET https://gemma416okl.com/play/{imdb_id} -> player config
+ *   3. POST https://rasta428jem.com/playlist/{token}.txt -> sources JSON
+ *   4. POST https://rasta428jem.com/playlist/{source}.txt -> stream URL
+ *   5. Fetch HLS master playlist -> 360p/480p/720p/1080p variants
  *
- * RATE LIMITING:
- *   The rasta428jem.com API rate-limits after ~5 rapid requests.
- *   When rate-limited, it returns "7" instead of JSON.
- *   This scraper waits 60s and retries when that happens.
+ * STREAM HEADERS (REQUIRED):
+ *   The stream URLs require: Referer: https://i-arch-400.keymi417exx.com/
+ *   Without this header, the CDN returns 404.
+ *   Each stream object includes a `headers` field.
  *
  * USAGE:
- *   node zinkmovies.js movie 155                    # The Dark Knight (TMDB ID)
- *   node zinkmovies.js movie tt0468569              # By IMDB ID directly
+ *   node zinkmovies.js movie 155           # By TMDB ID
+ *   node zinkmovies.js movie tt0468569     # By IMDB ID
  */
 
 'use strict';
@@ -33,6 +27,7 @@ const TMDB_API_KEY = '8476a7ab80ad76f0936744df0430e67c';
 const TMDB_API = 'https://api.themoviedb.org/3';
 const GEMMA_PLAY = 'https://gemma416okl.com/play';
 const RASTA_BASE = 'https://rasta428jem.com';
+const STREAM_REFERER = 'https://i-arch-400.keymi417exx.com/';
 const STREAM_ORIGIN = 'https://i-arch-400.keymi417exx.com';
 
 const UA =
@@ -44,7 +39,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // Proxy support: rasta428jem.com aggressively rate-limits cloud IPs (Render, etc.),
 // returning "7" for every request. When ALL_PROXY is set, we route requests
 // through the proxy to bypass the IP-based rate limit.
-// Supports http://, https://, socks5://, socks5h:// proxy URLs.
+// Supports http://, https://, socks5://, socks5h:// proxy URLs via undici ProxyAgent.
 let _proxyDispatcher = null;
 let _proxyInitTried = false;
 function getProxyDispatcher() {
@@ -62,60 +57,51 @@ function getProxyDispatcher() {
   return _proxyDispatcher;
 }
 
+/** Fetch with timeout and UA. */
+async function fetchUrl(url, options = {}, timeout = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const fetchOpts = {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'User-Agent': UA,
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        ...options.headers,
+      },
+    };
+    // Use proxy dispatcher if available (bypasses IP rate limits on rasta428jem.com)
+    const dispatcher = getProxyDispatcher();
+    if (dispatcher) fetchOpts.dispatcher = dispatcher;
+
+    const r = await fetch(url, fetchOpts);
+    return {
+      status: r.status,
+      headers: Object.fromEntries(r.headers.entries()),
+      body: await r.text(),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 class ZinkMoviesScraper {
   constructor(timeout = 15000) {
     this.timeout = timeout;
-    this._lastRequest = 0;
-    this._minInterval = 500; // Min 500ms between requests to avoid rate limit
-  }
-
-  async _fetch(url, options = {}) {
-    // Rate limit: ensure min interval between requests
-    const now = Date.now();
-    const elapsed = now - this._lastRequest;
-    if (elapsed < this._minInterval) {
-      await sleep(this._minInterval - elapsed);
-    }
-    this._lastRequest = Date.now();
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeout);
-    try {
-      const fetchOpts = {
-        ...options,
-        signal: controller.signal,
-        headers: {
-          'User-Agent': UA,
-          'Accept': '*/*',
-          'Accept-Language': 'en-US,en;q=0.9',
-          ...options.headers,
-        },
-      };
-      // Use proxy dispatcher if available (bypasses IP rate limits on rasta428jem.com)
-      const dispatcher = getProxyDispatcher();
-      if (dispatcher) fetchOpts.dispatcher = dispatcher;
-
-      const r = await fetch(url, fetchOpts);
-      return {
-        status: r.status,
-        headers: Object.fromEntries(r.headers.entries()),
-        body: await r.text(),
-      };
-    } finally {
-      clearTimeout(timer);
-    }
   }
 
   async _getImdbId(tmdbId, type = 'movie') {
     if (String(tmdbId).startsWith('tt')) return tmdbId;
-    const r = await this._fetch(
+    const r = await fetchUrl(
       `${TMDB_API}/${type}/${tmdbId}/external_ids?api_key=${TMDB_API_KEY}`
     );
     return JSON.parse(r.body).imdb_id;
   }
 
   async getInfo(tmdbId, type = 'movie') {
-    const r = await this._fetch(
+    const r = await fetchUrl(
       `${TMDB_API}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`
     );
     return JSON.parse(r.body);
@@ -129,55 +115,112 @@ class ZinkMoviesScraper {
     return null;
   }
 
+  /**
+   * Get all HLS streams for a movie.
+   * @returns {Promise<Array>} Stream objects with {name, title, url, quality, headers, source}
+   */
   async getMovieStreams(tmdbOrImdbId, title = '') {
     const imdbId = await this._getImdbId(tmdbOrImdbId, 'movie');
-    const streams = await this._getGemmaStreams(imdbId);
+    const rawStreams = await this._getGemmaStreams(imdbId);
 
-    const result = [];
-    for (const s of streams) {
+    // Get display title
+    let displayTitle = title;
+    if (!displayTitle) {
       try {
-        const variants = await this._parseMasterPlaylist(s.url, s.title);
+        if (!String(tmdbOrImdbId).startsWith('tt')) {
+          const info = await this.getInfo(tmdbOrImdbId, 'movie');
+          displayTitle = info.title || imdbId;
+        } else {
+          displayTitle = imdbId;
+        }
+      } catch {
+        displayTitle = imdbId;
+      }
+    }
+
+    // Parse each stream's master playlist to get quality variants
+    const result = [];
+    for (const s of rawStreams) {
+      try {
+        const variants = await this._parseMasterPlaylist(s.url, s.title, displayTitle);
         result.push(...variants);
       } catch {
         result.push({
-          title: s.title, quality: 'HLS', url: s.url, source: 'zinkmovies',
-          headers: { Referer: STREAM_ORIGIN + '/', Origin: STREAM_ORIGIN },
+          name: `ZinkMovies | ${s.title}`,
+          title: displayTitle,
+          url: s.url,
+          quality: 'HLS',
+          source: 'zinkmovies',
+          headers: { 'Referer': STREAM_REFERER, 'Origin': STREAM_ORIGIN },
+        });
+      }
+    }
+
+    // Sort by bandwidth (highest quality first)
+    result.sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0));
+    return result;
+  }
+
+  /**
+   * Get all HLS streams for a series episode.
+   * Uses the show's IMDB ID — gemma416okl.com resolves it to the show's streams.
+   */
+  async getSeriesStreams(tmdbId, season, episode, title = '') {
+    const imdbId = await this._getImdbId(tmdbId, 'tv');
+    const rawStreams = await this._getGemmaStreams(imdbId);
+
+    let displayTitle = title;
+    if (!displayTitle) {
+      try {
+        const info = await this.getInfo(tmdbId, 'tv');
+        const name = info.name || imdbId;
+        displayTitle = `${name} S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+      } catch {
+        displayTitle = `${imdbId} S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+      }
+    }
+
+    const result = [];
+    for (const s of rawStreams) {
+      try {
+        const variants = await this._parseMasterPlaylist(s.url, s.title, displayTitle);
+        result.push(...variants);
+      } catch {
+        result.push({
+          name: `ZinkMovies | ${s.title}`,
+          title: displayTitle,
+          url: s.url,
+          quality: 'HLS',
+          source: 'zinkmovies',
+          headers: { 'Referer': STREAM_REFERER, 'Origin': STREAM_ORIGIN },
         });
       }
     }
 
     result.sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0));
-
-    const meta = await this._safeInfo(tmdbOrImdbId, 'movie');
-    const displayTitle = title || meta.title || imdbId;
-    for (const r of result) r.title = displayTitle;
-
     return result;
   }
 
+  /**
+   * Core: Get gemma stream URLs.
+   * Retries up to 4 times with backoff when rate-limited (server returns "7").
+   *
+   * Retry schedule [0, 2, 5, 10] = 17s total, fits within the 30s source timeout
+   * with ~13s buffer for actual HTTP requests. The original [0, 2, 5, 15, 30] = 52s
+   * schedule would exceed the source timeout and cause the source to be killed.
+   */
   async _getGemmaStreams(imdbId) {
-    // Retry with backoff when rate-limited. The rasta428jem.com API returns
-    // the literal string "7" when it's rate-limiting the caller.
-    //
-    // IMPORTANT: keep the retry schedule SHORT. The previous [0,1,5,30,60]
-    // schedule added up to 96s, which:
-    //   - blocks the addon's request slot for too long
-    //   - never actually recovers when the IP is heavily rate-limited (cloud IPs)
-    //   - still gets killed by StreamResolver's 30s SOURCE_TIMEOUT_MS anyway
-    // The new schedule [0, 1, 5] = max 6s. If rasta428jem is rate-limiting us,
-    // the user simply sees "no ZinkMovies streams" and the cache (now 60s for
-    // empty results, see Source.js) will retry sooner on the next request.
-    const delays = [0, 1000, 5000];
+    const delays = [0, 2000, 5000, 10000];
 
     for (let attempt = 0; attempt < delays.length; attempt++) {
       if (delays[attempt] > 0) {
-        console.error(`Rate limited, waiting ${delays[attempt]/1000}s before retry...`);
+        console.error(`[ZinkMovies] Retrying in ${delays[attempt]/1000}s (attempt ${attempt+1}/${delays.length})...`);
         await sleep(delays[attempt]);
       }
 
       try {
         // Step 1: Get player config
-        const r1 = await this._fetch(`${GEMMA_PLAY}/${imdbId}`, {
+        const r1 = await fetchUrl(`${GEMMA_PLAY}/${imdbId}`, {
           headers: { Referer: 'https://new3.zinkmovies.today/' },
         });
         const config = this._extractConfig(r1.body);
@@ -190,11 +233,8 @@ class ZinkMoviesScraper {
           fileUrl = RASTA_BASE + fileUrl;
         }
 
-        // Step 2: POST to get sources (must be fast - token expires in ~2s)
-        // Temporarily disable rate limiting for this step
-        const oldInterval = this._minInterval;
-        this._minInterval = 0;
-        const r2 = await this._fetch(fileUrl, {
+        // Step 2: POST to get sources
+        const r2 = await fetchUrl(fileUrl, {
           method: 'POST',
           headers: {
             'X-CSRF-TOKEN': config.key,
@@ -204,25 +244,20 @@ class ZinkMoviesScraper {
           },
         });
 
-        if (r2.body === '7') {
-          this._minInterval = oldInterval;
-          throw new Error('Rate limited (got "7")');
-        }
-
-        if (!r2.body.startsWith('[')) {
-          this._minInterval = oldInterval;
-          throw new Error('Invalid response: ' + r2.body.substring(0, 50));
+        if (r2.body === '7' || !r2.body.startsWith('[')) {
+          throw new Error('Rate limited or server error');
         }
 
         const sources = JSON.parse(r2.body);
         const baseUrl = fileUrl.substring(0, fileUrl.lastIndexOf('/') + 1);
 
-        // Step 3: Get stream URLs for ALL sources in parallel (racing token expiry)
-        const streamPromises = sources
-          .filter(s => s.file && s.file.startsWith('~'))
-          .map(src => {
+        // Step 3: Get stream URLs SEQUENTIALLY (parallel requests cause token expiry)
+        const validStreams = [];
+        for (const src of sources) {
+          if (!src.file || !src.file.startsWith('~')) continue;
+          try {
             const streamFileUrl = baseUrl + src.file.substring(1) + '.txt';
-            return this._fetch(streamFileUrl, {
+            const r3 = await fetchUrl(streamFileUrl, {
               method: 'POST',
               headers: {
                 'X-CSRF-TOKEN': config.key,
@@ -230,16 +265,16 @@ class ZinkMoviesScraper {
                 'Origin': 'https://gemma416okl.com',
                 'Referer': `${GEMMA_PLAY}/${imdbId}`,
               },
-            }).then(r => ({ title: src.title, url: r.body.trim() }))
-              .catch(() => null);
-          });
+            });
+            const url = r3.body.trim();
+            if (url.startsWith('http')) {
+              validStreams.push({ title: src.title, url });
+            }
+          } catch {}
+        }
 
-        const results = await Promise.all(streamPromises);
-        this._minInterval = oldInterval;
-
-        const valid = results.filter(r => r && r.url && r.url.startsWith('http'));
-        if (valid.length > 0) return valid;
-        throw new Error('No valid stream URLs');
+        if (validStreams.length > 0) return validStreams;
+        throw new Error('No valid streams');
       } catch (e) {
         if (attempt === delays.length - 1) {
           throw new Error(`Failed after ${delays.length} attempts: ${e.message}`);
@@ -248,12 +283,18 @@ class ZinkMoviesScraper {
     }
   }
 
-  async _parseMasterPlaylist(masterUrl, label) {
-    const r = await this._fetch(masterUrl, {
-      headers: { Referer: STREAM_ORIGIN + '/', Origin: STREAM_ORIGIN },
+  /**
+   * Parse HLS master playlist into quality variants.
+   */
+  async _parseMasterPlaylist(masterUrl, label, displayTitle) {
+    const r = await fetchUrl(masterUrl, {
+      headers: { Referer: STREAM_REFERER, Origin: STREAM_ORIGIN },
     });
-    const lines = r.body.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!r.body.includes('#EXTM3U')) {
+      throw new Error('Not an HLS playlist');
+    }
 
+    const lines = r.body.split('\n').map(l => l.trim()).filter(Boolean);
     const streams = [];
     let currentInf = {};
 
@@ -280,27 +321,35 @@ class ZinkMoviesScraper {
           if (h >= 1080) quality = '1080p';
           else if (h >= 720) quality = '720p';
           else if (h >= 480) quality = '480p';
-          else if (h >= 360) quality = '360p';
+          else if (h >= 350) quality = '360p';
 
           streams.push({
-            title: label, quality, resolution: currentInf.resolution,
-            bandwidth: currentInf.bandwidth, url, source: 'zinkmovies',
-            headers: { Referer: STREAM_ORIGIN + '/', Origin: STREAM_ORIGIN },
+            name: `ZinkMovies | ${label} | ${quality}`,
+            title: displayTitle || label,
+            quality,
+            resolution: currentInf.resolution,
+            bandwidth: currentInf.bandwidth,
+            url,
+            source: 'zinkmovies',
+            headers: { 'Referer': STREAM_REFERER, 'Origin': STREAM_ORIGIN },
           });
           currentInf = {};
         }
       }
     }
-    return streams;
-  }
 
-  async _safeInfo(tmdbOrImdbId, type) {
-    try {
-      if (String(tmdbOrImdbId).startsWith('tt')) return { title: tmdbOrImdbId };
-      return await this.getInfo(tmdbOrImdbId, type);
-    } catch {
-      return { title: '' };
+    if (streams.length === 0) {
+      streams.push({
+        name: `ZinkMovies | ${label}`,
+        title: displayTitle || label,
+        quality: 'HLS',
+        url: masterUrl,
+        source: 'zinkmovies',
+        headers: { 'Referer': STREAM_REFERER, 'Origin': STREAM_ORIGIN },
+      });
     }
+
+    return streams;
   }
 }
 
@@ -311,7 +360,7 @@ if (require.main === module) (async () => {
   const mediaType = args[0] || 'movie';
   const id = args[1] || 'tt0468569';
 
-  console.log('=== ZinkMovies Scraper (Pure Node.js — No Browser, No CF Bypass) ===');
+  console.log('=== ZinkMovies Scraper (Pure Node.js) ===');
   console.log(`Loading: ${mediaType} ${id}\n`);
 
   try {
@@ -325,11 +374,20 @@ if (require.main === module) (async () => {
   try {
     if (mediaType === 'movie') {
       const streams = await s.getMovieStreams(id);
-      console.log(`Got ${streams.length} stream variants:`);
+      console.log(`Got ${streams.length} streams:\n`);
       for (const st of streams) {
-        console.log(`  [${st.quality}] ${st.resolution || ''} ${st.bandwidth || 0} bps`);
+        console.log(`  [${st.quality}] ${st.name}`);
         console.log(`    URL: ${st.url}`);
-        if (st.headers) console.log(`    Headers: ${JSON.stringify(st.headers)}`);
+        console.log(`    Headers: ${JSON.stringify(st.headers)}`);
+        console.log();
+      }
+
+      // Verify first stream
+      if (streams.length > 0) {
+        console.log('--- Verifying first stream ---');
+        const r = await fetchUrl(streams[0].url, { headers: streams[0].headers });
+        console.log('Status:', r.status);
+        console.log('Is HLS:', r.body.includes('#EXTM3U'));
       }
     }
   } catch (e) {
