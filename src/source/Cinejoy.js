@@ -27,6 +27,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require_ = createRequire(import.meta.url);
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'cinejoy_v2.cjs');
 
+// Cache the scraper module — the Cinejoy JS bundle is ~500KB and takes ~2-3s to
+// parse. Without this cache, every request re-parses the bundle, causing the
+// source to take 18-20s instead of 2-3s. The bundle is immutable, so caching is safe.
+let _scraperMod = null;
+function getScraperModule() {
+  if (_scraperMod) return _scraperMod;
+  try {
+    _scraperMod = require_(PROVIDER_PATH);
+  } catch (e) {
+    console.error(`[cinejoy] failed to load scraper: ${e?.message || e}`);
+    return null;
+  }
+  return _scraperMod;
+}
+
 // Parse quality string to height
 function parseHeight(q) {
   if (!q) return 1080;
@@ -53,16 +68,10 @@ export class Cinejoy extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Load the Cinejoy scraper module
-    let Scraper;
-    try {
-      delete require_.cache[require_.resolve(PROVIDER_PATH)];
-      const mod = require_(PROVIDER_PATH);
-      Scraper = mod.CinejoyScraper;
-    } catch (e) {
-      console.error(`[cinejoy] failed to load scraper: ${e?.message || e}`);
-      return [];
-    }
+    // Load the Cinejoy scraper module (cached — see getScraperModule comment)
+    const mod = getScraperModule();
+    if (!mod) return [];
+    const Scraper = mod.CinejoyScraper;
     if (!Scraper) return [];
 
     const scraper = new Scraper();

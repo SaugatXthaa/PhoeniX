@@ -35,6 +35,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require_ = createRequire(import.meta.url);
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'zinkmovies_v2.cjs');
 
+// Cache the scraper module — re-parsing on every request wastes ~100-200ms.
+// The module is immutable, so caching is safe.
+let _scraperMod = null;
+function getScraperModule() {
+  if (_scraperMod) return _scraperMod;
+  try {
+    _scraperMod = require_(PROVIDER_PATH);
+  } catch (e) {
+    console.error(`[zinkmovies] failed to load scraper: ${e?.message || e}`);
+    return null;
+  }
+  return _scraperMod;
+}
+
 // The Referer that the stream CDN requires.
 // Without this header, the CDN returns 404 for both the m3u8 and segments.
 const STREAM_REFERER = 'https://i-arch-400.keymi417exx.com/';
@@ -81,16 +95,10 @@ export class ZinkMovies extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Load the scraper module — exports { getStreams }
-    let getStreams;
-    try {
-      delete require_.cache[require_.resolve(PROVIDER_PATH)];
-      const mod = require_(PROVIDER_PATH);
-      getStreams = mod.getStreams;
-    } catch (e) {
-      console.error(`[zinkmovies] failed to load scraper: ${e?.message || e}`);
-      return [];
-    }
+    // Load the scraper module (cached — see getScraperModule comment)
+    const mod = getScraperModule();
+    if (!mod) return [];
+    const getStreams = mod.getStreams;
     if (!getStreams) return [];
 
     // The scraper takes (tmdbId, type, season, episode) and returns stream objects.
