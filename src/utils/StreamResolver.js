@@ -308,6 +308,14 @@ export class StreamResolver {
     let sourceErrorCount = 0;
 
     const SOURCE_TIMEOUT_MS = 30_000;
+    // Limit concurrency to prevent CPU starvation on Render's free tier.
+    // Without this, all 85+ sources fire simultaneously, causing CPU-intensive
+    // sources (Cinejoy's lumen-gate-v1 crypto, ZinkMovies, etc.) to take 30s+
+    // and hit the SOURCE_TIMEOUT. With a limit of 20, each source gets ~4x more
+    // CPU time, completing in 2-5s instead of 30s+.
+    const MAX_CONCURRENT_SOURCES = 20;
+    let activeCount = 0;
+    const waitQueue = [];
 
     const withTimeout = (promise, ms, sourceId) => {
       let timer;
@@ -318,6 +326,12 @@ export class StreamResolver {
     };
 
     const handleSource = async (source) => {
+      // Concurrency gate: wait if too many sources are already running
+      if (activeCount >= MAX_CONCURRENT_SOURCES) {
+        await new Promise(resolve => waitQueue.push(resolve));
+      }
+      activeCount++;
+
       try {
         const sourceResults = await withTimeout(source.handle(ctx, type, id), SOURCE_TIMEOUT_MS, source.id);
         this.logger.info(`Source ${source.id} returned ${sourceResults.length} results`);
@@ -336,6 +350,11 @@ export class StreamResolver {
         sourceErrorCount++;
         const msg = error?.message || error?.constructor?.name || String(error);
         this.logger.warn(`Source ${source.id} error: ${msg}`);
+      } finally {
+        activeCount--;
+        // Start next waiting source if any
+        const next = waitQueue.shift();
+        if (next) next();
       }
     };
 
