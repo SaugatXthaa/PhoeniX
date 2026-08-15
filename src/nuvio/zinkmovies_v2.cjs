@@ -41,6 +41,27 @@ const UA =
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// Proxy support: rasta428jem.com aggressively rate-limits cloud IPs (Render, etc.),
+// returning "7" for every request. When ALL_PROXY is set, we route requests
+// through the proxy to bypass the IP-based rate limit.
+// Supports http://, https://, socks5://, socks5h:// proxy URLs.
+let _proxyDispatcher = null;
+let _proxyInitTried = false;
+function getProxyDispatcher() {
+  if (_proxyInitTried) return _proxyDispatcher;
+  _proxyInitTried = true;
+  const proxyUrl = process.env.ALL_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  if (!proxyUrl) return null;
+  try {
+    const { ProxyAgent } = require('undici');
+    _proxyDispatcher = new ProxyAgent(proxyUrl);
+    console.log(`[zinkmovies] using proxy: ${proxyUrl.replace(/:[^:@]+@/, ':***@')}`);
+  } catch (e) {
+    console.error(`[zinkmovies] proxy init failed: ${e.message}`);
+  }
+  return _proxyDispatcher;
+}
+
 class ZinkMoviesScraper {
   constructor(timeout = 15000) {
     this.timeout = timeout;
@@ -60,7 +81,7 @@ class ZinkMoviesScraper {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
     try {
-      const r = await fetch(url, {
+      const fetchOpts = {
         ...options,
         signal: controller.signal,
         headers: {
@@ -69,7 +90,12 @@ class ZinkMoviesScraper {
           'Accept-Language': 'en-US,en;q=0.9',
           ...options.headers,
         },
-      });
+      };
+      // Use proxy dispatcher if available (bypasses IP rate limits on rasta428jem.com)
+      const dispatcher = getProxyDispatcher();
+      if (dispatcher) fetchOpts.dispatcher = dispatcher;
+
+      const r = await fetch(url, fetchOpts);
       return {
         status: r.status,
         headers: Object.fromEntries(r.headers.entries()),

@@ -578,6 +578,18 @@ app.get('/health', (req, res) => {
 });
 
 // ============== DEBUG (diagnostic — safe, read-only) ==============
+// Returns which proxy env vars are SET (boolean only — never exposes values).
+app.get('/debug/env', (req, res) => {
+  res.json({
+    ALL_PROXY: !!process.env.ALL_PROXY,
+    HTTPS_PROXY: !!process.env.HTTPS_PROXY,
+    HTTP_PROXY: !!process.env.HTTP_PROXY,
+    TMDB_API_KEY: !!process.env.TMDB_API_KEY,
+    FLARESOLVERR_ENDPOINT: !!process.env.FLARESOLVERR_ENDPOINT,
+    NODE_ENV: process.env.NODE_ENV || 'development',
+  });
+});
+
 // Tests a single source by id and returns its raw output + timing + errors.
 // Usage: /debug/source/:sourceId?type=movie&id=tmdb:1081003
 app.get('/debug/source/:sourceId', async (req, res) => {
