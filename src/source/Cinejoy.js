@@ -42,6 +42,19 @@ function getScraperModule() {
   return _scraperMod;
 }
 
+// Cache a shared scraper instance — the Cinejoy scraper does an ECDH handshake
+// with api.shegu.st on _init() which takes ~2-3s. Without caching the instance,
+// every request creates a new Scraper() and re-handshakes, adding 2-3s to every
+// request. The RxClient is designed to be reused (it maintains a session).
+let _scraperInstance = null;
+async function getScraper() {
+  if (_scraperInstance) return _scraperInstance;
+  const mod = getScraperModule();
+  if (!mod?.CinejoyScraper) return null;
+  _scraperInstance = new mod.CinejoyScraper();
+  return _scraperInstance;
+}
+
 // Parse quality string to height
 function parseHeight(q) {
   if (!q) return 1080;
@@ -68,13 +81,9 @@ export class Cinejoy extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Load the Cinejoy scraper module (cached — see getScraperModule comment)
-    const mod = getScraperModule();
-    if (!mod) return [];
-    const Scraper = mod.CinejoyScraper;
-    if (!Scraper) return [];
-
-    const scraper = new Scraper();
+    // Get the shared scraper instance (cached — avoids re-handshake on every request)
+    const scraper = await getScraper();
+    if (!scraper) return [];
 
     // Get streams — try Lisbon first (has 4K), then Athens as fallback.
     // IMPORTANT: per-server timeout must be SHORT (8s) because the StreamResolver
