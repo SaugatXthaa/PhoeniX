@@ -577,6 +577,75 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ============== DEBUG (diagnostic — safe, read-only) ==============
+// Tests a single source by id and returns its raw output + timing + errors.
+// Usage: /debug/source/:sourceId?type=movie&id=tmdb:1081003
+app.get('/debug/source/:sourceId', async (req, res) => {
+  const { sourceId } = req.params;
+  const type = req.query.type || 'movie';
+  const rawId = req.query.id || 'tmdb:1081003';
+
+  const source = sources.find(s => s.id === sourceId);
+  if (!source) {
+    return res.status(404).json({ error: `Source '${sourceId}' not found. Available: ${sources.map(s => s.id).join(', ')}` });
+  }
+
+  let parsedId;
+  try {
+    if (rawId.startsWith('tmdb:')) {
+      parsedId = TmdbId.fromString(rawId.replace('tmdb:', ''));
+    } else if (rawId.startsWith('tt')) {
+      parsedId = ImdbId.fromString(rawId);
+    } else {
+      return res.status(400).json({ error: `Unsupported ID: ${rawId}` });
+    }
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
+  const ctx = {
+    hostUrl: new URL(`https://${req.headers.host}`),
+    id: req.headers['x-request-id'] || '',
+    ip: req.ip,
+    config: { multi: 'on', en: 'on' },
+  };
+
+  const t0 = Date.now();
+  try {
+    // Call handleInternal directly to bypass the cache
+    const results = await Promise.race([
+      source.handleInternal(ctx, type, parsedId),
+      new Promise(r => setTimeout(() => r({ __timeout: true }), 35000)),
+    ]);
+    const dt = Date.now() - t0;
+    if (results?.__timeout) {
+      return res.json({ source: sourceId, type, id: rawId, timedOut: true, durationMs: dt });
+    }
+    return res.json({
+      source: sourceId,
+      type,
+      id: rawId,
+      durationMs: dt,
+      count: Array.isArray(results) ? results.length : 0,
+      results: Array.isArray(results) ? results.slice(0, 5).map(r => ({
+        url: r.url?.href?.slice(0, 150),
+        format: r.format,
+        meta: { ...r.meta, title: r.meta?.title?.slice(0, 120) },
+      })) : [],
+    });
+  } catch (e) {
+    const dt = Date.now() - t0;
+    return res.json({
+      source: sourceId,
+      type,
+      id: rawId,
+      durationMs: dt,
+      error: e?.message || String(e),
+      stack: e?.stack?.split('\n').slice(0, 5),
+    });
+  }
+});
+
 // ============== LANDING PAGE ==============
 app.get('/', (req, res) => {
   const hostUrl = `https://${req.headers.host}`;
