@@ -315,9 +315,14 @@ export class StreamResolver {
     // Limit concurrency to prevent CPU starvation on Render's free tier.
     // Without this, all 85+ sources fire simultaneously, causing CPU-intensive
     // sources (Cinejoy's lumen-gate-v1 crypto, ZinkMovies, etc.) to take 30s+
-    // and hit the SOURCE_TIMEOUT. With a limit of 20, each source gets ~4x more
-    // CPU time, completing in 2-5s instead of 30s+.
-    const MAX_CONCURRENT_SOURCES = 20;
+    // and hit the SOURCE_TIMEOUT.
+    //
+    // IMPORTANT: queue time counts against the source timeout. If a source waits
+    // 15s in the queue, it only has 15s left to run before timing out. With a
+    // limit of 15 (down from 20), sources wait less time in the queue, giving
+    // them more actual execution time. Cinejoy needs ~6s of actual execution,
+    // so a 15s limit gives it ~15s of slack for queue + execution.
+    const MAX_CONCURRENT_SOURCES = 15;
     let activeCount = 0;
     const waitQueue = [];
 
