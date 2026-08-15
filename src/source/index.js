@@ -61,6 +61,8 @@ import { HiAnime } from './HiAnime.js';
 import { AnimeKai } from './AnimeKai.js';
 import { AniChan } from './AniChan.js';
 import { AnimeSuge } from './AnimeSuge.js';
+// pahe.ink — movies/TV download links (Google Drive, MegaGo, 1Fichier, etc.)
+import { Pahe } from './Pahe.js';
 // Nuvio provider sources (additive — each has its own dedicated source file)
 import { Cineby } from './Cineby.js';
 import { DesiFlix } from './DesiFlix.js';
@@ -219,5 +221,7 @@ export const createSources = (fetcher) => {
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)
     new AnimeSuge(fetcher),
+    // pahe.ink — movies/TV download links (external: opens in browser)
+    new Pahe(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };

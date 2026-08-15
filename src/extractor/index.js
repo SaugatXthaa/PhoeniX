@@ -60,6 +60,8 @@ import { AnimeKai as AnimeKaiExtractor } from './AnimeKai.js';
 // (matches by meta.sourceId for: cineby, desiflix, goated, hindmoviez,
 // movieblast, movies4u, dahmermovies, dahmermovies4k, playimdb, animezey)
 import { NuvioExtractor } from './NuvioExtractor.js';
+// Pahe — marks teknoasian.com download URLs as external (browser-openable)
+import { Pahe as PaheExtractor } from './Pahe.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -140,6 +142,9 @@ export const createExtractors = (fetcher, logger) => {
     new AcerMovies(fetcher, logger),
     // DirectStream — passthrough for direct playable CDN URLs
     new DirectStream(fetcher, logger),
+    // Pahe — marks teknoasian.com download URLs as external (browser-openable)
+    // Must come before ExternalUrl fallback so it claims pahe URLs by sourceId
+    new PaheExtractor(fetcher, logger),
 
     // Fallback — must come last
     new ExternalUrl(fetcher, logger),
