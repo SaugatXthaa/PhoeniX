@@ -86,14 +86,19 @@ export class Source {
       }
     }
 
-    // Cache empty results with a MUCH shorter TTL (60s instead of full this.ttl).
+    // Cache empty results with a VERY short TTL (15s).
     // This prevents "cache poisoning" when a source transiently fails (e.g.
-    // network blip, upstream timeout, rate-limit) — without this, an empty `[]`
-    // would be cached for the full ttl (5-12min for most sources) and the user
-    // would see "no streams" until expiry even though the source is now back up.
-    // Non-empty results still get the full this.ttl.
+    // network blip, upstream timeout, rate-limit, CPU starvation under load).
+    //
+    // The previous 60s TTL was too long for Cinejoy — when the first request
+    // after a cold start timed out (25s due to bundle parsing + handshake),
+    // the empty result was cached for 60s, blocking all retries for a full
+    // minute even though the scraper was now warm and could return streams
+    // in 1-2s. With 15s, the user only needs to wait 15s for a retry.
+    //
+    // Non-empty results still get the full this.ttl (5-12min).
     const isEmpty = !Array.isArray(results) || results.length === 0;
-    const effectiveTtl = isEmpty ? 60_000 : this.ttl;
+    const effectiveTtl = isEmpty ? 15_000 : this.ttl;
     sourceResultCache.set(cacheKey, { data: results, ts: Date.now(), ttl: effectiveTtl });
     return results;
   }
