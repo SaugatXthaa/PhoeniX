@@ -10,7 +10,6 @@
 "use strict";
 
 var cheerio = require("cheerio");
-var { execFile } = require("child_process");
 
 var PROVIDER_NAME = "BollyFlix";
 var FALLBACK_BASE_URL = "https://bollyflix.free";
@@ -61,75 +60,44 @@ function getBaseUrl() {
 
 // ===== HTTP =====
 //
-// BollyFlix sits behind Cloudflare's bot challenge. Node's fetch (undici)
-// uses a different TLS fingerprint than Chrome, so Cloudflare always serves
-// it a "Just a moment..." challenge page (HTTP 403). curl ships with a
-// different TLS stack and is allowed through. We therefore shell out to
-// curl whenever it is available, falling back to fetch on environments
-// where curl is missing (e.g. React Native).
+// Uses got-scraping for Cloudflare bypass — works on Render where curl
+// is not available. Falls back to native fetch if got-scraping fails to load.
 
-function curlAvailable() {
-  // execFile is async-only; for the one-shot availability check we use a
-  // tiny sync wrapper. This runs once per process.
+var _gotScraping = null;
+async function getGotScraping() {
+  if (_gotScraping) return _gotScraping;
   try {
-    require("child_process").execSync("curl --version", {
-      stdio: "ignore",
-      timeout: 2000
-    });
-    return true;
+    var mod = await import("got-scraping");
+    _gotScraping = mod.gotScraping;
   } catch (e) {
-    return false;
+    console.error("[BollyFlix] Failed to load got-scraping:", e.message);
   }
+  return _gotScraping;
 }
-
-var _curlOk = null;
 
 function fetchText(url, extraHeaders) {
   var headers = Object.assign({}, DEFAULT_HEADERS, extraHeaders || {});
 
-  if (_curlOk === null) _curlOk = curlAvailable();
-
-  if (_curlOk) {
-    return new Promise(function (resolve, reject) {
-      var args = [
-        "-sSk",
-        "--max-time", "20",
-        "-L",
-        "--compressed",
-        "-A", headers["User-Agent"],
-        "-H", "Accept: " + headers["Accept"],
-        "-H", "Accept-Language: " + headers["Accept-Language"]
-      ];
-      if (headers["Referer"]) {
-        args.push("-H", "Referer: " + headers["Referer"]);
-      }
-      args.push(url);
-
-      execFile("curl", args, {
-        encoding: "utf8",
-        maxBuffer: 20 * 1024 * 1024,
-        timeout: 25000,
-        windowsHide: true
-      }, function (err, stdout, stderr) {
-        if (err) {
-          reject(new Error("curl failed for " + url + ": " + err.message));
-          return;
-        }
-        if (!stdout || stdout.length < 50) {
-          reject(new Error("Empty response from curl for " + url));
-          return;
-        }
-        resolve(stdout);
+  return getGotScraping().then(function (gotScraping) {
+    if (!gotScraping) {
+      // Fallback: plain fetch (will likely get CF-challenged, but try)
+      return fetch(url, { headers: headers, redirect: "follow" }).then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
+        return res.text();
       });
-    });
-  }
+    }
 
-  // Fallback: plain fetch (will likely get CF-challenged, but try).
-  return fetch(url, { headers: headers, redirect: "follow" }).then(function (
-    res
-  ) {
-    if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
-    return res.text();
+    return gotScraping(url, {
+      timeout: { request: 20000 },
+      throwHttpErrors: false,
+      headers: headers,
+      followRedirect: true,
+    }).then(function (response) {
+      if (response.statusCode >= 400) {
+        throw new Error("HTTP " + response.statusCode + " for " + url);
+      }
+      return response.body;
+    });
   });
 }
 
