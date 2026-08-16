@@ -1,7 +1,6 @@
 // Dahmer Movies Scraper for Nuvio Local Scrapers
 // React Native compatible version
-
-console.log('[DahmerMovies] Initializing Dahmer Movies scraper');
+// Modified to use got-scraping for better Cloudflare/TLS compatibility on Render.
 
 // Constants
 const TMDB_API_KEY = "1c29a5198ee1854bd5eb45dbe8d17d92";
@@ -9,23 +8,44 @@ const DAHMER_MOVIES_API = 'https://a.111477.xyz';
 const DAHMER_WORKER_API = 'https://p.111477.xyz/bulk?u=';
 const TIMEOUT = 20000; // 20 seconds
 
-// Quality mapping
-const Qualities = {
-    Unknown: 0,
-    P144: 144,
-    P240: 240,
-    P360: 360,
-    P480: 480,
-    P720: 720,
-    P1080: 1080,
-    P1440: 1440,
-    P2160: 2160
-};
+// Use got-scraping for HTTP requests — handles TLS/CF issues better than native fetch
+let _gotScraping = null;
+async function getGotScraping() {
+  if (_gotScraping) return _gotScraping;
+  try {
+    const mod = await import('got-scraping');
+    _gotScraping = mod.gotScraping;
+  } catch (e) {
+    console.error('[DahmerMovies] Failed to load got-scraping:', e.message);
+  }
+  return _gotScraping;
+}
 
 // Helper function to make HTTP requests
-function makeRequest(url, options = {}) {
-    const requestOptions = {
-        timeout: TIMEOUT,
+async function makeRequest(url, options = {}) {
+    const gotScraping = await getGotScraping();
+    if (!gotScraping) {
+        // Fallback to native fetch if got-scraping is not available
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Connection': 'keep-alive',
+                ...options.headers
+            },
+            ...options
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response;
+    }
+
+    // Use got-scraping — better TLS/CF compatibility
+    const response = await gotScraping(url, {
+        timeout: { request: TIMEOUT },
+        throwHttpErrors: false,
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -34,14 +54,20 @@ function makeRequest(url, options = {}) {
             ...options.headers
         },
         ...options
-    };
-
-    return fetch(url, requestOptions).then(function (response) {
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return response;
     });
+
+    if (response.statusCode >= 400) {
+        throw new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`);
+    }
+
+    // Return a fetch-like response object
+    return {
+        ok: true,
+        status: response.statusCode,
+        statusText: response.statusMessage,
+        text: async () => response.body,
+        json: async () => JSON.parse(response.body),
+    };
 }
 
 // Utility functions
