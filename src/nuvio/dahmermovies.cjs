@@ -10,20 +10,25 @@ const TIMEOUT = 20000; // 20 seconds
 
 // Use got-scraping for HTTP requests — handles TLS/CF issues better than native fetch
 let _gotScraping = null;
-async function getGotScraping() {
-  if (_gotScraping) return _gotScraping;
+let _headerGenerator = null;
+async function getHttpLibs() {
+  if (_gotScraping && _headerGenerator) return { gotScraping: _gotScraping, headerGenerator: _headerGenerator };
   try {
-    const mod = await import('got-scraping');
-    _gotScraping = mod.gotScraping;
+    const gsMod = await import('got-scraping');
+    _gotScraping = gsMod.gotScraping;
+    const hgMod = await import('header-generator');
+    _headerGenerator = new hgMod.HeaderGenerator({
+      browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en']
+    });
   } catch (e) {
-    console.error('[DahmerMovies] Failed to load got-scraping:', e.message);
+    console.error('[DahmerMovies] Failed to load got-scraping/header-generator:', e.message);
   }
-  return _gotScraping;
+  return { gotScraping: _gotScraping, headerGenerator: _headerGenerator };
 }
 
 // Helper function to make HTTP requests
 async function makeRequest(url, options = {}) {
-    const gotScraping = await getGotScraping();
+    const { gotScraping, headerGenerator } = await getHttpLibs();
     if (!gotScraping) {
         // Fallback to native fetch if got-scraping is not available
         const response = await fetch(url, {
@@ -42,17 +47,28 @@ async function makeRequest(url, options = {}) {
         return response;
     }
 
-    // Use got-scraping — better TLS/CF compatibility
+    // Use got-scraping with HeaderGenerator — generates browser-like headers
+    // that bypass IP-based blocks on cloud/datacenter IPs (like Render).
+    const baseHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive',
+        ...options.headers
+    };
+
+    // Merge with HeaderGenerator output if available (for CF bypass)
+    if (headerGenerator) {
+        const browserHeaders = headerGenerator.getHeaders({ httpVersion: '2' });
+        Object.assign(baseHeaders, browserHeaders);
+        // Don't let browser headers override our custom headers
+        if (options.headers) Object.assign(baseHeaders, options.headers);
+    }
+
     const response = await gotScraping(url, {
         timeout: { request: TIMEOUT },
         throwHttpErrors: false,
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Connection': 'keep-alive',
-            ...options.headers
-        },
+        headers: baseHeaders,
         ...options
     });
 
