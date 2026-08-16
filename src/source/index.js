@@ -61,6 +61,12 @@ import { HiAnime } from './HiAnime.js';
 import { AnimeKai } from './AnimeKai.js';
 import { AniChan } from './AniChan.js';
 import { AnimeSuge } from './AnimeSuge.js';
+// 1Embed — movies/TV HLS via 1embed.cc API (up to 4K)
+import { OneEmbed } from './OneEmbed.js';
+// BollyFlix — movies/TV download links via bollyflix.free (up to 4K)
+import { BollyFlix } from './BollyFlix.js';
+// 1Shows — movies/TV direct download via PixelDrain
+import { OneShows } from './OneShows.js';
 // Nuvio provider sources (additive — each has its own dedicated source file)
 import { Cineby } from './Cineby.js';
 import { DesiFlix } from './DesiFlix.js';
@@ -219,5 +225,11 @@ export const createSources = (fetcher) => {
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)
     new AnimeSuge(fetcher),
+    // 1embed.cc — movies/TV HLS via 1embed.cc API (up to 4K)
+    new OneEmbed(fetcher),
+    // bollyflix.free — movies/TV download links (up to 4K, Hindi-English)
+    new BollyFlix(fetcher),
+    // 1shows.cc — movies/TV direct download via PixelDrain
+    new OneShows(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
