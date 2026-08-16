@@ -134,8 +134,11 @@ export class BollyFlix extends Source {
           ...(height && { height }),
           sourceType,
           ...(fileSize && { bytes: fileSize }),
-          // BollyFlix download links need Referer for the redirect resolution
-          nuvioReferer: 'https://bollyflix.free/',
+          // Don't set nuvioReferer — the fastdlserver URLs are handled by
+          // the Pantyflix extractor which resolves them to direct cloud-dl
+          // workers.dev URLs (fastdlserver → gdflix → cloud-dl workers.dev).
+          // Setting nuvioReferer would make NuvioExtractor claim them first
+          // and route through /proxy, which gets 403 from fastdlserver.
         },
       });
     }

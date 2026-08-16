@@ -25,12 +25,16 @@ const DIRECT_CDN_HOSTS = [
   'streamx.me',
   'thefmovies.sbs',
   'pixeldrain.dev',
+  'pixeldrain.com',
   'cdn.fsl-buckets.work',
   'cdn.fukggl.buzz',
   // MovieBox — direct MP4 on hakunaymatata.com CDN (but often rate-limited
   // with 429 — needsProxy in StreamResolver routes these through /proxy)
   'bcdnxw2.hakunaymatata.com',
   'bcdnxw.hakunaymatata.com',
+  // VidLink — direct MP4 on bcdn.hakunaymatata.com (plays without Referer)
+  'bcdn.hakunaymatata.com',
+  'hbcdn.hakunaymatata.com',
   // FilmeOnlineHD — file hosts from linksdrive
   'fastdl.zip',
   'vcloud.zip',

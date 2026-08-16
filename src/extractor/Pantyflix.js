@@ -26,7 +26,10 @@ export class Pantyflix extends Extractor {
   }
 
   supports(_ctx, _url, meta) {
-    return meta?.sourceId === this.id;
+    // Claim both 'pantyflix' and 'bollyflix' source IDs — both return
+    // dl.fastdlserver.site URLs that need to be resolved to direct cloud-dl
+    // workers.dev URLs (fastdlserver → gdflix → cloud-dl workers.dev).
+    return meta?.sourceId === this.id || meta?.sourceId === 'bollyflix';
   }
 
   async extractInternal(ctx, url, meta) {

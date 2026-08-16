@@ -439,15 +439,16 @@ export class StreamResolver {
       // Proxying everything causes "network connection was lost" on Render when
       // downloading large files — Render kills long-running proxy connections.
       // Only proxy CDNs that return "Connection reset by peer" to Stremio's player.
-      const needsProxy = /valentine|fukggl|fileserver|animeheaven|hakunaymatata/.test(finalUrl.hostname);
+      //
+      // IMPORTANT: hakunaymatata.com is NOT in this list because VidLink uses
+      // bcdn.hakunaymatata.com for direct MP4 streams that play fine without
+      // proxy. MovieBox URLs (which DO need proxy) have requestHeaders set and
+      // are handled by the hasProxyHeaders block below.
+      const needsProxy = /valentine|fukggl|fileserver|animeheaven/.test(finalUrl.hostname);
 
       if (!isAlreadyProxied && !hasProxyHeaders && needsProxy) {
         const proxyUrl = new URL('/proxy', ctx.hostUrl);
         proxyUrl.searchParams.set('url', finalUrl.href);
-        // Add Referer for hakunaymatata.com (MovieBox) to avoid 429
-        if (/hakunaymatata/.test(finalUrl.hostname)) {
-          proxyUrl.searchParams.set('referer', 'https://movie-box.co/');
-        }
         finalUrl = proxyUrl;
       }
 

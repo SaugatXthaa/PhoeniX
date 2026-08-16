@@ -180,6 +180,14 @@ export function buildStreamResults({ streams, title, sourceId, sourceLabel, coun
     const fileSize = parseSize(s.size);
 
     // Build meta with Nuvio flags for NuvioExtractor
+    //
+    // IMPORTANT: Some CDN hosts return 403 when a Referer header is sent.
+    // pixeldrain.com is one — it's a direct-play CDN that should be accessed
+    // WITHOUT a Referer. We skip nuvioReferer for these hosts so they go
+    // through DirectStream instead of /proxy.
+    const NO_REFERER_HOSTS = /pixeldrain\.(com|dev)|fastdlserver\.site/i;
+    const skipReferer = NO_REFERER_HOSTS.test(url.hostname);
+
     const meta = {
       countryCodes: allCountryCodes,
       title: richTitle,
@@ -189,12 +197,12 @@ export function buildStreamResults({ streams, title, sourceId, sourceLabel, coun
       ...(fileSize && { bytes: fileSize }),
       // Nuvio-specific flags read by NuvioExtractor
       nuvioProvider: true,
-      ...(referer && { nuvioReferer: referer }),
+      ...(referer && !skipReferer && { nuvioReferer: referer }),
       ...(userAgent && { nuvioUserAgent: userAgent }),
       // forceHls=true when URL is ambiguous (not clearly HLS, not clearly MP4)
       // and requires a Referer — the proxy will do a HEAD check to determine
       // if the response is HLS or a video file
-      ...(referer && !hls && !videoFile && { nuvioForceHls: true }),
+      ...(referer && !skipReferer && !hls && !videoFile && { nuvioForceHls: true }),
     };
 
     // Return original URL with format hint — NuvioExtractor handles routing

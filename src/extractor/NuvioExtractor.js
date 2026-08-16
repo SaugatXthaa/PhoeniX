@@ -36,8 +36,6 @@ const NUVIO_SOURCE_IDS = new Set([
   'zinkmovies',
   // 1Embed — movies/TV HLS via 1embed.cc API, requires Referer: 1embed.cc
   'oneembed',
-  // BollyFlix — movies/TV download links (fastdlserver → GDrive)
-  'bollyflix',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)
