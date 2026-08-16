@@ -7,7 +7,7 @@
 // from flixsix.com.
 //
 // The scraper uses native fetch() which times out on Render. We override
-// globalThis.fetch with got-scraping before loading the scraper to fix this.
+// globalThis.fetch with got-scraping before calling getStreams, then restore it.
 //
 // Stream URL routing:
 //   - vixsrc.to: HLS, no Referer needed (DirectStream handles it)
@@ -15,15 +15,30 @@
 //   - flixsix.com: MP4, no Referer needed
 //   - pixeldrain.com: MP4, NO Referer (returns 403 with Referer)
 
+import { createRequire } from 'module';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { CountryCode } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
-import { buildStreamResults, callNuvioProvider } from './nuvioHelpers.js';
+import { buildStreamResults } from './nuvioHelpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require_ = createRequire(import.meta.url);
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'desiflix.cjs');
+
+// Cache the scraper module — it's immutable, safe to cache
+let _scraperMod = null;
+function getScraperModule() {
+  if (_scraperMod) return _scraperMod;
+  try {
+    delete require_.cache[require_.resolve(PROVIDER_PATH)];
+    _scraperMod = require_(PROVIDER_PATH);
+  } catch (e) {
+    console.error(`[desiflix] failed to load scraper: ${e?.message || e}`);
+  }
+  return _scraperMod;
+}
 
 // Cache the got-scraping fetch override
 let _gotFetch = null;
@@ -33,7 +48,7 @@ async function getGotFetch() {
     const { gotScraping } = await import('got-scraping');
     _gotFetch = async (url, options = {}) => {
       const res = await gotScraping(url, {
-        timeout: { request: options.timeout || 15000 },
+        timeout: { request: 15000 },
         throwHttpErrors: false,
         headers: options.headers || {},
         method: options.method || 'GET',
@@ -70,6 +85,10 @@ export class DesiFlix extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
+    // Load the scraper module (cached)
+    const mod = getScraperModule();
+    if (!mod || typeof mod.getStreams !== 'function') return [];
+
     // Override globalThis.fetch with got-scraping for the DesiFlix scraper.
     // The scraper uses native fetch() which times out on Render due to TLS/DNS
     // issues with manifest.desitvhub.eu.org. got-scraping handles TLS better.
@@ -82,17 +101,19 @@ export class DesiFlix extends Source {
     const mediaType = tmdbId.season ? 'tv' : 'movie';
     let streams;
     try {
-      streams = await callNuvioProvider(PROVIDER_PATH, {
-        tmdbId: tmdbId.id,
-        mediaType,
-        season: tmdbId.season || null,
-        episode: tmdbId.episode || null,
-        timeoutMs: 25000,
-      });
+      streams = await Promise.race([
+        mod.getStreams(tmdbId.id, mediaType, tmdbId.season || null, tmdbId.episode || null),
+        new Promise(r => setTimeout(() => r(null), 25000)),
+      ]);
+    } catch (e) {
+      console.error(`[desiflix] getStreams error: ${e?.message || e}`);
+      streams = null;
     } finally {
       // Always restore the original fetch
       globalThis.fetch = originalFetch;
     }
+
+    if (!Array.isArray(streams)) return [];
 
     return buildStreamResults({
       streams,
