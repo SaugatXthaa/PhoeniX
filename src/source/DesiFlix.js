@@ -115,8 +115,22 @@ export class DesiFlix extends Source {
 
     if (!Array.isArray(streams)) return [];
 
+    // Filter out streams from dead/unreliable CDN hosts that cause 522/403 errors.
+    // These hosts consistently fail:
+    //   - s3.flixsix.com: returns 522 (connection timeout) — server is down
+    //   - vixsrc.to: returns 403 for tokens from desiflix (token format mismatch)
+    // Keeping these would show broken streams to the user.
+    const DEAD_HOSTS = /s3\.flixsix\.com|vixsrc\.to/i;
+    const filteredStreams = streams.filter(s => {
+      if (!s || !s.url) return false;
+      try {
+        const host = new URL(s.url).hostname;
+        return !DEAD_HOSTS.test(host);
+      } catch { return false; }
+    });
+
     return buildStreamResults({
-      streams,
+      streams: filteredStreams,
       title,
       sourceId: this.id,
       sourceLabel: this.label,
