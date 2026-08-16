@@ -34,6 +34,8 @@ const DIRECT_HLS_HOSTS = [
   'megap.shiora.site',
   'megap.mikora.top',
   'megap.akirax.buzz',   // 2Dhive + StreamXTV use this
+  // AniNeko (new scraper) — premilkyway.com serves direct HLS (requires Referer: anineko.to)
+  'premilkyway.com',
 ];
 
 // CDN host suffixes that serve direct HLS (AniNeko + Netlio + VidSpark CDNs)

@@ -1,1 +1,347 @@
-const _0xb19ab1=_0x1c29;function _0x3cc9(){const _0x36befe=['ANnVBG','Ahr0Chm6lY9HCgKUDgHLBw92AwvKyI5VCMCVmY8','lI4V','icb8icdWN5k+ia','icb8icdIHlNVUi8G','tw96AwXSys81lJaGkfDPBMrVD3mGtLqGmtaUmdSGv2LUnJq7ihG2ncKGqxbWBgvxzwjlAxqVntm3lJm2icHlsfrntcWGBgLRzsbhzwnRBYKGq2HYB21LlZeYnc4WlJaUmcbtywzHCMKVntm3lJm2','BMv4Da','AhjLzG','mJiXmtK0mejoq3jyzG','DgHLBG','A2vLCc1HBgL2zq','zxHWB3j0CW','Bwf0y2G','yxbWBhK','tI9b','w0rHAg1LCK1VDMLLC10Gsw5PDgLHBgL6Aw5NifnJCMfWzxi','8j+tUIa','C2XPy2u','Ahr0Chm6lY9WlJeXmtq3nY54ExOVyNvSAZ91pq','z2v0u3rYzwfTCW','ndm5yZq3oge3nZfMmZvJmduWmJjMowzLywjJy2eWmwm','Dgv4Da','mtiZmKjcwvnQra','ndKZmteYmfr4AuHerG','zxHLyW','CMvZB2X2zq','mtm0ntKYnerJyKvOsa','mZbRrLbvBfq','yNL0zxm9mc0','mJeYotyWmuvsBvzZqq','DgvZDa','Ahr0Ca','mtCWmtzHEMz4qxm','l21VDMLLCY8','Bg9N','DgL0Bgu','C3rHCNrZv2L0Aa','mtiYote3nxv2vejnDG','t3jPz2LUywW','zgfOBwvYBw92AwvZ','l1nLyxnVBIuYma','icb8icdWN46E77Ipia','mJHVB3L5u2q','ChvZAa','C2L6zq','BMfTzq','Dg9vChbLCKnHC2u','l3r2CY8','icb8icdWN4Yqia','CMvSzwfZzv9KyxrL','rw5NBgLZAa','Aw5JBhvKzxm','Dw5KzwzPBMvK','Bw92Awu','p2fWAv9RzxK9','ntK3ntGYmfLABK5Qva','teLosW','DhjPBq','CMvWBgfJzq','DMfSDwu'];_0x3cc9=function(){return _0x36befe;};return _0x3cc9();}(function(_0x1db96a,_0x538e65){const _0x503397=_0x1c29,_0x5204c=_0x1db96a();while(!![]){try{const _0x4c3612=parseInt(_0x503397(0x172))/0x1+parseInt(_0x503397(0x160))/0x2+-parseInt(_0x503397(0x175))/0x3+-parseInt(_0x503397(0x182))/0x4*(parseInt(_0x503397(0x17d))/0x5)+-parseInt(_0x503397(0x178))/0x6*(parseInt(_0x503397(0x16e))/0x7)+-parseInt(_0x503397(0x16f))/0x8+parseInt(_0x503397(0x153))/0x9*(parseInt(_0x503397(0x173))/0xa);if(_0x4c3612===_0x538e65)break;else _0x5204c['push'](_0x5204c['shift']());}catch(_0xfb33af){_0x5204c['push'](_0x5204c['shift']());}}}(_0x3cc9,0xdb23c));var __async=(_0x45e41a,_0x51e1a,_0x4062f3)=>{return new Promise((_0x5b0a50,_0x172787)=>{const _0x3b5821=_0x1c29;var _0x2df394=_0x41e437=>{const _0x2306a7=_0x1c29;try{_0x4bb7d4(_0x4062f3[_0x2306a7(0x15e)](_0x41e437));}catch(_0x3ff30b){_0x172787(_0x3ff30b);}},_0x4ed7dd=_0x44ec8a=>{try{_0x4bb7d4(_0x4062f3['throw'](_0x44ec8a));}catch(_0x500bc9){_0x172787(_0x500bc9);}},_0x4bb7d4=_0x1c97cc=>_0x1c97cc['done']?_0x5b0a50(_0x1c97cc[_0x3b5821(0x157)]):Promise[_0x3b5821(0x171)](_0x1c97cc[_0x3b5821(0x157)])[_0x3b5821(0x161)](_0x2df394,_0x4ed7dd);_0x4bb7d4((_0x4062f3=_0x4062f3[_0x3b5821(0x165)](_0x45e41a,_0x51e1a))[_0x3b5821(0x15e)]());});};console[_0xb19ab1(0x17a)](_0xb19ab1(0x167));var TMDB_API_KEY=_0xb19ab1(0x16c),DAHMER_MOVIES_API='https://a.111477.xyz',DAHMER_WORKER_API=_0xb19ab1(0x16a);function _0x1c29(_0x52502a,_0x203d6c){_0x52502a=_0x52502a-0x152;const _0x3cc9cd=_0x3cc9();let _0x1c2946=_0x3cc9cd[_0x52502a];if(_0x1c29['IshNFK']===undefined){var _0x1a02e4=function(_0x440d71){const _0x236ded='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=';let _0x45e41a='',_0x51e1a='';for(let _0x4062f3=0x0,_0x5b0a50,_0x172787,_0x2df394=0x0;_0x172787=_0x440d71['charAt'](_0x2df394++);~_0x172787&&(_0x5b0a50=_0x4062f3%0x4?_0x5b0a50*0x40+_0x172787:_0x172787,_0x4062f3++%0x4)?_0x45e41a+=String['fromCharCode'](0xff&_0x5b0a50>>(-0x2*_0x4062f3&0x6)):0x0){_0x172787=_0x236ded['indexOf'](_0x172787);}for(let _0x4ed7dd=0x0,_0x4bb7d4=_0x45e41a['length'];_0x4ed7dd<_0x4bb7d4;_0x4ed7dd++){_0x51e1a+='%'+('00'+_0x45e41a['charCodeAt'](_0x4ed7dd)['toString'](0x10))['slice'](-0x2);}return decodeURIComponent(_0x51e1a);};_0x1c29['TQcnBe']=_0x1a02e4,_0x1c29['uzEjSj']={},_0x1c29['IshNFK']=!![];}const _0x572af7=_0x3cc9cd[0x0],_0x881df4=_0x52502a+_0x572af7,_0x1149bd=_0x1c29['uzEjSj'][_0x881df4];return!_0x1149bd?(_0x1c2946=_0x1c29['TQcnBe'](_0x1c2946),_0x1c29['uzEjSj'][_0x881df4]=_0x1c2946):_0x1c2946=_0x1149bd,_0x1c2946;}function makeRequest(_0x4873c3){return __async(this,null,function*(){const _0xad7b78=_0x1c29;try{return yield fetch(_0x4873c3,{'headers':{'User-Agent':_0xad7b78(0x15d),'Referer':DAHMER_MOVIES_API+'/'}});}catch(_0x259102){return{'ok':![]};}});}function parseLinks(_0x4ebc26){const _0xfff8af=_0xb19ab1,_0x3e8d9a=[],_0x4718e3=/<tr[^>]*>([\s\S]*?)<\/tr>/gi;let _0x1cfdca;while((_0x1cfdca=_0x4718e3[_0xfff8af(0x170)](_0x4ebc26))!==null){const _0x5cee51=_0x1cfdca[0x1],_0x450106=_0x5cee51[_0xfff8af(0x164)](/<a[^>]*href=["']([^"']*)["'][^>]*>([^<]*)<\/a>/i),_0x508162=_0x5cee51[_0xfff8af(0x164)](/<td[^>]*>(\d+(?:\.\d+)?\s?[KMGT]B)<\/td>/i);if(_0x450106){const _0x1e531e=_0x450106[0x1],_0x3846ab=_0x450106[0x2]['trim'](),_0xe4ff8f=_0x508162?_0x508162[0x1][_0xfff8af(0x155)]():_0xfff8af(0x166);_0x3846ab&&_0x1e531e!==_0xfff8af(0x15a)&&/\.(mkv|mp4|avi|webm|m3u8)$/i['test'](_0x3846ab)&&_0x3e8d9a['push']({'text':_0x3846ab,'href':_0x1e531e,'size':_0xe4ff8f});}}return _0x3e8d9a;}function invokeDahmerMovies(_0x281b4d,_0x3875c7,_0x33dad9=null,_0x4ecc2c=null){return __async(this,null,function*(){const _0x5887e1=_0x1c29;var _0x22b1cb;const _0x2e17fa=_0x281b4d[_0x5887e1(0x156)](/:/g,''),_0x2db398=_0x33dad9!==null?[_0x5887e1(0x187)+encodeURIComponent(_0x2e17fa)+_0x5887e1(0x180)+(_0x33dad9<0xa?'0'+_0x33dad9:_0x33dad9)+'/','/tvs/'+encodeURIComponent(_0x2e17fa)+_0x5887e1(0x180)+_0x33dad9+'/']:[_0x5887e1(0x179)+encodeURIComponent(_0x2e17fa+'\x20('+_0x3875c7+')')+'/'];let _0x4a108a='',_0x577087='';for(const _0x235ef7 of _0x2db398){const _0x38edc5=DAHMER_MOVIES_API+_0x235ef7,_0xf926d=yield makeRequest(_0x38edc5);if(_0xf926d['ok']){_0x4a108a=yield _0xf926d['text'](),_0x577087=_0x38edc5;break;}}if(!_0x4a108a)return[];const _0x3e7c7c=parseLinks(_0x4a108a),_0x3e7a2d=_0x3e7c7c['sort']((_0x366190,_0x5dcba3)=>{const _0x1b17ed=_0x5887e1,_0x5a7dc3=/2160p|4k/i['test'](_0x366190[_0x1b17ed(0x16d)]),_0x4cab78=/2160p|4k/i[_0x1b17ed(0x176)](_0x5dcba3[_0x1b17ed(0x16d)]);return _0x4cab78-_0x5a7dc3;}),_0x1a99b6=[];for(const _0x250035 of _0x3e7a2d[_0x5887e1(0x169)](0x0,0x5)){let _0x18db41;if(_0x250035[_0x5887e1(0x15f)]['startsWith'](_0x5887e1(0x177)))_0x18db41=_0x250035[_0x5887e1(0x15f)];else _0x250035[_0x5887e1(0x15f)]['includes'](_0x5887e1(0x179))||_0x250035['href'][_0x5887e1(0x18b)](_0x5887e1(0x187))?_0x18db41=DAHMER_MOVIES_API+(_0x250035[_0x5887e1(0x15f)][_0x5887e1(0x17c)]('/')?'':'/')+_0x250035['href']:_0x18db41=_0x577087+_0x250035['href'];_0x18db41=_0x18db41[_0x5887e1(0x156)](/([^:]\/)\/+/g,'$1'),_0x18db41=decodeURI(_0x18db41);let _0x1ca44d=DAHMER_WORKER_API+encodeURI(_0x18db41);const _0x41c687=_0x250035[_0x5887e1(0x16d)];let _0x4c99c0=_0x5887e1(0x17e);const _0x5dfb1a=/\b(HIN|TAM|TEL|Multi|Dual|DUB|Multi-Audio|MULTI)\b/i['test'](_0x41c687),_0x104fa7=/\b(Eng|English)\b/i[_0x5887e1(0x176)](_0x41c687),_0xb619f6=/^[a-zA-Z0-9\s?!\-:]+$/[_0x5887e1(0x176)](_0x281b4d);if(_0x5dfb1a)_0x4c99c0='Multi\x20Audio';else{if(_0xb619f6&&_0x104fa7)_0x4c99c0=_0x5887e1(0x18a);}const _0x5f1538=_0x41c687['match'](/\.(mkv|mp4|m3u8|avi|webm)$/i),_0x4aa592=_0x5f1538?_0x5f1538[0x1][_0x5887e1(0x186)]():_0x5887e1(0x154),_0x2c2ff8=((_0x22b1cb=_0x41c687[_0x5887e1(0x164)](/\b(2160p|1080p|720p|4k)\b/i))==null?void 0x0:_0x22b1cb[0x0])||'1080p',_0x541e77=_0x250035['size']!==_0x5887e1(0x166)?_0x250035[_0x5887e1(0x184)]:'N/A';let _0x8155f9=_0x41c687[_0x5887e1(0x156)](/\.(mkv|mp4|avi|webm|m3u8)$/i,'')[_0x5887e1(0x156)](/[\[\]()._-]/g,'\x20')[_0x5887e1(0x156)](/\s+/g,'\x20')['trim']();_0x1a99b6[_0x5887e1(0x183)]({'name':'DahmerMovies','title':_0x5887e1(0x168)+_0x2c2ff8+_0x5887e1(0x188)+_0x4c99c0+_0x5887e1(0x15b)+_0x541e77+_0x5887e1(0x181)+_0x4aa592+_0x5887e1(0x15c)+_0x8155f9,'url':_0x1ca44d,'quality':_0x2c2ff8['toLowerCase'](),'headers':{'User-Agent':_0x5887e1(0x15d),'Referer':DAHMER_MOVIES_API+'/','Connection':_0x5887e1(0x162),'Accept':'*/*','Range':_0x5887e1(0x174)},'provider':_0x5887e1(0x17f)});}return _0x1a99b6;});}function getStreams(_0x390bdb,_0x599059=_0xb19ab1(0x18d),_0x4513c8=null,_0x3bd20a=null){return __async(this,null,function*(){const _0x15855e=_0x1c29;var _0x4399bd;try{const _0x375ee9=_0x599059==='tv'?'tv':_0x15855e(0x18d),_0x269590=_0x15855e(0x159)+_0x375ee9+'/'+_0x390bdb+_0x15855e(0x152)+TMDB_API_KEY,_0x4732bf=yield makeRequest(_0x269590),_0x5d0d8c=yield _0x4732bf[_0x15855e(0x158)](),_0x5ea823=_0x599059==='tv'?_0x5d0d8c[_0x15855e(0x185)]:_0x5d0d8c[_0x15855e(0x17b)],_0x19bc73=(_0x4399bd=_0x599059==='tv'?_0x5d0d8c['first_air_date']:_0x5d0d8c[_0x15855e(0x189)])==null?void 0x0:_0x4399bd['substring'](0x0,0x4);if(!_0x5ea823)return[];return yield invokeDahmerMovies(_0x5ea823,_0x19bc73,_0x4513c8,_0x3bd20a);}catch(_0x294f5b){return[];}});}if(typeof module!==_0xb19ab1(0x18c))module[_0xb19ab1(0x163)]={'getStreams':getStreams};else global[_0xb19ab1(0x16b)]=getStreams;
+// Dahmer Movies Scraper for Nuvio Local Scrapers
+// React Native compatible version
+
+console.log('[DahmerMovies] Initializing Dahmer Movies scraper');
+
+// Constants
+const TMDB_API_KEY = "1c29a5198ee1854bd5eb45dbe8d17d92";
+const DAHMER_MOVIES_API = 'https://a.111477.xyz';
+const DAHMER_WORKER_API = 'https://p.111477.xyz/bulk?u=';
+const TIMEOUT = 20000; // 20 seconds
+
+// Quality mapping
+const Qualities = {
+    Unknown: 0,
+    P144: 144,
+    P240: 240,
+    P360: 360,
+    P480: 480,
+    P720: 720,
+    P1080: 1080,
+    P1440: 1440,
+    P2160: 2160
+};
+
+// Helper function to make HTTP requests
+function makeRequest(url, options = {}) {
+    const requestOptions = {
+        timeout: TIMEOUT,
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            ...options.headers
+        },
+        ...options
+    };
+
+    return fetch(url, requestOptions).then(function (response) {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response;
+    });
+}
+
+// Utility functions
+function getEpisodeSlug(season = null, episode = null) {
+    if (season === null && episode === null) {
+        return ['', ''];
+    }
+    const seasonSlug = season < 10 ? `0${season}` : `${season}`;
+    const episodeSlug = episode < 10 ? `0${episode}` : `${episode}`;
+    return [seasonSlug, episodeSlug];
+}
+
+function getQualityWithCodecs(str) {
+    if (!str) return 'Unknown';
+
+    const qualityMatch = str.match(/(\d{3,4})[pP]/);
+    const baseQuality = qualityMatch ? `${qualityMatch[1]}p` : 'Unknown';
+
+    const codecs = [];
+    const lowerStr = str.toLowerCase();
+    
+    // Video codecs
+    if (lowerStr.includes('dv') || lowerStr.includes('dolby vision')) codecs.push('DV');
+    if (lowerStr.includes('hdr10+')) codecs.push('HDR10+');
+    else if (lowerStr.includes('hdr10') || lowerStr.includes('hdr')) codecs.push('HDR');
+
+    if (lowerStr.includes('remux')) codecs.push('REMUX');
+    if (lowerStr.includes('imax')) codecs.push('IMAX');
+    if (lowerStr.includes('web-dl')) codecs.push('WEB-DL');
+    if (lowerStr.includes('bluray')) codecs.push('BluRay');
+
+    // Audio codecs
+    if (lowerStr.includes('atmos')) codecs.push('Atmos');
+    if (lowerStr.includes('truehd') || lowerStr.includes('true-hd')) codecs.push('TrueHD');
+    if (lowerStr.includes('dts-hd ma') || lowerStr.includes('dtshdma') || lowerStr.includes('dts-hdhr')) codecs.push('DTS-HD MA');
+
+    if (codecs.length > 0) {
+        return `${baseQuality} | ${codecs.join(' | ')}`;
+    }
+
+    return baseQuality;
+}
+
+function decode(input) {
+    try {
+        return decodeURIComponent(input);
+    } catch (e) {
+        return input;
+    }
+}
+
+// Format file size from bytes to human readable format
+function formatFileSize(sizeText) {
+    if (!sizeText) return null;
+
+    if (/\d+(\.\d+)?\s*(GB|MB|KB|TB)/i.test(sizeText)) {
+        return sizeText;
+    }
+
+    const bytes = parseInt(sizeText);
+    if (isNaN(bytes)) return sizeText;
+
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes === 0) return '0 Bytes';
+
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    const size = (bytes / Math.pow(1024, i)).toFixed(2);
+
+    return `${size} ${sizes[i]}`;
+}
+
+function parseLinks(html) {
+    const links = [];
+
+    const rowRegex = /<tr[^>]*>(.*?)<\/tr>/gis;
+    let rowMatch;
+
+    while ((rowMatch = rowRegex.exec(html)) !== null) {
+        const rowContent = rowMatch[1];
+
+        const linkMatch = rowContent.match(/<a[^>]*href=["']([^"']*)["'][^>]*>([^<]*)<\/a>/i);
+        if (!linkMatch) continue;
+
+        const href = linkMatch[1];
+        const text = linkMatch[2].trim();
+
+        if (!text || href === '../' || text === '../') continue;
+
+        let size = null;
+
+        const sizeMatch1 = rowContent.match(/<td[^>]*data-sort=["']?(\d+)["']?[^>]*>/i);
+        if (sizeMatch1) size = sizeMatch1[1];
+
+        if (!size) {
+            const sizeMatch2 = rowContent.match(/<td[^>]*class=["']filesize["'][^>]*[^>]*>([^<]+)<\/td>/i);
+            if (sizeMatch2) size = sizeMatch2[1].trim();
+        }
+
+        if (!size) {
+            const sizeMatch3 = rowContent.match(/<\/a><\/td>\s*<td[^>]*>([^<]+(?:GB|MB|KB|B|\d+\s*(?:GB|MB|KB|B)))<\/td>/i);
+            if (sizeMatch3) size = sizeMatch3[1].trim();
+        }
+
+        if (!size) {
+            const sizeMatch4 = rowContent.match(/(\d+(?:\.\d+)?\s*(?:GB|MB|KB|B|bytes?))/i);
+            if (sizeMatch4) size = sizeMatch4[1].trim();
+        }
+
+        links.push({ text, href, size });
+    }
+
+    if (links.length === 0) {
+        const linkRegex = /<a[^>]*href=["']([^"']*)["'][^>]*>([^<]*)<\/a>/gi;
+        let match;
+        while ((match = linkRegex.exec(html)) !== null) {
+            const href = match[1];
+            const text = match[2].trim();
+            if (text && href && href !== '../' && text !== '../') {
+                links.push({ text, href, size: null });
+            }
+        }
+    }
+
+    return links;
+}
+
+// Resolve a single path entry into a result object
+function resolvePath(path, encodedUrl) {
+    const qualityWithCodecs = getQualityWithCodecs(path.text);
+
+    let fullUrl;
+    if (path.href.startsWith('http')) {
+        try {
+            const url = new URL(path.href);
+            fullUrl = `${url.protocol}//${url.host}${url.pathname}`;
+        } catch (error) {
+            fullUrl = path.href.replace(/ /g, '%20');
+        }
+    } else if (path.href.startsWith('/')) {
+        const safeHref = path.href.split('/').map(p => encodeURIComponent(decode(p))).join('/');
+        fullUrl = `${new URL(DAHMER_MOVIES_API).origin}${safeHref}`;
+    } else {
+        const baseUrl = encodedUrl.endsWith('/') ? encodedUrl : encodedUrl + '/';
+        const encodedPath = path.href.split('/').map(p => encodeURIComponent(decode(p))).join('/');
+        fullUrl = baseUrl + encodedPath;
+    }
+
+    fullUrl = decodeURIComponent(fullUrl)
+        .replace(/ /g, '%20')
+        .replace(/&/g, '%26')
+        .replace(/'/g, '%27')
+        .replace(/\(/g, '%28')
+        .replace(/\)/g, '%29');
+
+    // Attach bulk proxy prefix with proper URL encoding
+    const proxiedUrl = `${DAHMER_WORKER_API}${encodeURIComponent(fullUrl)}`;
+
+    // Calculate raw bytes for sorting
+    const sizeBytes = (function(s) {
+        if (!s) return 0;
+        const match = s.match(/(\d+(?:\.\d+)?)\s*([GKMTe]B|Bytes?)/i);
+        if (match) {
+            const val = parseFloat(match[1]);
+            const unit = match[2].toUpperCase();
+            const pow = {'BYTES': 0, 'B': 0, 'KB': 1, 'MB': 2, 'GB': 3, 'TB': 4}[unit] || 0;
+            return val * Math.pow(1024, pow);
+        }
+        return parseInt(s) || 0;
+    })(path.size);
+
+    return Promise.resolve({
+        result: {
+            name: "DahmerMovies",
+            title: path.text,
+            url: proxiedUrl,
+            quality: qualityWithCodecs,
+            size: formatFileSize(path.size),
+            sizeBytes: sizeBytes, // Temporary for sorting
+            type: "direct",
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+                'Referer': DAHMER_MOVIES_API + '/'
+            },
+            provider: "dahmermovies",
+            filename: path.text
+        },
+        hit429: false
+    });
+}
+
+async function invokeDahmerMovies(title, year, season = null, episode = null) {
+    console.log(`[DahmerMovies] Searching for: ${title} (${year})${season ? ` Season ${season}` : ''}${episode ? ` Episode ${episode}` : ''}`);
+
+    // Remove colons from the title to prevent URL/search issues
+    const cleanTitle = title.replace(/:/g, '');
+
+    // Split movies & TV logic
+    const titleVariations = season === null
+        ? [
+            `${cleanTitle} (${year})`, // movies prefer year
+            cleanTitle
+          ]
+        : [
+            cleanTitle,                // TV prefers no year
+            `${cleanTitle} (${year})`  // fallback
+          ];
+
+    let html = null;
+    let encodedUrl = null;
+
+    for (const variant of titleVariations) {
+        const safeVariant = encodeURIComponent(variant);
+        const tvBaseUrl = `${DAHMER_MOVIES_API}/tvs/${safeVariant}/`;
+        const tryUrl = season === null
+            ? `${DAHMER_MOVIES_API}/movies/${safeVariant}/`
+            : `${tvBaseUrl}Season%20${season}/`;
+
+        try {
+            const res = await makeRequest(tryUrl);
+            const text = await res.text();
+            if (text && text.length > 500 && text.includes('href')) {
+                html = text;
+                encodedUrl = tryUrl;
+                break;
+            }
+        } catch (e) { continue; }
+    }
+
+    if (!html) return [];
+
+    const paths = parseLinks(html);
+    let filteredPaths;
+    
+    if (season === null) {
+        filteredPaths = paths.filter(path => /2160p/i.test(path.text));
+        if (filteredPaths.length === 0) {
+            filteredPaths = paths.filter(path => /1080p/i.test(path.text)).slice(0, 5);
+        }
+    } else {
+        const [seasonSlug, episodeSlug] = getEpisodeSlug(season, episode);
+        const patterns = [
+            new RegExp(`S${seasonSlug}E${episodeSlug}`, 'i'),
+            new RegExp(`${parseInt(season)}x${episodeSlug}`, 'i'),
+            new RegExp(`E${episodeSlug}(?!\\d)`, 'i'),
+            new RegExp(`Episode[\\s._-]*${episodeSlug}(?!\\d)`, 'i')
+        ];
+        filteredPaths = paths.filter(path => patterns.some(pattern => pattern.test(path.text)));
+    }
+
+    if (filteredPaths.length === 0) return [];
+    
+    const pathsToProcess = filteredPaths.slice(0, 5);
+    const results = [];
+
+    try {
+        const allResults = await Promise.all(
+            pathsToProcess.map(path => resolvePath(path, encodedUrl))
+        );
+        
+        allResults.forEach(function ({ result }) {
+            if (result) results.push(result);
+        });
+
+        // ORDER BY SIZE: Smallest to Largest
+        results.sort((a, b) => (a.sizeBytes || 0) - (b.sizeBytes || 0));
+        
+        // Clean up temporary sorting property
+        results.forEach(r => delete r.sizeBytes);
+
+        return results;
+    } catch (error) {
+        console.log(`[DahmerMovies] Error: ${error.message}`);
+        return [];
+    }
+}
+
+function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
+    const tmdbUrl = `https://api.themoviedb.org/3/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+    return makeRequest(tmdbUrl).then(function (tmdbResponse) {
+        return tmdbResponse.json();
+    }).then(function (tmdbData) {
+        const title = mediaType === 'tv' ? tmdbData.name : tmdbData.title;
+        const year = mediaType === 'tv' ? tmdbData.first_air_date?.substring(0, 4) : tmdbData.release_date?.substring(0, 4);
+
+        if (!title) throw new Error('Could not extract title from TMDB');
+
+        return invokeDahmerMovies(
+            title,
+            year ? parseInt(year) : null,
+            seasonNum,
+            episodeNum
+        );
+    }).catch(function (error) {
+        console.error(`[DahmerMovies] Error: ${error.message}`);
+        return [];
+    });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { getStreams };
+} else {
+    global.getStreams = getStreams;
+}
