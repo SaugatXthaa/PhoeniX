@@ -345,6 +345,7 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
 }
 
 function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
+    console.log(`[DahmerMovies] getStreams: ${tmdbId} ${mediaType} S${seasonNum}E${episodeNum}`);
     const tmdbUrl = `https://api.themoviedb.org/3/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}?api_key=${TMDB_API_KEY}`;
     return makeRequest(tmdbUrl).then(function (tmdbResponse) {
         return tmdbResponse.json();
@@ -353,6 +354,7 @@ function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = 
         const year = mediaType === 'tv' ? tmdbData.first_air_date?.substring(0, 4) : tmdbData.release_date?.substring(0, 4);
 
         if (!title) throw new Error('Could not extract title from TMDB');
+        console.log(`[DahmerMovies] TMDB title: ${title} (${year})`);
 
         return invokeDahmerMovies(
             title,
@@ -361,7 +363,7 @@ function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = 
             episodeNum
         );
     }).catch(function (error) {
-        console.error(`[DahmerMovies] Error: ${error.message}`);
+        console.error(`[DahmerMovies] getStreams error: ${error.message}`);
         return [];
     });
 }
