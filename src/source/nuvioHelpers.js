@@ -27,7 +27,9 @@ export function parseHeight(q) {
   if (!q) return undefined;
   const s = String(q).toLowerCase();
   if (s.includes('4k') || s.includes('2160')) return 2160;
-  const m = s.match(/(\d{3,4})/);
+  // Only match quality patterns like "1080p", "720p" — NOT bare 4-digit
+  // numbers like "2008" (years) that appear in titles.
+  const m = s.match(/(\d{3,4})p/);
   return m ? parseInt(m[1]) : undefined;
 }
 
