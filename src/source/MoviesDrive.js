@@ -25,7 +25,7 @@ export class MoviesDrive extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
 
     // Search for the title
-    const postUrls = await this.searchPosts(ctx, name, year);
+    const postUrls = await this.searchPosts(ctx, name, year, tmdbId);
     if (postUrls.length === 0) return [];
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
@@ -287,7 +287,7 @@ export class MoviesDrive extends Source {
     return results;
   }
 
-  async searchPosts(ctx, name, year) {
+  async searchPosts(ctx, name, year, tmdbId) {
     // Use WordPress REST API (regular search form doesn't work on this site)
     const queries = [
       name,
@@ -314,6 +314,7 @@ export class MoviesDrive extends Source {
     };
 
     const nameNormalized = normalize(name);
+    const yearStr = year ? String(year) : '';
 
     for (const query of queries) {
       const apiUrl = new URL(`/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=10`, this.baseUrl);
@@ -330,6 +331,16 @@ export class MoviesDrive extends Source {
             // Both are normalized so "Minions & Monsters" matches "Minions and Monsters"
             // and "Minions &#038; Monsters".
             if (!titleNormalized.includes(nameNormalized)) continue;
+
+            // Year matching: the post title or URL must contain the release year.
+            // This prevents matching sequel/spinoff posts (e.g. searching for
+            // "The Dark Knight" 2008 should NOT match "The Dark Knight Rises" 2012).
+            // Skip the year check if we don't have a year (rare).
+            if (yearStr) {
+              const hasYearInTitle = titleNormalized.includes(yearStr);
+              const hasYearInUrl = link.includes(yearStr);
+              if (!hasYearInTitle && !hasYearInUrl) continue;
+            }
 
             if (!postUrls.includes(link)) postUrls.push(link);
           }

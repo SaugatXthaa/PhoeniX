@@ -20,6 +20,32 @@ import { Source } from './Source.js';
 
 const BASE_URL = 'https://movieshunt.work';
 
+// Check if a URL is a download link (hubcloud, gdflix, vcloud.fit, gdtot.dad).
+// Also matches href.li/? redirects that wrap these hosts.
+// The HUB_HOST_PATTERN covers hubcdn|hubcloud|hubdrive|gdflix, but MoviesHunt's
+// abhilinks pages also use vcloud.fit and gdtot.dad (handled by DirectStream).
+function isDownloadLink(href) {
+  if (!href) return false;
+  const lower = href.toLowerCase();
+  // href.li wraps the real URL as a query param: https://href.li/?https://vcloud.fit/...
+  if (lower.includes('href.li/?')) return true;
+  // Direct hubcloud / gdflix / vcloud.fit / gdtot.dad links
+  if (/hubcloud|hubdrive|hubcdn|gdflix/.test(lower)) return true;
+  if (/vcloud\.fit|gdtot\.dad/.test(lower)) return true;
+  return false;
+}
+
+// Unwrap href.li/? redirects to get the real download URL.
+// href.li format: https://href.li/?https://vcloud.fit/abc123
+// The real URL is everything after "href.li/?".
+function unwrapHrefLi(url) {
+  const lower = url.toLowerCase();
+  if (!lower.includes('href.li/?')) return url;
+  const idx = lower.indexOf('href.li/?');
+  const realUrl = url.substring(idx + 'href.li/?'.length);
+  return realUrl.startsWith('http') ? realUrl : url;
+}
+
 export class MoviesHunt extends Source {
   constructor(fetcher) {
     super();
@@ -87,16 +113,28 @@ export class MoviesHunt extends Source {
           if (!postLinks.includes(href)) postLinks.push(href);
         });
 
-        // Try to find a matching post by title
+        // Try to find a matching post by title + year
         for (const link of postLinks) {
           // Get the link text or nearby title
           const linkEl = $(`a[href="${link}"]`).first();
           const linkText = linkEl.text().toLowerCase().trim();
           const titleAttr = (linkEl.attr('title') || '').toLowerCase();
           const altAttr = (linkEl.find('img').attr('alt') || '').toLowerCase();
+          const linkLower = link.toLowerCase();
 
-          // Match by full name
-          if (linkText.includes(nameLower) || titleAttr.includes(nameLower) || altAttr.includes(nameLower)) {
+          // Match by full name in link text, title attr, alt attr, OR the URL itself.
+          // The URL often contains the title slug (e.g. /inception-2010-bluray-/)
+          // even when the alt text is in Hindi or missing.
+          if (linkText.includes(nameLower) || titleAttr.includes(nameLower) ||
+              altAttr.includes(nameLower) || linkLower.includes(nameLower)) {
+            // Year matching: the post URL must contain the release year.
+            // Use the URL specifically (not alt text) because alt text doesn't
+            // contain the year. This prevents matching sequel/spinoff posts
+            // (e.g. "The Dark Knight" 2008 should NOT match "The Dark Knight
+            // Returns" 2012 or "The Dark Knight Rises" 2012).
+            if (yearStr && yearStr !== 'NaN' && yearStr !== 'undefined') {
+              if (!linkLower.includes(yearStr)) continue;
+            }
             return link;
           }
         }
@@ -125,15 +163,21 @@ export class MoviesHunt extends Source {
     } catch { return null; }
 
     const $ = cheerio.load(html);
-    // Find abhilinks.site redirect link
-    let abhilinksUrl = null;
-    $('a[href*="abhilinks"]').each((_i, el) => {
-      if (abhilinksUrl) return;
+    // Find download redirect links — MoviesHunt uses multiple redirectors:
+    //   - abhilinks.site (older posts)
+    //   - links.modlinkz.xyz (newer posts)
+    // Both redirect to the actual download page with quality/size headings.
+    const redirectorPattern = /abhilinks\.site|links\.modlinkz\.xyz/i;
+    let redirectorUrl = null;
+    $('a[href*="abhilinks"], a[href*="modlinkz"]').each((_i, el) => {
+      if (redirectorUrl) return;
       const href = $(el).attr('href');
-      if (href) abhilinksUrl = href;
+      if (href && redirectorPattern.test(href)) {
+        redirectorUrl = href;
+      }
     });
 
-    return abhilinksUrl;
+    return redirectorUrl;
   }
 
   async extractDownloadLinks(ctx, abhilinksUrl, title, tmdbId) {
@@ -179,15 +223,16 @@ export class MoviesHunt extends Source {
           $(heading).nextUntil('h1, h2, h3, h4, h5, h6').each((_j, sib) => {
             $(sib).find('a').each((_k, a) => {
               const href = $(a).attr('href');
-              if (href && /hubcloud/i.test(href) && !links.find(l => l.href === href)) {
-                links.push({ href, text: $(a).text().trim() });
+              const linkText = $(a).text().trim();
+              if (href && isDownloadLink(href) && !links.find(l => l.href === href)) {
+                links.push({ href, text: linkText });
               }
             });
           });
 
           for (const link of links) {
             try {
-              const url = new URL(link.href);
+              const url = new URL(unwrapHrefLi(link.href));
               results.push({
                 url,
                 meta: {
@@ -217,13 +262,17 @@ export class MoviesHunt extends Source {
         if (currentEpisode !== targetEpisode) continue;
       }
 
-      // Find hubcloud links after this heading (until the next heading)
+      // Find download links after this heading (until the next heading).
+      // Links may be:
+      //   - Direct hubcloud.cx/drive/{id} URLs
+      //   - href.li/?https://vcloud.fit/... redirects (href.li wraps the real URL)
+      //   - Direct vcloud.fit / gdtot.dad URLs (handled by DirectStream extractor)
       const links = [];
       $(heading).nextUntil('h1, h2, h3, h4, h5, h6').each((_j, sib) => {
         $(sib).find('a').each((_k, a) => {
           const href = $(a).attr('href');
           const linkText = $(a).text().trim();
-          if (href && /hubcloud/i.test(href)) {
+          if (href && isDownloadLink(href)) {
             if (!links.find(l => l.href === href)) {
               links.push({ href, text: linkText });
             }
@@ -235,16 +284,17 @@ export class MoviesHunt extends Source {
       if (links.length === 0) {
         $(heading).find('a').each((_j, a) => {
           const href = $(a).attr('href');
-          if (href && /hubcloud/i.test(href)) {
-            links.push({ href, text: $(a).text().trim() });
+          const linkText = $(a).text().trim();
+          if (href && isDownloadLink(href)) {
+            links.push({ href, text: linkText });
           }
         });
       }
 
-      // Add each hubcloud link as a stream
+      // Add each download link as a stream
       for (const link of links) {
         try {
-          const url = new URL(link.href);
+          const url = new URL(unwrapHrefLi(link.href));
           const countryCodes = [CountryCode.multi, ...findCountryCodes(headingText)];
 
           const titleBits = [title];
