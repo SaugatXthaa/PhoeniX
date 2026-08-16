@@ -363,8 +363,9 @@ function getStreams(tmdbId, mediaType, season, episode) {
       });
     })
     .catch(function (err) {
-      console.log("[1Embed] Error: " + (err && err.message ? err.message : err));
-      return [];
+      console.error("[1Embed] getStreams FAILED:", err && err.message ? err.message : err);
+      // Re-throw so the source wrapper can see the error — don't swallow it
+      throw err;
     });
 }
 
