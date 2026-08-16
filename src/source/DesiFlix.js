@@ -46,21 +46,35 @@ async function getGotFetch() {
   if (_gotFetch) return _gotFetch;
   try {
     const { gotScraping } = await import('got-scraping');
-    _gotFetch = async (url, options = {}) => {
-      const res = await gotScraping(url, {
-        timeout: { request: 15000 },
+    // Pre-warm got-scraping with a dummy request to avoid cold-start delays
+    try {
+      await gotScraping('https://api.themoviedb.org/3', {
+        timeout: { request: 5000 },
         throwHttpErrors: false,
-        headers: options.headers || {},
-        method: options.method || 'GET',
-        followRedirect: true,
       });
-      return {
-        ok: res.statusCode < 400,
-        status: res.statusCode,
-        statusText: res.statusMessage,
-        json: async () => JSON.parse(res.body),
-        text: async () => res.body,
-      };
+    } catch { /* ignore warmup errors */ }
+
+    _gotFetch = async (url, options = {}) => {
+      try {
+        const res = await gotScraping(url, {
+          timeout: { request: 15000 },
+          throwHttpErrors: false,
+          headers: options.headers || {},
+          method: options.method || 'GET',
+          followRedirect: true,
+        });
+        return {
+          ok: res.statusCode < 400,
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          json: async () => JSON.parse(res.body),
+          text: async () => res.body,
+        };
+      } catch (e) {
+        // Return a non-ok response instead of throwing — the scraper
+        // handles non-ok responses gracefully
+        return { ok: false, status: 0, statusText: e.message, json: async () => null, text: async () => '' };
+      }
     };
   } catch (e) {
     console.error('[desiflix] Failed to load got-scraping for fetch override:', e.message);
