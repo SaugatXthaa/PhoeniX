@@ -342,8 +342,8 @@ function getStreams(tmdbId, type, season, episode) {
       });
     })
     .catch(function (err) {
-      console.log("[KMMovies] Error: " + (err && err.message ? err.message : err));
-      return [];
+      console.error("[KMMovies] getStreams FAILED:", err && err.message ? err.message : err);
+      throw err;
     });
 }
 
