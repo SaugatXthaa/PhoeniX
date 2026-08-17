@@ -110,6 +110,35 @@ export class HubExtractor extends Extractor {
       }
     }
 
+    // Gyanigurus → resolve to hubdrive.tips, then delegate to hubdrive resolution
+    if (/gyanigurus/.test(url.hostname)) {
+      const cached = this.resolutionCache.get(url.href);
+      if (cached && Date.now() - cached.ts < HUBCLOUD_CACHE_TTL) {
+        try {
+          const enrichedMeta = { ...cached.meta, ...meta };
+          return await this.extractViaHubCloud(ctx, cached.url, enrichedMeta);
+        } catch { return []; }
+      }
+
+      // Fetch gyanigurus page and find hubdrive.tips link
+      try {
+        const html = await this.fetcher.text(ctx, url, { headers: { Referer: url.href } });
+        const $ = cheerio.load(html);
+        let hubDriveUrl = null;
+        $('a').each((_i, el) => {
+          if (hubDriveUrl) return;
+          const href = $(el).attr('href');
+          if (href && /hubdrive/.test(href)) hubDriveUrl = href;
+        });
+        if (hubDriveUrl) {
+          const resolved = new URL(hubDriveUrl);
+          this.resolutionCache.set(url.href, { url: resolved, ts: Date.now(), meta: {} });
+          return await this.extractViaHubCloud(ctx, resolved, meta);
+        }
+      } catch { return []; }
+      return [];
+    }
+
     // HubDrive → try resolution cache first, then fallback
     if (/hubdrive/.test(url.hostname)) {
       const cached = this.resolutionCache.get(url.href);
