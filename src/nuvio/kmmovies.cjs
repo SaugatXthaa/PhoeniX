@@ -1,9 +1,40 @@
-// KMMovies Scraper — uses curl for CF-protected kmmovies.online,
-// got-scraping for other hosts (magiclinks, hubcloud, gamerxyt).
+// KMMovies Scraper for Nuvio Local Scrapers
+// Written 2026-08-17 — returns direct Google Drive download URLs.
+//
+// REVERSE-ENGINEERED FLOW:
+//   1. Search kmmovies.online/?s=<title> (with full browser headers to bypass CF)
+//   2. Fetch post → parse download buttons (quality + size + magiclinks.lol URLs)
+//   3. For each magiclinks.lol link:
+//      a. Fetch with redirect follow → get insurance page with download host links
+//      b. Find hubcloud.* link on the page
+//   4. Resolve hubcloud → gamerxyt.com → pixel.hubcloud.cx → workers.dev →
+//      dl.php?link=<googleusercontent_url>
+//   5. Extract the googleusercontent URL → direct Google Drive download (video/mkv)
+//
+// Supports: movies, TV series, up to 4K/2160p when available.
+// No Playwright, no FlareSolverr — uses plain fetch() + curl.
 
 "use strict";
 
 var cheerio = require("cheerio");
+var { execFile } = require("child_process");
+var path = require("path");
+
+// Try to load got-scraping for CF bypass (works on Render where curl gets 403)
+var _gsHelper = null;
+function getGsHelper() {
+  if (_gsHelper !== null) return _gsHelper;
+  try {
+    _gsHelper = require("./got_scraping_helper");
+  } catch (e) {
+    try {
+      _gsHelper = require(path.join(__dirname, "got_scraping_helper"));
+    } catch (e2) {
+      _gsHelper = false;
+    }
+  }
+  return _gsHelper;
+}
 
 var PROVIDER_NAME = "KMMovies";
 var BASE_URL = "https://kmmovies.online";
@@ -13,6 +44,7 @@ var USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
 
+// Full browser headers to bypass Cloudflare
 var FULL_HEADERS = {
   "User-Agent": USER_AGENT,
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -28,27 +60,73 @@ var FULL_HEADERS = {
 };
 
 // ===== HTTP =====
-// Uses native fetch() — the source wrapper overrides globalThis.fetch with
-// got-scraping (http2: false) for Cloudflare bypass on Render.
-// For kmmovies.online URLs, routes through the addon's /proxy endpoint
-// (set via KM_PROXY_URL env var) which reliably bypasses CF.
-function fetchText(url, extraHeaders) {
-  var headers = Object.assign({}, { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', 'Accept': '*/*' }, extraHeaders || {});
 
-  // Route kmmovies.online requests through the addon's /proxy endpoint
-  // (set by the source wrapper via KM_PROXY_URL env var).
-  // This uses the main process's got-scraping instance which can bypass CF.
-  var proxyUrl = null; // Disabled — WP REST API works directly with gotFetch (http2: false)
-  if (proxyUrl && url.indexOf("kmmovies") !== -1) {
-    console.log("[KMMovies] Routing through proxy: " + url.slice(0, 60));
-    var proxiedUrl = proxyUrl + '?url=' + encodeURIComponent(url);
-    return fetch(proxiedUrl, { headers: { 'Accept': 'application/json,text/html,*/*' }, redirect: "follow" })
-      .then(function (res) {
-        if (!res.ok) throw new Error("HTTP " + res.status + " for " + url + " (via proxy)");
-        return res.text();
-      });
+// Multi-strategy fetch:
+// 1. For kmmovies.online: try got-scraping (Chrome TLS bypass) → curl → fetch
+// 2. For magiclinks.lol: use curl with cookie jar (redirect chain needs cookies)
+// 3. For hubcloud/gamerxyt: try curl → got-scraping → fetch
+// 4. For everything else: plain fetch
+function fetchText(url, extraHeaders) {
+  var headers = Object.assign({}, FULL_HEADERS, extraHeaders || {});
+
+  // kmmovies.online needs CF bypass (got-scraping first, then curl)
+  if (url.indexOf("kmmovies") !== -1) {
+    var gs = getGsHelper();
+    if (gs) {
+      return gs.httpGet(url, { headers: headers, timeout: 25000 })
+        .then(function (body) {
+          if (body && body.length > 50 && body.indexOf("Just a moment") === -1) {
+            return body;
+          }
+          return fetchViaCurl(url, headers);
+        })
+        .catch(function () { return fetchViaCurl(url, headers); });
+    }
+    return fetchViaCurl(url, headers).catch(function () { return fetchViaPlainFetch(url, headers); });
   }
 
+  // magiclinks.lol needs cookie jar for redirect chain (curl only)
+  if (url.indexOf("magiclinks") !== -1) {
+    return fetchViaCurl(url, headers).catch(function () { return fetchViaPlainFetch(url, headers); });
+  }
+
+  // hubcloud/gamerxyt: try curl first (handles redirects + cookies), then fetch
+  if (url.indexOf("hubcloud") !== -1 || url.indexOf("gamerxyt") !== -1) {
+    return fetchViaCurl(url, headers).catch(function () { return fetchViaPlainFetch(url, headers); });
+  }
+
+  // Everything else: plain fetch
+  return fetchViaPlainFetch(url, headers);
+}
+
+function fetchViaCurl(url, headers) {
+  return new Promise(function (resolve, reject) {
+    var cookieFile = "/tmp/kmmovies_cookies.txt";
+    var args = [
+      "-sSk", "--max-time", "25", "-L", "--compressed",
+      "-c", cookieFile, "-b", cookieFile,
+      "-A", headers["User-Agent"],
+      "-H", "Accept: " + headers["Accept"],
+      "-H", "Accept-Language: " + headers["Accept-Language"],
+      "-H", 'Sec-Ch-Ua: "Chromium";v="147", "Not?A_Brand";v="24"',
+      "-H", "Sec-Ch-Ua-Mobile: ?0",
+      "-H", 'Sec-Ch-Ua-Platform: "Windows"',
+      "-H", "Sec-Fetch-Dest: document",
+      "-H", "Sec-Fetch-Mode: navigate",
+      "-H", "Sec-Fetch-Site: none",
+      "-H", "Upgrade-Insecure-Requests: 1"
+    ];
+    if (headers["Referer"]) args.push("-H", "Referer: " + headers["Referer"]);
+    args.push(url);
+    execFile("curl", args, { encoding: "utf8", maxBuffer: 30 * 1024 * 1024, timeout: 30000, windowsHide: true },
+      function (err, stdout) {
+        if (err) { reject(new Error("curl failed: " + err.message)); return; }
+        resolve(stdout || "");
+      });
+  });
+}
+
+function fetchViaPlainFetch(url, headers) {
   return fetch(url, { headers: headers, redirect: "follow" }).then(function (res) {
     if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
     return res.text();
@@ -80,49 +158,44 @@ function normalizeTitle(s) {
 }
 
 function searchKMMovies(title) {
-  // Use WP REST API (bypasses Cloudflare — JSON API is not CF-challenged)
-  var apiUrl = BASE_URL + "/wp-json/wp/v2/posts?search=" + encodeURIComponent(title) + "&per_page=10";
-  console.log("[KMMovies] Searching WP REST API: " + apiUrl);
-  return fetchText(apiUrl)
-    .then(function (body) {
-      var posts;
-      try { posts = JSON.parse(body); } catch (e) { return []; }
-      if (!Array.isArray(posts)) return [];
+  var searchUrl = BASE_URL + "/?s=" + encodeURIComponent(title);
+  console.log("[KMMovies] Searching: " + searchUrl);
+  return fetchText(searchUrl, { Referer: BASE_URL + "/" }).then(function (html) {
+    var $ = cheerio.load(html);
+    var results = [];
+    var normTitle = normalizeTitle(title);
 
-      var results = [];
-      var normTitle = normalizeTitle(title);
+    // Find ALL links that contain the search term in URL or text
+    $("a[href]").each(function (_, el) {
+      var href = $(el).attr("href") || "";
+      var text = $(el).text().trim();
+      // Also check aria-label on parent elements
+      var ariaLabel = $(el).closest("[aria-label]").attr("aria-label") || "";
 
-      for (var i = 0; i < posts.length; i++) {
-        var post = posts[i];
-        var postTitle = post.title && post.title.rendered ? post.title.rendered : "";
-        var link = post.link || "";
-        if (!link) continue;
-        var titleNorm = normalizeTitle(postTitle);
-        // Check if the post title contains the search query (skip "The" as first word)
-        var searchWords = normTitle.split(" ").filter(function(w) { return w.length > 2; });
-        var matched = false;
-        for (var w = 0; w < searchWords.length; w++) {
-          if (titleNorm.indexOf(searchWords[w]) !== -1) { matched = true; break; }
-        }
-        if (matched) {
-          results.push({
-            url: link,
-            title: postTitle,
-            content: (post.content && post.content.rendered) || ""
-          });
-        }
+      if (href.indexOf(BASE_URL) === -1 && href.charAt(0) !== "/") return;
+      if (!href.match(/^https?:\/\//)) {
+        href = BASE_URL + (href.charAt(0) === "/" ? "" : "/") + href;
       }
+      // Skip navigation/category/etc links
+      if (href.match(/\/(category|tag|page|about|contact|privacy|terms|dmca|wp-|feed|comments|how-to|request|join|disclaimer|genre|trending|browse|\/\?s=|\/search\/)/i)) return;
 
-      var seen = {};
-      results = results.filter(function (r) {
-        if (seen[r.url]) return false;
-        seen[r.url] = true;
-        return true;
-      });
-
-      console.log("[KMMovies] Found " + results.length + " search results");
-      return results;
+      // Check if this link is relevant to the search query
+      var combinedText = (text + " " + ariaLabel + " " + href).toLowerCase();
+      if (combinedText.indexOf(normTitle.split(" ")[0]) !== -1 && text.length > 3 && text.length < 500) {
+        results.push({ url: href, title: text || ariaLabel });
+      }
     });
+
+    var seen = {};
+    results = results.filter(function (r) {
+      if (seen[r.url]) return false;
+      seen[r.url] = true;
+      return true;
+    });
+
+    console.log("[KMMovies] Found " + results.length + " search results");
+    return results;
+  });
 }
 
 function findBestMatch(results, tmdbTitle, tmdbYear) {
@@ -146,7 +219,6 @@ function findBestMatch(results, tmdbTitle, tmdbYear) {
   var best = scored[0];
   if (best && best.score >= 30) {
     console.log("[KMMovies] Matched: " + best.bare + " (score=" + best.score + ")");
-    // Return the full result object (includes url, title, content)
     return best.result;
   }
   return null;
@@ -168,18 +240,29 @@ function parseSize(text) {
   return m ? m[1].replace(/\s+/g, "") : null;
 }
 
+// Extract magiclinks.lol URLs with quality/size from the post.
 function extractDownloadLinks(html) {
   var $ = cheerio.load(html);
   var links = [];
 
+  // Find download buttons with magiclinks.lol URLs
   $("a[href*='magiclinks.lol']").each(function (_, el) {
     var href = $(el).attr("href") || "";
     var text = $(el).text().trim().replace(/\s+/g, " ");
+
+    // Parse quality and size from the button text
     var quality = parseQuality(text);
     var size = parseSize(text);
-    links.push({ url: href, quality: quality, size: size, text: text });
+
+    links.push({
+      url: href,
+      quality: quality,
+      size: size,
+      text: text
+    });
   });
 
+  // Dedupe by URL
   var seen = {};
   links = links.filter(function (l) {
     if (seen[l.url]) return false;
@@ -193,15 +276,19 @@ function extractDownloadLinks(html) {
 
 // ===== MAGICLINKS → HUBCLOUD RESOLUTION =====
 
+// Fetch magiclinks.lol page (which redirects to an insurance page that
+// contains the actual download host links) and find hubcloud link.
 function resolveMagiclinksUrl(magiclinksUrl) {
   return fetchText(magiclinksUrl)
     .then(function (html) {
+      // Find any hubcloud.* link (hubcloud.cx, hubcloud.foo, hubcloud.ist, etc.)
       var match = html.match(/https:\/\/hubcloud\.[a-z]+\/drive\/[a-zA-Z0-9_]+/);
       if (!match) throw new Error("No hubcloud link found on magiclinks page");
       return match[0];
     });
 }
 
+// Resolve hubcloud → gamerxyt → pixel → workers → dl.php → googleusercontent
 function resolveHubcloudUrl(hubcloudUrl) {
   return fetchText(hubcloudUrl)
     .then(function (html) {
@@ -218,28 +305,53 @@ function resolveHubcloudUrl(hubcloudUrl) {
       return match[0];
     })
     .then(function (pixelUrl) {
+      // Follow pixel.hubcloud.cx → workers.dev → dl.php?link=<gdrive>
+      // Use curl for the redirect chain (handles manual redirect + cookies)
+      return new Promise(function (resolve, reject) {
+        var args = [
+          "-sSk", "--max-time", "15", "-I", "-L",
+          "-A", FULL_HEADERS["User-Agent"],
+          "-H", "Referer: https://gamerxyt.com/",
+          pixelUrl
+        ];
+        execFile("curl", args, { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 20000, windowsHide: true },
+          function (err, stdout) {
+            if (err) { reject(new Error("curl redirect failed: " + err.message)); return; }
+            // Extract the last Location header (dl.php?link=<gdrive>)
+            var locations = stdout.split("\n").filter(function (l) {
+              return l.match(/^location:/i);
+            }).map(function (l) { return l.replace(/^location:\s*/i, "").trim(); });
+            if (!locations.length) { reject(new Error("No redirect found")); return; }
+            var dlPhpUrl = locations[locations.length - 1];
+            var match = dlPhpUrl.match(/link=(https:\/\/video-downloads\.googleusercontent\.com\/[^&]+)/);
+            if (!match) { reject(new Error("No googleusercontent URL")); return; }
+            resolve(match[1]);
+          });
+      });
+    })
+    .catch(function (err) {
+      // Fallback: try plain fetch with manual redirect
       return fetch(pixelUrl, {
         headers: Object.assign({}, FULL_HEADERS, { Referer: "https://gamerxyt.com/" }),
         redirect: "manual"
+      }).then(function (res1) {
+        var workersUrl = res1.headers.get("location");
+        if (!workersUrl) throw new Error("No workers.dev redirect");
+        return fetch(workersUrl, {
+          headers: Object.assign({}, FULL_HEADERS, { Referer: "https://gamerxyt.com/" }),
+          redirect: "manual"
+        });
+      }).then(function (res2) {
+        var dlPhpUrl = res2.headers.get("location");
+        if (!dlPhpUrl) throw new Error("No dl.php redirect");
+        var match = dlPhpUrl.match(/link=(https:\/\/video-downloads\.googleusercontent\.com\/[^&]+)/);
+        if (!match) throw new Error("No googleusercontent URL");
+        return match[1];
       });
-    })
-    .then(function (res1) {
-      var workersUrl = res1.headers.get("location");
-      if (!workersUrl) throw new Error("No workers.dev redirect");
-      return fetch(workersUrl, {
-        headers: Object.assign({}, FULL_HEADERS, { Referer: "https://gamerxyt.com/" }),
-        redirect: "manual"
-      });
-    })
-    .then(function (res2) {
-      var dlPhpUrl = res2.headers.get("location");
-      if (!dlPhpUrl) throw new Error("No dl.php redirect");
-      var match = dlPhpUrl.match(/link=(https:\/\/video-downloads\.googleusercontent\.com\/[^&]+)/);
-      if (!match) throw new Error("No googleusercontent URL");
-      return match[1];
     });
 }
 
+// Full resolution: magiclinks → hubcloud → googleusercontent
 function resolveStreamUrl(magiclinksUrl) {
   return resolveMagiclinksUrl(magiclinksUrl)
     .then(function (hubcloudUrl) {
@@ -251,6 +363,8 @@ function resolveStreamUrl(magiclinksUrl) {
 // ===== MAIN ENTRY =====
 
 function getStreams(tmdbId, type, season, episode) {
+  var isMovie = type !== "tv";
+
   console.log("[KMMovies] Request: tmdb=" + tmdbId + " type=" + type);
 
   return getTMDBInfo(tmdbId, type)
@@ -262,44 +376,42 @@ function getStreams(tmdbId, type, season, episode) {
         if (!results.length) return [];
         var match = findBestMatch(results, info.title, info.year);
         if (!match) return [];
-        console.log("[KMMovies] Best match: " + match.url);
 
-        // Extract download links from the WP REST API post content directly
-        var postContent = match.content || "";
-        var links = extractDownloadLinks(postContent);
-        if (!links.length) return [];
+        return fetchText(match.url, { Referer: BASE_URL + "/" }).then(function (postHtml) {
+          var links = extractDownloadLinks(postHtml);
+          if (!links.length) return [];
 
-        // Resolve each magiclinks URL to a direct GDrive URL
-        return Promise.all(links.map(function (l) {
-          return resolveStreamUrl(l.url)
-            .then(function (gdriveUrl) {
-              return Object.assign({}, l, { gdriveUrl: gdriveUrl });
-            })
-            .catch(function (err) {
-              console.log("[KMMovies] Failed to resolve " + l.url + ": " + err.message);
-              return null;
-            });
-        })).then(function (resolved) {
-          return resolved.filter(function (r) { return r !== null && r.gdriveUrl; });
-        });
-      }).then(function (resolvedLinks) {
-        return resolvedLinks.map(function (l) {
-          return {
-            name: PROVIDER_NAME + " - " + l.quality + (l.size ? " [" + l.size + "]" : ""),
-            title: info.title + " (" + info.year + ") " + l.quality + (l.size ? " " + l.size : ""),
-            url: l.gdriveUrl,
-            quality: l.quality,
-            size: l.size,
-            type: "video/mkv",
-            headers: { "User-Agent": USER_AGENT },
-            behaviorHints: { bingeGroup: "kmmovies-" + l.quality }
-          };
+          // Resolve each magiclinks URL to a direct GDrive URL
+          return Promise.all(links.map(function (l) {
+            return resolveStreamUrl(l.url)
+              .then(function (gdriveUrl) {
+                return Object.assign({}, l, { gdriveUrl: gdriveUrl });
+              })
+              .catch(function (err) {
+                console.log("[KMMovies] Failed to resolve " + l.url + ": " + err.message);
+                return null;
+              });
+          })).then(function (resolved) {
+            return resolved.filter(function (r) { return r !== null && r.gdriveUrl; });
+          });
+        }).then(function (resolvedLinks) {
+          return resolvedLinks.map(function (l) {
+            return {
+              name: PROVIDER_NAME + " - " + l.quality + (l.size ? " [" + l.size + "]" : ""),
+              title: info.title + " (" + info.year + ") " + l.quality + (l.size ? " " + l.size : ""),
+              url: l.gdriveUrl,
+              quality: l.quality,
+              type: "video/mkv",
+              headers: { "User-Agent": USER_AGENT },
+              behaviorHints: { bingeGroup: "kmmovies-" + l.quality }
+            };
+          });
         });
       });
     })
     .catch(function (err) {
-      console.error("[KMMovies] getStreams FAILED:", err && err.message ? err.message : err);
-      throw err;
+      console.log("[KMMovies] Error: " + (err && err.message ? err.message : err));
+      return [];
     });
 }
 
