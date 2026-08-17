@@ -110,6 +110,11 @@ export class KMMovies extends Source {
     const originalFetch = globalThis.fetch;
     const gotFetch = await getGotFetch();
     if (gotFetch) {
+      // Pre-warm got-scraping with a dummy request to kmmovies.online
+      // This establishes a TLS session that subsequent requests can reuse.
+      try {
+        await gotFetch('https://kmmovies.online/', {});
+      } catch { /* ignore warmup errors */ }
       globalThis.fetch = gotFetch;
     }
 
