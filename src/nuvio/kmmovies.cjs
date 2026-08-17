@@ -4,7 +4,6 @@
 "use strict";
 
 var cheerio = require("cheerio");
-var { execFile } = require("child_process");
 
 var PROVIDER_NAME = "KMMovies";
 var BASE_URL = "https://kmmovies.online";
@@ -29,45 +28,9 @@ var FULL_HEADERS = {
 };
 
 // ===== HTTP =====
-// Use curl for kmmovies.online (CF bypass), got-scraping for everything else.
-var _curlAvailable = null;
-function curlAvailable() {
-  if (_curlAvailable === null) {
-    try {
-      require("child_process").execSync("curl --version", { stdio: "ignore", timeout: 2000 });
-      _curlAvailable = true;
-    } catch (e) { _curlAvailable = false; }
-  }
-  return _curlAvailable;
-}
-
-function curlFetch(url, extraHeaders) {
-  return new Promise(function (resolve, reject) {
-    var cookieFile = "/tmp/kmmovies_cookies.txt";
-    var args = [
-      "-sSk", "--max-time", "25", "-L", "--compressed",
-      "-c", cookieFile, "-b", cookieFile,
-      "-A", FULL_HEADERS["User-Agent"],
-      "-H", "Accept: " + FULL_HEADERS["Accept"],
-      "-H", "Accept-Language: " + FULL_HEADERS["Accept-Language"],
-      "-H", 'Sec-Ch-Ua: "Chromium";v="147", "Not?A_Brand";v="24"',
-      "-H", "Sec-Ch-Ua-Mobile: ?0",
-      "-H", 'Sec-Ch-Ua-Platform: "Windows"',
-      "-H", "Sec-Fetch-Dest: document",
-      "-H", "Sec-Fetch-Mode: navigate",
-      "-H", "Sec-Fetch-Site: none",
-      "-H", "Upgrade-Insecure-Requests: 1"
-    ];
-    if (extraHeaders && extraHeaders["Referer"]) args.push("-H", "Referer: " + extraHeaders["Referer"]);
-    args.push(url);
-    execFile("curl", args, { encoding: "utf8", maxBuffer: 30 * 1024 * 1024, timeout: 30000, windowsHide: true },
-      function (err, stdout) {
-        if (err) { reject(new Error("curl failed: " + err.message)); return; }
-        resolve(stdout || "");
-      });
-  });
-}
-
+// Use got-scraping for ALL requests — it handles Cloudflare bypass and
+// cookie management (via tough-cookie) on Render. Curl is not used because
+// it can't bypass CF on Render for kmmovies.online.
 var _gotScraping = null;
 async function getGotScraping() {
   if (_gotScraping) return _gotScraping;
@@ -83,12 +46,6 @@ async function getGotScraping() {
 function fetchText(url, extraHeaders) {
   var headers = Object.assign({}, FULL_HEADERS, extraHeaders || {});
 
-  // Use curl for kmmovies.online AND magiclinks.lol (need shared cookies)
-  if (curlAvailable() && (url.indexOf("kmmovies") !== -1 || url.indexOf("magiclinks") !== -1)) {
-    return curlFetch(url, extraHeaders);
-  }
-
-  // Use got-scraping for non-CF pages (magiclinks, hubcloud, gamerxyt)
   return getGotScraping().then(function (gotScraping) {
     if (!gotScraping) {
       return fetch(url, { headers: headers, redirect: "follow" }).then(function (res) {
