@@ -69,6 +69,8 @@ import { BollyFlix } from './BollyFlix.js';
 import { OneShows } from './OneShows.js';
 // 1DesireMovies — movies/TV download links via 1desiremovies.wales
 import { OneDesireMovies } from './OneDesireMovies.js';
+// KMMovies — movies/TV direct GDrive via kmmovies.online (up to 4K)
+import { KMMovies } from './KMMovies.js';
 // Nuvio provider sources (additive — each has its own dedicated source file)
 import { Cineby } from './Cineby.js';
 import { DesiFlix } from './DesiFlix.js';
@@ -235,5 +237,7 @@ export const createSources = (fetcher) => {
     new OneShows(fetcher),
     // 1desiremovies.wales — movies/TV download links (1080p/720p/480p)
     new OneDesireMovies(fetcher),
+    // kmmovies.online — movies/TV direct GDrive (up to 4K)
+    new KMMovies(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
