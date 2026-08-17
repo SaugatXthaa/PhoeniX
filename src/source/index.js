@@ -67,6 +67,8 @@ import { OneEmbed } from './OneEmbed.js';
 import { BollyFlix } from './BollyFlix.js';
 // 1Shows — movies/TV direct download via PixelDrain
 import { OneShows } from './OneShows.js';
+// 1DesireMovies — movies/TV download links via 1desiremovies.wales
+import { OneDesireMovies } from './OneDesireMovies.js';
 // Nuvio provider sources (additive — each has its own dedicated source file)
 import { Cineby } from './Cineby.js';
 import { DesiFlix } from './DesiFlix.js';
@@ -231,5 +233,7 @@ export const createSources = (fetcher) => {
     new BollyFlix(fetcher),
     // 1shows.cc — movies/TV direct download via PixelDrain
     new OneShows(fetcher),
+    // 1desiremovies.wales — movies/TV download links (1080p/720p/480p)
+    new OneDesireMovies(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
