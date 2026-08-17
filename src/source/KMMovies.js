@@ -25,32 +25,49 @@ async function getGotFetch() {
   try {
     const { gotScraping } = await import('got-scraping');
     _gotFetch = async (url, options = {}) => {
-      try {
-        const isManualRedirect = options.redirect === 'manual';
-        const res = await gotScraping.get(url, {
-          timeout: { request: options.timeout || 25000 },
-          throwHttpErrors: false,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-            ...(options.headers || {}),
-          },
-          followRedirect: !isManualRedirect,
-          http2: false,
-        });
-        // For manual redirects, return the redirect status + location header
-        // (got-scraping follows redirects by default, but with followRedirect:false
-        // it returns 3xx responses with the location header)
-        return {
-          ok: isManualRedirect ? (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) : res.statusCode < 400,
-          status: res.statusCode,
-          statusText: res.statusMessage,
-          headers: res.headers,
-          text: async () => res.body,
-          json: async () => JSON.parse(res.body),
-        };
-      } catch (e) {
-        return { ok: false, status: 0, statusText: e.message, headers: {}, text: async () => '', json: async () => null };
+      const isManualRedirect = options.redirect === 'manual';
+      // Retry up to 3 times — kmmovies.online has intermittent CF challenges
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const res = await gotScraping.get(url, {
+            timeout: { request: options.timeout || 25000 },
+            throwHttpErrors: false,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'Accept': '*/*',
+              ...(options.headers || {}),
+            },
+            followRedirect: !isManualRedirect,
+            http2: false,
+          });
+          if (res.statusCode < 400 || isManualRedirect) {
+            return {
+              ok: isManualRedirect ? (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) : res.statusCode < 400,
+              status: res.statusCode,
+              statusText: res.statusMessage,
+              headers: res.headers,
+              text: async () => res.body,
+              json: async () => JSON.parse(res.body),
+            };
+          }
+          // Retry on 403 (CF challenge)
+          if (attempt < 2) {
+            console.log(`[kmmovies] gotFetch got ${res.statusCode}, retrying (${attempt + 1}/3)...`);
+            await new Promise(r => setTimeout(r, 2000));
+            continue;
+          }
+          return {
+            ok: false, status: res.statusCode, statusText: res.statusMessage,
+            headers: res.headers, text: async () => res.body, json: async () => null,
+          };
+        } catch (e) {
+          if (attempt < 2) {
+            console.log(`[kmmovies] gotFetch error: ${e.message}, retrying (${attempt + 1}/3)...`);
+            await new Promise(r => setTimeout(r, 2000));
+            continue;
+          }
+          return { ok: false, status: 0, statusText: e.message, headers: {}, text: async () => '', json: async () => null };
+        }
       }
     };
   } catch (e) {
