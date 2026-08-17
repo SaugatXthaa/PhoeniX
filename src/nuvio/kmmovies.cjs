@@ -69,8 +69,14 @@ var FULL_HEADERS = {
 function fetchText(url, extraHeaders) {
   var headers = Object.assign({}, FULL_HEADERS, extraHeaders || {});
 
-  // kmmovies.online needs CF bypass (got-scraping first, then curl)
+  // kmmovies.online: WP REST API (JSON) works with plain fetch (not CF-protected)
+  // HTML pages need got-scraping (CF-protected). Check if URL is WP REST API.
   if (url.indexOf("kmmovies") !== -1) {
+    // WP REST API URLs are JSON — not CF-protected, use plain fetch
+    if (url.indexOf("/wp-json/") !== -1) {
+      return fetchViaPlainFetch(url, headers);
+    }
+    // HTML pages need CF bypass via got-scraping
     var gs = getGsHelper();
     if (gs) {
       return gs.httpGet(url, { headers: headers, timeout: 25000 })
@@ -158,44 +164,49 @@ function normalizeTitle(s) {
 }
 
 function searchKMMovies(title) {
-  var searchUrl = BASE_URL + "/?s=" + encodeURIComponent(title);
-  console.log("[KMMovies] Searching: " + searchUrl);
-  return fetchText(searchUrl, { Referer: BASE_URL + "/" }).then(function (html) {
-    var $ = cheerio.load(html);
-    var results = [];
-    var normTitle = normalizeTitle(title);
+  // Use WP REST API (JSON — NOT CF-protected, unlike HTML search page)
+  var apiUrl = BASE_URL + "/wp-json/wp/v2/posts?search=" + encodeURIComponent(title) + "&per_page=10";
+  console.log("[KMMovies] Searching WP REST API: " + apiUrl);
+  return fetchText(apiUrl)
+    .then(function (body) {
+      var posts;
+      try { posts = JSON.parse(body); } catch (e) { return []; }
+      if (!Array.isArray(posts)) return [];
 
-    // Find ALL links that contain the search term in URL or text
-    $("a[href]").each(function (_, el) {
-      var href = $(el).attr("href") || "";
-      var text = $(el).text().trim();
-      // Also check aria-label on parent elements
-      var ariaLabel = $(el).closest("[aria-label]").attr("aria-label") || "";
+      var results = [];
+      var normTitle = normalizeTitle(title);
 
-      if (href.indexOf(BASE_URL) === -1 && href.charAt(0) !== "/") return;
-      if (!href.match(/^https?:\/\//)) {
-        href = BASE_URL + (href.charAt(0) === "/" ? "" : "/") + href;
+      for (var i = 0; i < posts.length; i++) {
+        var post = posts[i];
+        var postTitle = (post.title && post.title.rendered) ? post.title.rendered : "";
+        var link = post.link || "";
+        if (!link) continue;
+        var titleNorm = normalizeTitle(postTitle);
+        // Match by any word > 2 chars (skip "The", "A", etc.)
+        var searchWords = normTitle.split(" ").filter(function (w) { return w.length > 2; });
+        var matched = false;
+        for (var w = 0; w < searchWords.length; w++) {
+          if (titleNorm.indexOf(searchWords[w]) !== -1) { matched = true; break; }
+        }
+        if (matched) {
+          results.push({
+            url: link,
+            title: postTitle,
+            content: (post.content && post.content.rendered) || ""
+          });
+        }
       }
-      // Skip navigation/category/etc links
-      if (href.match(/\/(category|tag|page|about|contact|privacy|terms|dmca|wp-|feed|comments|how-to|request|join|disclaimer|genre|trending|browse|\/\?s=|\/search\/)/i)) return;
 
-      // Check if this link is relevant to the search query
-      var combinedText = (text + " " + ariaLabel + " " + href).toLowerCase();
-      if (combinedText.indexOf(normTitle.split(" ")[0]) !== -1 && text.length > 3 && text.length < 500) {
-        results.push({ url: href, title: text || ariaLabel });
-      }
+      var seen = {};
+      results = results.filter(function (r) {
+        if (seen[r.url]) return false;
+        seen[r.url] = true;
+        return true;
+      });
+
+      console.log("[KMMovies] Found " + results.length + " search results");
+      return results;
     });
-
-    var seen = {};
-    results = results.filter(function (r) {
-      if (seen[r.url]) return false;
-      seen[r.url] = true;
-      return true;
-    });
-
-    console.log("[KMMovies] Found " + results.length + " search results");
-    return results;
-  });
 }
 
 function findBestMatch(results, tmdbTitle, tmdbYear) {
@@ -377,35 +388,36 @@ function getStreams(tmdbId, type, season, episode) {
         var match = findBestMatch(results, info.title, info.year);
         if (!match) return [];
 
-        return fetchText(match.url, { Referer: BASE_URL + "/" }).then(function (postHtml) {
-          var links = extractDownloadLinks(postHtml);
-          if (!links.length) return [];
+        // Extract download links from WP REST API post content (no post page fetch needed)
+        var postContent = match.content || "";
+        var links = extractDownloadLinks(postContent);
+        if (!links.length) return [];
 
-          // Resolve each magiclinks URL to a direct GDrive URL
-          return Promise.all(links.map(function (l) {
-            return resolveStreamUrl(l.url)
-              .then(function (gdriveUrl) {
-                return Object.assign({}, l, { gdriveUrl: gdriveUrl });
-              })
-              .catch(function (err) {
-                console.log("[KMMovies] Failed to resolve " + l.url + ": " + err.message);
-                return null;
-              });
-          })).then(function (resolved) {
-            return resolved.filter(function (r) { return r !== null && r.gdriveUrl; });
-          });
-        }).then(function (resolvedLinks) {
-          return resolvedLinks.map(function (l) {
-            return {
-              name: PROVIDER_NAME + " - " + l.quality + (l.size ? " [" + l.size + "]" : ""),
-              title: info.title + " (" + info.year + ") " + l.quality + (l.size ? " " + l.size : ""),
-              url: l.gdriveUrl,
-              quality: l.quality,
-              type: "video/mkv",
-              headers: { "User-Agent": USER_AGENT },
-              behaviorHints: { bingeGroup: "kmmovies-" + l.quality }
-            };
-          });
+        // Resolve each magiclinks URL to a direct GDrive URL
+        return Promise.all(links.map(function (l) {
+          return resolveStreamUrl(l.url)
+            .then(function (gdriveUrl) {
+              return Object.assign({}, l, { gdriveUrl: gdriveUrl });
+            })
+            .catch(function (err) {
+              console.log("[KMMovies] Failed to resolve " + l.url + ": " + err.message);
+              return null;
+            });
+        })).then(function (resolved) {
+          return resolved.filter(function (r) { return r !== null && r.gdriveUrl; });
+        });
+      }).then(function (resolvedLinks) {
+        return resolvedLinks.map(function (l) {
+          return {
+            name: PROVIDER_NAME + " - " + l.quality + (l.size ? " [" + l.size + "]" : ""),
+            title: info.title + " (" + info.year + ") " + l.quality + (l.size ? " " + l.size : ""),
+            url: l.gdriveUrl,
+            quality: l.quality,
+            size: l.size,
+            type: "video/mkv",
+            headers: { "User-Agent": USER_AGENT },
+            behaviorHints: { bingeGroup: "kmmovies-" + l.quality }
+          };
         });
       });
     })
