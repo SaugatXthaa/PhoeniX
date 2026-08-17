@@ -3,19 +3,21 @@
 
 var _gotScraping = null;
 
-async function getGotScraping() {
-  if (_gotScraping) return _gotScraping;
-  try {
-    var mod = await import('got-scraping');
+function getGotScraping() {
+  if (_gotScraping !== null) return Promise.resolve(_gotScraping);
+  // Use dynamic import for got-scraping (it's an ESM package)
+  return import('got-scraping').then(function (mod) {
     _gotScraping = mod.gotScraping;
-  } catch (e) {
+    console.log('[gsHelper] got-scraping loaded:', typeof _gotScraping);
+    return _gotScraping;
+  }).catch(function (e) {
     console.error('[gsHelper] Failed to load got-scraping:', e.message);
     _gotScraping = false;
-  }
-  return _gotScraping;
+    return false;
+  });
 }
 
-async function httpGet(url, options) {
+function httpGet(url, options) {
   options = options || {};
   var headers = options.headers || {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -23,39 +25,33 @@ async function httpGet(url, options) {
   };
   var timeout = options.timeout || 25000;
   
-  var gs = await getGotScraping();
-  if (!gs) {
-    throw new Error('got-scraping not available');
-  }
-  
-  // Retry up to 3 times for intermittent CF challenges
-  for (var attempt = 0; attempt < 3; attempt++) {
-    try {
-      var res = await gs(url, {
+  return getGotScraping().then(function (gs) {
+    if (!gs) {
+      throw new Error('got-scraping not available');
+    }
+    
+    // Retry up to 3 times for intermittent CF challenges
+    function attempt(tryNum) {
+      return gs(url, {
         timeout: { request: timeout },
         throwHttpErrors: false,
         headers: headers,
         followRedirect: true,
-        http2: false,  // KEY: http2: false bypasses CF on Render
+        http2: false,
+      }).then(function (res) {
+        if (res.statusCode < 400) {
+          return res.body || '';
+        }
+        if (tryNum < 2) {
+          console.log('[gsHelper] Got ' + res.statusCode + ', retrying (' + (tryNum + 1) + '/3)...');
+          return new Promise(function (r) { setTimeout(r, 2000); })
+            .then(function () { return attempt(tryNum + 1); });
+        }
+        throw new Error('HTTP ' + res.statusCode + ' for ' + url);
       });
-      if (res.statusCode < 400) {
-        return res.body || '';
-      }
-      // Retry on 403 (CF challenge)
-      if (attempt < 2) {
-        await new Promise(function(r) { setTimeout(r, 2000); });
-        continue;
-      }
-      throw new Error('HTTP ' + res.statusCode + ' for ' + url);
-    } catch (e) {
-      if (attempt < 2) {
-        await new Promise(function(r) { setTimeout(r, 2000); });
-        continue;
-      }
-      throw e;
     }
-  }
-  throw new Error('Max retries exceeded for ' + url);
+    return attempt(0);
+  });
 }
 
 module.exports = { httpGet: httpGet };
