@@ -1,10 +1,18 @@
 // src/source/KMMovies.js
 // kmmovies.online — movies & TV series with direct Google Drive streams (up to 4K)
 //
-// The scraper uses native fetch() which gets 403 from kmmovies.online's
-// Cloudflare on Render. We override globalThis.fetch with got-scraping
-// (using http2: false, which bypasses CF on Render) before calling the scraper,
-// then restore it after.
+// Uses the KMMovies scraper (src/nuvio/kmmovies.cjs) which:
+//   1. Uses got_scraping_helper (http2: false) for kmmovies.online CF bypass
+//   2. Uses curl with cookie jar for magiclinks.lol redirect chain
+//   3. Resolves: magiclinks → hubcloud → gamerxyt → pixel → workers → googleusercontent
+//   4. Returns direct Google Drive download URLs (MKV/MP4)
+//
+// Enriched metadata (like 4KHDHub):
+//   - height: 480, 720, 1080, 2160 (from quality string)
+//   - sourceType: 'BluRay'
+//   - bytes: file size (from [539.4MB] / [1.3GB] in heading)
+//   - countryCodes: [multi, hi, en] (Hindi-English dual audio)
+//   - title: movie/show title with quality + size label
 
 import { createRequire } from 'module';
 import path from 'path';
@@ -17,64 +25,6 @@ import { Source } from './Source.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require_ = createRequire(import.meta.url);
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'kmmovies.cjs');
-
-// Override globalThis.fetch with got-scraping (http2: false) for CF bypass
-let _gotFetch = null;
-async function getGotFetch() {
-  if (_gotFetch) return _gotFetch;
-  try {
-    const { gotScraping } = await import('got-scraping');
-    _gotFetch = async (url, options = {}) => {
-      const isManualRedirect = options.redirect === 'manual';
-      // Retry up to 3 times — kmmovies.online has intermittent CF challenges
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          const res = await gotScraping.get(url, {
-            timeout: { request: options.timeout || 25000 },
-            throwHttpErrors: false,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-              'Accept': '*/*',
-              ...(options.headers || {}),
-            },
-            followRedirect: !isManualRedirect,
-            http2: false,
-          });
-          if (res.statusCode < 400 || isManualRedirect) {
-            return {
-              ok: isManualRedirect ? (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) : res.statusCode < 400,
-              status: res.statusCode,
-              statusText: res.statusMessage,
-              headers: res.headers,
-              text: async () => res.body,
-              json: async () => JSON.parse(res.body),
-            };
-          }
-          // Retry on 403 (CF challenge)
-          if (attempt < 2) {
-            console.log(`[kmmovies] gotFetch got ${res.statusCode}, retrying (${attempt + 1}/3)...`);
-            await new Promise(r => setTimeout(r, 2000));
-            continue;
-          }
-          return {
-            ok: false, status: res.statusCode, statusText: res.statusMessage,
-            headers: res.headers, text: async () => res.body, json: async () => null,
-          };
-        } catch (e) {
-          if (attempt < 2) {
-            console.log(`[kmmovies] gotFetch error: ${e.message}, retrying (${attempt + 1}/3)...`);
-            await new Promise(r => setTimeout(r, 2000));
-            continue;
-          }
-          return { ok: false, status: 0, statusText: e.message, headers: {}, text: async () => '', json: async () => null };
-        }
-      }
-    };
-  } catch (e) {
-    console.error('[kmmovies] Failed to load got-scraping for fetch override:', e.message);
-  }
-  return _gotFetch;
-}
 
 // Parse quality string to height
 function parseHeight(q) {
@@ -111,7 +61,7 @@ export class KMMovies extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Load the scraper module (delete cache to pick up changes)
+    // Load the scraper module
     let mod;
     try {
       delete require_.cache[require_.resolve(PROVIDER_PATH)];
@@ -122,23 +72,6 @@ export class KMMovies extends Source {
     }
     if (!mod || typeof mod.getStreams !== 'function') return [];
 
-    // Override globalThis.fetch — but only for kmmovies.online URLs.
-    // Other URLs (TMDB, /proxy, magiclinks, hubcloud) use the original fetch.
-    const originalFetch = globalThis.fetch;
-    const gotFetch = await getGotFetch();
-    if (gotFetch) {
-      globalThis.fetch = function(url, options) {
-        var urlStr = typeof url === 'string' ? url : (url && url.href ? url.href : String(url));
-        // Use gotFetch for kmmovies.online URLs, original fetch for everything else
-        if (urlStr.indexOf('kmmovies.online') !== -1) {
-          return gotFetch(url, options);
-        }
-        return originalFetch(url, options);
-      };
-    }
-    // Set the proxy URL so the scraper can use it for kmmovies.online
-    process.env.KM_PROXY_URL = ctx.hostUrl.href + 'proxy';
-
     const mediaType = tmdbId.season ? 'tv' : 'movie';
     let streams;
     try {
@@ -148,10 +81,7 @@ export class KMMovies extends Source {
       ]);
     } catch (e) {
       console.error(`[kmmovies] getStreams error: ${e?.message || e}`);
-      streams = null;
-    } finally {
-      // Always restore the original fetch
-      globalThis.fetch = originalFetch;
+      return [];
     }
 
     if (!Array.isArray(streams) || streams.length === 0) return [];
