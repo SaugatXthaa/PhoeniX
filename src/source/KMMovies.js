@@ -105,13 +105,19 @@ export class KMMovies extends Source {
     }
     if (!mod || typeof mod.getStreams !== 'function') return [];
 
-    // Override globalThis.fetch with got-scraping (http2: false) for CF bypass.
-    // Also set KM_PROXY_URL so the scraper can route kmmovies.online requests
-    // through the addon's own /proxy endpoint (which reliably bypasses CF).
+    // Override globalThis.fetch — but only for kmmovies.online URLs.
+    // Other URLs (TMDB, /proxy, magiclinks, hubcloud) use the original fetch.
     const originalFetch = globalThis.fetch;
     const gotFetch = await getGotFetch();
     if (gotFetch) {
-      globalThis.fetch = gotFetch;
+      globalThis.fetch = function(url, options) {
+        var urlStr = typeof url === 'string' ? url : (url && url.href ? url.href : String(url));
+        // Use gotFetch for kmmovies.online URLs, original fetch for everything else
+        if (urlStr.indexOf('kmmovies.online') !== -1) {
+          return gotFetch(url, options);
+        }
+        return originalFetch(url, options);
+      };
     }
     // Set the proxy URL so the scraper can use it for kmmovies.online
     process.env.KM_PROXY_URL = ctx.hostUrl.href + 'proxy';
