@@ -69,14 +69,8 @@ var FULL_HEADERS = {
 function fetchText(url, extraHeaders) {
   var headers = Object.assign({}, FULL_HEADERS, extraHeaders || {});
 
-  // kmmovies.online: WP REST API (JSON) works with plain fetch (not CF-protected)
-  // HTML pages need got-scraping (CF-protected). Check if URL is WP REST API.
+  // kmmovies.online: ALL endpoints are CF-protected — use got-scraping first
   if (url.indexOf("kmmovies") !== -1) {
-    // WP REST API URLs are JSON — not CF-protected, use plain fetch
-    if (url.indexOf("/wp-json/") !== -1) {
-      return fetchViaPlainFetch(url, headers);
-    }
-    // HTML pages need CF bypass via got-scraping
     var gs = getGsHelper();
     if (gs) {
       return gs.httpGet(url, { headers: headers, timeout: 25000 })
