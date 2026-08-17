@@ -57,7 +57,7 @@ function fetchText(url, extraHeaders) {
     // Retry up to 3 times — kmmovies.online has intermittent Cloudflare challenges
     // that sometimes return 403. Retrying with http2: false usually works.
     function attempt(tryNum) {
-      return gotScraping(url, {
+      return gotScraping.get(url, {
         timeout: { request: 25000 },
         throwHttpErrors: false,
         headers: headers,
