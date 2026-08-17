@@ -228,6 +228,7 @@ function getStreams(tmdbId, type, season, episode) {
 
   return getTMDBInfo(tmdbId, type)
     .then(function (info) {
+      console.log("[KMMovies] TMDB result:", JSON.stringify(info));
       if (!info || !info.title) return [];
       console.log("[KMMovies] TMDB: " + info.title + " (" + info.year + ")");
 
