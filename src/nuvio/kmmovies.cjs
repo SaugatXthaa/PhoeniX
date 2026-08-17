@@ -41,7 +41,7 @@ function fetchText(url, extraHeaders) {
   var proxyUrl = process.env.KM_PROXY_URL;
   if (proxyUrl && url.indexOf("kmmovies") !== -1) {
     var proxiedUrl = proxyUrl + '?url=' + encodeURIComponent(url);
-    return fetch(proxiedUrl, { headers: headers, redirect: "follow" })
+    return fetch(proxiedUrl, { headers: { 'Accept': 'application/json,text/html,*/*' }, redirect: "follow" })
       .then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status + " for " + url + " (via proxy)");
         return res.text();
@@ -79,40 +79,40 @@ function normalizeTitle(s) {
 }
 
 function searchKMMovies(title) {
-  var searchUrl = BASE_URL + "/?s=" + encodeURIComponent(title);
-  console.log("[KMMovies] Searching: " + searchUrl);
-  return fetchText(searchUrl, { Referer: BASE_URL + "/" }).then(function (html) {
-    var $ = cheerio.load(html);
-    var results = [];
-    var normTitle = normalizeTitle(title);
+  // Use WP REST API (bypasses Cloudflare — JSON API is not CF-challenged)
+  var apiUrl = BASE_URL + "/wp-json/wp/v2/posts?search=" + encodeURIComponent(title) + "&per_page=10";
+  console.log("[KMMovies] Searching WP REST API: " + apiUrl);
+  return fetchText(apiUrl)
+    .then(function (body) {
+      var posts;
+      try { posts = JSON.parse(body); } catch (e) { return []; }
+      if (!Array.isArray(posts)) return [];
 
-    $("a[href]").each(function (_, el) {
-      var href = $(el).attr("href") || "";
-      var text = $(el).text().trim();
-      var ariaLabel = $(el).closest("[aria-label]").attr("aria-label") || "";
+      var results = [];
+      var normTitle = normalizeTitle(title);
 
-      if (href.indexOf(BASE_URL) === -1 && href.charAt(0) !== "/") return;
-      if (!href.match(/^https?:\/\//)) {
-        href = BASE_URL + (href.charAt(0) === "/" ? "" : "/") + href;
+      for (var i = 0; i < posts.length; i++) {
+        var post = posts[i];
+        var postTitle = post.title && post.title.rendered ? post.title.rendered : "";
+        var link = post.link || "";
+        if (!link) continue;
+        var titleNorm = normalizeTitle(postTitle);
+        // Check if the post title contains the search query
+        if (titleNorm.indexOf(normTitle.split(" ")[0]) !== -1 || normTitle.indexOf(titleNorm.split(" ")[0]) !== -1) {
+          results.push({ url: link, title: postTitle });
+        }
       }
-      if (href.match(/\/(category|tag|page|about|contact|privacy|terms|dmca|wp-|feed|comments|how-to|request|join|disclaimer|genre|trending|browse|\/\?s=|\/search\/)/i)) return;
 
-      var combinedText = (text + " " + ariaLabel + " " + href).toLowerCase();
-      if (combinedText.indexOf(normTitle.split(" ")[0]) !== -1 && text.length > 3 && text.length < 500) {
-        results.push({ url: href, title: text || ariaLabel });
-      }
+      var seen = {};
+      results = results.filter(function (r) {
+        if (seen[r.url]) return false;
+        seen[r.url] = true;
+        return true;
+      });
+
+      console.log("[KMMovies] Found " + results.length + " search results");
+      return results;
     });
-
-    var seen = {};
-    results = results.filter(function (r) {
-      if (seen[r.url]) return false;
-      seen[r.url] = true;
-      return true;
-    });
-
-    console.log("[KMMovies] Found " + results.length + " search results");
-    return results;
-  });
 }
 
 function findBestMatch(results, tmdbTitle, tmdbYear) {
