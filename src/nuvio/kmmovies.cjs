@@ -26,10 +26,14 @@ function getGsHelper() {
   if (_gsHelper !== null) return _gsHelper;
   try {
     _gsHelper = require("./got_scraping_helper");
+    console.log("[KMMovies] got_scraping_helper loaded:", typeof _gsHelper, typeof _gsHelper.httpGet);
   } catch (e) {
+    console.log("[KMMovies] got_scraping_helper not found via ./:", e.message);
     try {
       _gsHelper = require(path.join(__dirname, "got_scraping_helper"));
+      console.log("[KMMovies] got_scraping_helper loaded via __dirname:", typeof _gsHelper);
     } catch (e2) {
+      console.error("[KMMovies] got_scraping_helper not found:", e2.message);
       _gsHelper = false;
     }
   }
