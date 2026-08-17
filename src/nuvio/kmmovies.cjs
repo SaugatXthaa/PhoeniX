@@ -97,8 +97,13 @@ function searchKMMovies(title) {
         var link = post.link || "";
         if (!link) continue;
         var titleNorm = normalizeTitle(postTitle);
-        // Check if the post title contains the search query
-        if (titleNorm.indexOf(normTitle.split(" ")[0]) !== -1 || normTitle.indexOf(titleNorm.split(" ")[0]) !== -1) {
+        // Check if the post title contains the search query (skip "The" as first word)
+        var searchWords = normTitle.split(" ").filter(function(w) { return w.length > 2; });
+        var matched = false;
+        for (var w = 0; w < searchWords.length; w++) {
+          if (titleNorm.indexOf(searchWords[w]) !== -1) { matched = true; break; }
+        }
+        if (matched) {
           results.push({ url: link, title: postTitle });
         }
       }
