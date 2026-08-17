@@ -147,13 +147,17 @@ export class Pantyflix extends Extractor {
             format: Format.mp4,
             meta: { ...meta },
           }];
-        } catch { /* fall through to original URL */ }
+        } catch { /* fall through to error */ }
       }
-      // Resolution failed — return original URL (might work in browser)
+      // Resolution failed — return an error result so this stream is filtered
+      // out by StreamResolver. Returning the original fastdlserver URL would
+      // cause a 403 error because fastdlserver.site returns 403/404 for
+      // direct access (it's a redirect page, not a file server).
       return [{
         url,
         format: Format.mp4,
         meta: { ...meta },
+        error: new Error('fastdlserver resolution failed — link may be expired or dead'),
       }];
     }
 
