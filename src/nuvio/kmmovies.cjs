@@ -54,17 +54,28 @@ function fetchText(url, extraHeaders) {
       });
     }
 
-    return gotScraping(url, {
-      timeout: { request: 25000 },
-      throwHttpErrors: false,
-      headers: headers,
-      followRedirect: true,
-    }).then(function (response) {
-      if (response.statusCode >= 400) {
-        throw new Error("HTTP " + response.statusCode + " for " + url);
-      }
-      return response.body || "";
-    });
+    // Retry up to 3 times — kmmovies.online has intermittent Cloudflare challenges
+    // that sometimes return 403. Retrying with http2: false usually works.
+    function attempt(tryNum) {
+      return gotScraping(url, {
+        timeout: { request: 25000 },
+        throwHttpErrors: false,
+        headers: headers,
+        followRedirect: true,
+        http2: false,
+      }).then(function (response) {
+        if (response.statusCode >= 400) {
+          if (tryNum < 3) {
+            console.log("[KMMovies] Got " + response.statusCode + " for " + url.slice(0, 60) + ", retrying (" + (tryNum + 1) + "/3)...");
+            return new Promise(function (resolve) { setTimeout(resolve, 2000); })
+              .then(function () { return attempt(tryNum + 1); });
+          }
+          throw new Error("HTTP " + response.statusCode + " for " + url);
+        }
+        return response.body || "";
+      });
+    }
+    return attempt(0);
   });
 }
 
