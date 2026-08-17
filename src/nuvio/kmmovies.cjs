@@ -105,7 +105,11 @@ function searchKMMovies(title) {
           if (titleNorm.indexOf(searchWords[w]) !== -1) { matched = true; break; }
         }
         if (matched) {
-          results.push({ url: link, title: postTitle });
+          results.push({
+            url: link,
+            title: postTitle,
+            content: (post.content && post.content.rendered) || ""
+          });
         }
       }
 
@@ -142,6 +146,7 @@ function findBestMatch(results, tmdbTitle, tmdbYear) {
   var best = scored[0];
   if (best && best.score >= 30) {
     console.log("[KMMovies] Matched: " + best.bare + " (score=" + best.score + ")");
+    // Return the full result object (includes url, title, content)
     return best.result;
   }
   return null;
@@ -260,8 +265,10 @@ function getStreams(tmdbId, type, season, episode) {
         if (!match) return [];
       console.log("[KMMovies] Best match: " + match.url);
 
-        return fetchText(match.url, { Referer: BASE_URL + "/" }).then(function (postHtml) {
-          var links = extractDownloadLinks(postHtml);
+        // Extract download links from the WP REST API post content directly
+        // (avoids fetching the post page which gets 403 from CF intermittently)
+        var postContent = match.content || "";
+        var links = extractDownloadLinks(postContent);
           if (!links.length) return [];
 
           return Promise.all(links.map(function (l) {
