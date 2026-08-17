@@ -249,7 +249,7 @@ function getStreams(tmdbId, type, season, episode) {
 
   return getTMDBInfo(tmdbId, type)
     .then(function (info) {
-      console.log("[KMMovies] TMDB result:", JSON.stringify(info));
+      
       if (!info || !info.title) return [];
       console.log("[KMMovies] TMDB: " + info.title + " (" + info.year + ")");
 
@@ -257,6 +257,7 @@ function getStreams(tmdbId, type, season, episode) {
         if (!results.length) return [];
         var match = findBestMatch(results, info.title, info.year);
         if (!match) return [];
+      console.log("[KMMovies] Best match: " + match.url);
 
         return fetchText(match.url, { Referer: BASE_URL + "/" }).then(function (postHtml) {
           var links = extractDownloadLinks(postHtml);
