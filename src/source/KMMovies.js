@@ -26,6 +26,7 @@ async function getGotFetch() {
     const { gotScraping } = await import('got-scraping');
     _gotFetch = async (url, options = {}) => {
       try {
+        const isManualRedirect = options.redirect === 'manual';
         const res = await gotScraping.get(url, {
           timeout: { request: options.timeout || 25000 },
           throwHttpErrors: false,
@@ -33,11 +34,14 @@ async function getGotFetch() {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             'Accept': '*/*',
           },
-          followRedirect: true,
+          followRedirect: !isManualRedirect,
           http2: false,
         });
+        // For manual redirects, return the redirect status + location header
+        // (got-scraping follows redirects by default, but with followRedirect:false
+        // it returns 3xx responses with the location header)
         return {
-          ok: res.statusCode < 400,
+          ok: isManualRedirect ? (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) : res.statusCode < 400,
           status: res.statusCode,
           statusText: res.statusMessage,
           headers: res.headers,
