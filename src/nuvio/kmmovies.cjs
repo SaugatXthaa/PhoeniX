@@ -30,8 +30,24 @@ var FULL_HEADERS = {
 // ===== HTTP =====
 // Uses native fetch() — the source wrapper overrides globalThis.fetch with
 // got-scraping (http2: false) for Cloudflare bypass on Render.
+// For kmmovies.online URLs, routes through the addon's /proxy endpoint
+// (set via KM_PROXY_URL env var) which reliably bypasses CF.
 function fetchText(url, extraHeaders) {
   var headers = Object.assign({}, { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', 'Accept': '*/*' }, extraHeaders || {});
+
+  // Route kmmovies.online requests through the addon's /proxy endpoint
+  // (set by the source wrapper via KM_PROXY_URL env var).
+  // This uses the main process's got-scraping instance which can bypass CF.
+  var proxyUrl = process.env.KM_PROXY_URL;
+  if (proxyUrl && url.indexOf("kmmovies") !== -1) {
+    var proxiedUrl = proxyUrl + '?url=' + encodeURIComponent(url);
+    return fetch(proxiedUrl, { headers: headers, redirect: "follow" })
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status + " for " + url + " (via proxy)");
+        return res.text();
+      });
+  }
+
   return fetch(url, { headers: headers, redirect: "follow" }).then(function (res) {
     if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
     return res.text();

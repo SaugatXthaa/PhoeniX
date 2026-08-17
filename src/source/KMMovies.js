@@ -105,18 +105,15 @@ export class KMMovies extends Source {
     if (!mod || typeof mod.getStreams !== 'function') return [];
 
     // Override globalThis.fetch with got-scraping (http2: false) for CF bypass.
-    // The scraper uses native fetch() which gets 403 from kmmovies.online on Render.
-    // got-scraping with http2: false bypasses CF (confirmed via /proxy endpoint).
+    // Also set KM_PROXY_URL so the scraper can route kmmovies.online requests
+    // through the addon's own /proxy endpoint (which reliably bypasses CF).
     const originalFetch = globalThis.fetch;
     const gotFetch = await getGotFetch();
     if (gotFetch) {
-      // Pre-warm got-scraping with a dummy request to kmmovies.online
-      // This establishes a TLS session that subsequent requests can reuse.
-      try {
-        await gotFetch('https://kmmovies.online/', {});
-      } catch { /* ignore warmup errors */ }
       globalThis.fetch = gotFetch;
     }
+    // Set the proxy URL so the scraper can use it for kmmovies.online
+    process.env.KM_PROXY_URL = ctx.hostUrl.href + 'proxy';
 
     const mediaType = tmdbId.season ? 'tv' : 'movie';
     let streams;
