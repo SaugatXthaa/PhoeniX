@@ -1,20 +1,10 @@
 // src/source/KMMovies.js
 // kmmovies.online — movies & TV series with direct Google Drive streams (up to 4K)
 //
-// Uses the KMMovies scraper (src/nuvio/kmmovies.cjs) which:
-//   1. Searches kmmovies.online/?s={title} (uses curl with full browser headers)
-//   2. Fetches post → extracts magiclinks.lol download links with quality/size
-//   3. Resolves each: magiclinks → hubcloud → gamerxyt → pixel → workers → googleusercontent
-//   4. Returns direct Google Drive download URLs (MKV/MP4)
-//
-// Supports: movies, TV series, up to 4K/2160p when available.
-//
-// Enriched metadata (like 4KHDHub):
-//   - height: 480, 720, 1080, 2160 (from quality string)
-//   - sourceType: 'BluRay' (KMMovies typically hosts BluRay rips)
-//   - bytes: file size (from [539.4MB] / [1.5GB] in heading)
-//   - countryCodes: [multi, hi, en] (Hindi-English dual audio)
-//   - title: movie/show title with quality + size label
+// The scraper uses native fetch() which gets 403 from kmmovies.online's
+// Cloudflare on Render. We override globalThis.fetch with got-scraping
+// (using http2: false, which bypasses CF on Render) before calling the scraper,
+// then restore it after.
 
 import { createRequire } from 'module';
 import path from 'path';
@@ -28,17 +18,40 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require_ = createRequire(import.meta.url);
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'kmmovies.cjs');
 
-// Cache the scraper module
-let _scraperMod = null;
-function getScraperModule() {
-  if (_scraperMod) return _scraperMod;
+// Override globalThis.fetch with got-scraping (http2: false) for CF bypass
+let _gotFetch = null;
+async function getGotFetch() {
+  if (_gotFetch) return _gotFetch;
   try {
-    _scraperMod = require_(PROVIDER_PATH);
+    const { gotScraping } = await import('got-scraping');
+    _gotFetch = async (url, options = {}) => {
+      try {
+        const res = await gotScraping.get(url, {
+          timeout: { request: options.timeout || 25000 },
+          throwHttpErrors: false,
+          headers: options.headers || {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+          },
+          followRedirect: true,
+          http2: false,
+        });
+        return {
+          ok: res.statusCode < 400,
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          headers: res.headers,
+          text: async () => res.body,
+          json: async () => JSON.parse(res.body),
+        };
+      } catch (e) {
+        return { ok: false, status: 0, statusText: e.message, headers: {}, text: async () => '', json: async () => null };
+      }
+    };
   } catch (e) {
-    console.error(`[kmmovies] failed to load scraper: ${e?.message || e}`);
-    return null;
+    console.error('[kmmovies] Failed to load got-scraping for fetch override:', e.message);
   }
-  return _scraperMod;
+  return _gotFetch;
 }
 
 // Parse quality string to height
@@ -87,6 +100,15 @@ export class KMMovies extends Source {
     }
     if (!mod || typeof mod.getStreams !== 'function') return [];
 
+    // Override globalThis.fetch with got-scraping (http2: false) for CF bypass.
+    // The scraper uses native fetch() which gets 403 from kmmovies.online on Render.
+    // got-scraping with http2: false bypasses CF (confirmed via /proxy endpoint).
+    const originalFetch = globalThis.fetch;
+    const gotFetch = await getGotFetch();
+    if (gotFetch) {
+      globalThis.fetch = gotFetch;
+    }
+
     const mediaType = tmdbId.season ? 'tv' : 'movie';
     let streams;
     try {
@@ -96,7 +118,10 @@ export class KMMovies extends Source {
       ]);
     } catch (e) {
       console.error(`[kmmovies] getStreams error: ${e?.message || e}`);
-      return [];
+      streams = null;
+    } finally {
+      // Always restore the original fetch
+      globalThis.fetch = originalFetch;
     }
 
     if (!Array.isArray(streams) || streams.length === 0) return [];
@@ -116,7 +141,6 @@ export class KMMovies extends Source {
       const height = parseHeight(s.quality);
       const fileSize = parseSize(s.size);
 
-      // Build display title like 4KHDHub format
       const qualityLabel = s.quality || (height ? `${height}p` : 'Download');
       const sizeLabel = s.size ? ` [${s.size}]` : '';
       const displayTitle = `${title} (KMMovies ${qualityLabel})${sizeLabel}`;

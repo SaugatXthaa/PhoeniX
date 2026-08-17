@@ -28,56 +28,13 @@ var FULL_HEADERS = {
 };
 
 // ===== HTTP =====
-// Use got-scraping for ALL requests — it handles Cloudflare bypass and
-// cookie management (via tough-cookie) on Render. Curl is not used because
-// it can't bypass CF on Render for kmmovies.online.
-var _gotScraping = null;
-async function getGotScraping() {
-  if (_gotScraping) return _gotScraping;
-  try {
-    var mod = await import("got-scraping");
-    _gotScraping = mod.gotScraping;
-    console.log("[KMMovies] got-scraping loaded:", typeof _gotScraping);
-  } catch (e) {
-    console.error("[KMMovies] Failed to load got-scraping:", e.message);
-  }
-  return _gotScraping;
-}
-
+// Uses native fetch() — the source wrapper overrides globalThis.fetch with
+// got-scraping (http2: false) for Cloudflare bypass on Render.
 function fetchText(url, extraHeaders) {
   var headers = Object.assign({}, { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', 'Accept': '*/*' }, extraHeaders || {});
-
-  return getGotScraping().then(function (gotScraping) {
-    if (!gotScraping) {
-      return fetch(url, { headers: headers, redirect: "follow" }).then(function (res) {
-        if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
-        return res.text();
-      });
-    }
-
-    // Retry up to 3 times — kmmovies.online has intermittent Cloudflare challenges
-    // that sometimes return 403. Retrying with http2: false usually works.
-    function attempt(tryNum) {
-      return gotScraping.get(url, {
-        timeout: { request: 25000 },
-        throwHttpErrors: false,
-        headers: headers,
-        followRedirect: true,
-        http2: false,
-      }).then(function (response) {
-        console.log("[KMMovies] Response: " + response.statusCode + " for " + url.slice(0, 60));
-        if (response.statusCode >= 400) {
-          if (tryNum < 3) {
-            console.log("[KMMovies] Got " + response.statusCode + " for " + url.slice(0, 60) + ", retrying (" + (tryNum + 1) + "/3)...");
-            return new Promise(function (resolve) { setTimeout(resolve, 2000); })
-              .then(function () { return attempt(tryNum + 1); });
-          }
-          throw new Error("HTTP " + response.statusCode + " for " + url);
-        }
-        return response.body || "";
-      });
-    }
-    return attempt(0);
+  return fetch(url, { headers: headers, redirect: "follow" }).then(function (res) {
+    if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
+    return res.text();
   });
 }
 
