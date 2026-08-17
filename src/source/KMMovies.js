@@ -76,8 +76,15 @@ export class KMMovies extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Load the scraper module (cached)
-    const mod = getScraperModule();
+    // Load the scraper module (delete cache to pick up changes)
+    let mod;
+    try {
+      delete require_.cache[require_.resolve(PROVIDER_PATH)];
+      mod = require_(PROVIDER_PATH);
+    } catch (e) {
+      console.error(`[kmmovies] failed to load scraper: ${e?.message || e}`);
+      return [];
+    }
     if (!mod || typeof mod.getStreams !== 'function') return [];
 
     const mediaType = tmdbId.season ? 'tv' : 'movie';
