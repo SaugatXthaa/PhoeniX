@@ -37,6 +37,7 @@ async function getGotScraping() {
   try {
     var mod = await import("got-scraping");
     _gotScraping = mod.gotScraping;
+    console.log("[KMMovies] got-scraping loaded:", typeof _gotScraping);
   } catch (e) {
     console.error("[KMMovies] Failed to load got-scraping:", e.message);
   }
@@ -64,6 +65,7 @@ function fetchText(url, extraHeaders) {
         followRedirect: true,
         http2: false,
       }).then(function (response) {
+        console.log("[KMMovies] Response: " + response.statusCode + " for " + url.slice(0, 60));
         if (response.statusCode >= 400) {
           if (tryNum < 3) {
             console.log("[KMMovies] Got " + response.statusCode + " for " + url.slice(0, 60) + ", retrying (" + (tryNum + 1) + "/3)...");
