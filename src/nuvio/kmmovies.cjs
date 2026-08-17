@@ -40,6 +40,7 @@ function fetchText(url, extraHeaders) {
   // This uses the main process's got-scraping instance which can bypass CF.
   var proxyUrl = process.env.KM_PROXY_URL;
   if (proxyUrl && url.indexOf("kmmovies") !== -1) {
+    console.log("[KMMovies] Routing through proxy: " + url.slice(0, 60));
     var proxiedUrl = proxyUrl + '?url=' + encodeURIComponent(url);
     return fetch(proxiedUrl, { headers: { 'Accept': 'application/json,text/html,*/*' }, redirect: "follow" })
       .then(function (res) {
