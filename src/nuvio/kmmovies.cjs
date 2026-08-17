@@ -255,7 +255,6 @@ function getStreams(tmdbId, type, season, episode) {
 
   return getTMDBInfo(tmdbId, type)
     .then(function (info) {
-      
       if (!info || !info.title) return [];
       console.log("[KMMovies] TMDB: " + info.title + " (" + info.year + ")");
 
@@ -263,39 +262,38 @@ function getStreams(tmdbId, type, season, episode) {
         if (!results.length) return [];
         var match = findBestMatch(results, info.title, info.year);
         if (!match) return [];
-      console.log("[KMMovies] Best match: " + match.url);
+        console.log("[KMMovies] Best match: " + match.url);
 
         // Extract download links from the WP REST API post content directly
-        // (avoids fetching the post page which gets 403 from CF intermittently)
         var postContent = match.content || "";
         var links = extractDownloadLinks(postContent);
-          if (!links.length) return [];
+        if (!links.length) return [];
 
-          return Promise.all(links.map(function (l) {
-            return resolveStreamUrl(l.url)
-              .then(function (gdriveUrl) {
-                return Object.assign({}, l, { gdriveUrl: gdriveUrl });
-              })
-              .catch(function (err) {
-                console.log("[KMMovies] Failed to resolve " + l.url + ": " + err.message);
-                return null;
-              });
-          })).then(function (resolved) {
-            return resolved.filter(function (r) { return r !== null && r.gdriveUrl; });
-          });
-        }).then(function (resolvedLinks) {
-          return resolvedLinks.map(function (l) {
-            return {
-              name: PROVIDER_NAME + " - " + l.quality + (l.size ? " [" + l.size + "]" : ""),
-              title: info.title + " (" + info.year + ") " + l.quality + (l.size ? " " + l.size : ""),
-              url: l.gdriveUrl,
-              quality: l.quality,
-              size: l.size,
-              type: "video/mkv",
-              headers: { "User-Agent": USER_AGENT },
-              behaviorHints: { bingeGroup: "kmmovies-" + l.quality }
-            };
-          });
+        // Resolve each magiclinks URL to a direct GDrive URL
+        return Promise.all(links.map(function (l) {
+          return resolveStreamUrl(l.url)
+            .then(function (gdriveUrl) {
+              return Object.assign({}, l, { gdriveUrl: gdriveUrl });
+            })
+            .catch(function (err) {
+              console.log("[KMMovies] Failed to resolve " + l.url + ": " + err.message);
+              return null;
+            });
+        })).then(function (resolved) {
+          return resolved.filter(function (r) { return r !== null && r.gdriveUrl; });
+        });
+      }).then(function (resolvedLinks) {
+        return resolvedLinks.map(function (l) {
+          return {
+            name: PROVIDER_NAME + " - " + l.quality + (l.size ? " [" + l.size + "]" : ""),
+            title: info.title + " (" + info.year + ") " + l.quality + (l.size ? " " + l.size : ""),
+            url: l.gdriveUrl,
+            quality: l.quality,
+            size: l.size,
+            type: "video/mkv",
+            headers: { "User-Agent": USER_AGENT },
+            behaviorHints: { bingeGroup: "kmmovies-" + l.quality }
+          };
         });
       });
     })
