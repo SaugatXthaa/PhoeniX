@@ -38,7 +38,7 @@ function fetchText(url, extraHeaders) {
   // Route kmmovies.online requests through the addon's /proxy endpoint
   // (set by the source wrapper via KM_PROXY_URL env var).
   // This uses the main process's got-scraping instance which can bypass CF.
-  var proxyUrl = process.env.KM_PROXY_URL;
+  var proxyUrl = null; // Disabled — WP REST API works directly with gotFetch (http2: false)
   if (proxyUrl && url.indexOf("kmmovies") !== -1) {
     console.log("[KMMovies] Routing through proxy: " + url.slice(0, 60));
     var proxiedUrl = proxyUrl + '?url=' + encodeURIComponent(url);
