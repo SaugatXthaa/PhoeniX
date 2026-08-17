@@ -30,9 +30,10 @@ async function getGotFetch() {
         const res = await gotScraping.get(url, {
           timeout: { request: options.timeout || 25000 },
           throwHttpErrors: false,
-          headers: options.headers || {
+          headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             'Accept': '*/*',
+            ...(options.headers || {}),
           },
           followRedirect: !isManualRedirect,
           http2: false,
