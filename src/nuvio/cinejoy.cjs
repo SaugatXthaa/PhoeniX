@@ -1,12 +1,16 @@
 // CineJoy Scraper for Nuvio Local Scrapers
-// Written 2026-08-18 — returns HLS m3u8 streams via HdHub addon's resolve endpoint.
+// ---------------------------------------------------------------
+// Returns HLS m3u8 streams via HdHub addon's /resolve/cj/ endpoint.
 //
 // FLOW:
 //   1. Get TMDB info (title, year, type)
-//   2. Return HLS streams using the HdHub addon's /resolve/cj/ endpoint
-//   3. Stream URL: https://hdhub.thevolecitor.qzz.io/resolve/cj/tmdb/{tmdbId}/{quality}.m3u8
-//   4. The addon server handles the Noise protocol handshake with api.shegu.st
-//      and returns a valid m3u8 playlist from info.movieboxnoob.cc
+//   2. For each quality (4K HEVC, 1080p, 720p, 480p), build the resolve URL
+//   3. HEAD-check each URL in parallel (200ms-1s total)
+//   4. Return only the qualities that actually exist for this title
+//
+// The addon server (hdhub.thevolecitor.qzz.io) handles the Noise-protocol
+// handshake with api.shegu.st and returns a valid m3u8 playlist from
+// info.movieboxnoob.cc.
 //
 // Qualities: 4K HEVC, 1080p, 720p, 480p
 // No Playwright, no FlareSolverr — uses plain fetch().
@@ -38,6 +42,24 @@ function getTMDBInfo(tmdbId, type) {
     .catch(function () { return null; });
 }
 
+// Quick GET with short timeout to verify the resolve URL returns a valid m3u8.
+// We don't use HEAD because the addon server may not handle HEAD on /resolve/cj/.
+// We grab only the first 4 bytes to check for the #EXTM3U magic.
+function validateStreamUrl(url) {
+  return fetch(url, {
+    method: "GET",
+    headers: { "User-Agent": USER_AGENT, "Range": "bytes=0-3" },
+    signal: AbortSignal.timeout ? AbortSignal.timeout(4000) : undefined
+  })
+    .then(function (r) {
+      if (!r.ok) return false;
+      return r.text().then(function (body) {
+        return body && body.indexOf("#EXTM3U") === 0;
+      });
+    })
+    .catch(function () { return false; });
+}
+
 function getStreams(tmdbId, type, season, episode) {
   var isMovie = type !== "tv";
   console.log("[CineJoy] Request: tmdb=" + tmdbId + " type=" + type +
@@ -51,7 +73,6 @@ function getStreams(tmdbId, type, season, episode) {
       }
       console.log("[CineJoy] TMDB: " + info.title + " (" + info.year + ")");
 
-      // Build stream URLs for each quality
       var qualities = [
         { quality: "2160p", suffix: "4khevc", name: "4K HEVC" },
         { quality: "1080p", suffix: "1080p", name: "1080p" },
@@ -59,7 +80,8 @@ function getStreams(tmdbId, type, season, episode) {
         { quality: "480p", suffix: "480p", name: "480p" }
       ];
 
-      var streams = qualities.map(function (q) {
+      // Build candidate streams first
+      var candidates = qualities.map(function (q) {
         var streamUrl = RESOLVE_BASE + "/" + tmdbId + "/" + q.suffix + ".m3u8";
         var titleLine = info.title;
         if (!isMovie) {
@@ -81,8 +103,26 @@ function getStreams(tmdbId, type, season, episode) {
         };
       });
 
-      console.log("[CineJoy] Returning " + streams.length + " streams");
-      return streams;
+      // Validate all URLs in parallel
+      return Promise.all(
+        candidates.map(function (s) {
+          return validateStreamUrl(s.url).then(function (ok) {
+            return { stream: s, ok: ok };
+          });
+        })
+      ).then(function (results) {
+        var streams = results
+          .filter(function (r) { return r.ok; })
+          .map(function (r) { return r.stream; });
+
+        if (streams.length === 0) {
+          console.log("[CineJoy] No playable qualities — addon server may be down");
+        } else {
+          var labels = streams.map(function (s) { return s.quality; }).join(", ");
+          console.log("[CineJoy] Returning " + streams.length + " streams: " + labels);
+        }
+        return streams;
+      });
     })
     .catch(function (err) {
       console.log("[CineJoy] Error: " + (err && err.message ? err.message : err));
