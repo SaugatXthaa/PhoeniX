@@ -1,13 +1,21 @@
 // src/source/Cinejoy.js
-// cinejoy — movies/series via HdHub addon's resolve endpoint (HLS m3u8)
+// cinejoy — movies/series via direct Noise protocol to api.shegu.st
 //
-// Uses the Nuvio provider (src/nuvio/cinejoy.cjs) which returns HLS m3u8 URLs
-// from hdhub.thevolecitor.qzz.io/resolve/cj/tmdb/{tmdbId}/{quality}.m3u8.
-// The addon server handles the Noise protocol handshake with api.shegu.st
-// and returns valid m3u8 playlists from info.movieboxnoob.cc.
+// Uses the Nuvio provider (src/nuvio/cinejoy.cjs) which implements the
+// lumen-gate-v2 protocol with embedded crush.wasm. Returns HLS m3u8 and
+// direct file URLs from 6 servers:
+//   Lisbon (4K HDR HEVC), Solara (multi-quality direct CDN),
+//   Athens/Castle (synthetic HLS), Joy, Sakura, Canaias
 //
-// Qualities: 4K HEVC, 1080p, 720p, 480p
-// No Referer needed — m3u8 URLs are directly playable.
+// Enriches stream titles with metadata markers (quality, sourceType, codec,
+// HDR, audio) that StreamResolver.enrichMeta parses for display — same
+// format as 4KHDHub.
+//
+// Stream URLs from:
+//   - info.movieboxnoob.cc/playlist/*.m3u8 (Lisbon — HLS)
+//   - lol.movieboxnoob.cc/content?v=... (Solara — direct file CDN)
+//   - api.shegu.st/synthetic/*/master.m3u8 (Athens/Castle — synthetic HLS)
+// No Referer needed for playback.
 
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -19,6 +27,71 @@ import { buildStreamResults, callNuvioProvider } from './nuvioHelpers.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'cinejoy.cjs');
 
+// Enrich the scraper's stream titles with metadata markers that
+// StreamResolver.enrichMeta() parses for display.
+//
+// The scraper returns titles like:
+//   "The Dark Knight (2008) [Lisbon server]"
+//   "The Dark Knight (2008) [Solara 1080]"
+//
+// We enrich them to:
+//   "The Dark Knight (2008) [Lisbon server] 2160p WEB-DL HEVC HDR English"
+//   "The Dark Knight (2008) [Solara server] 1080p WEB-DL English"
+//
+// enrichMeta then parses: quality (2160p), sourceType (WebDL), codec (HEVC),
+// HDR (HDR), audio (English) — same format as 4KHDHub.
+function enrichStreamTitles(streams, title) {
+  if (!Array.isArray(streams)) return streams;
+
+  return streams.map(s => {
+    if (!s || !s.url) return s;
+
+    // Parse the server name from the scraper's title: "[Lisbon server]"
+    // or "[Solara 1080]" etc.
+    const serverMatch = (s.title || '').match(/\[([^\]]+)\s+server/i);
+    const serverName = serverMatch ? serverMatch[1].trim() : '';
+    const quality = s.quality || '';
+
+    // Build metadata markers based on server + quality
+    // Lisbon = 4K HDR HEVC (UHD streaming rip)
+    // Solara = multi-quality direct CDN (WebDL)
+    // Athens/Castle = synthetic HLS (WebDL)
+    // Others = generic WebDL
+    let markers = [];
+
+    // Quality marker (2160p, 1080p, 720p, 480p)
+    if (quality) markers.push(quality);
+
+    // Source type — all Cinejoy streams are streaming rips (WebDL)
+    markers.push('WEB-DL');
+
+    // Codec — Lisbon 4K uses HEVC, others typically H264
+    if (serverName === 'Lisbon' && quality === '2160p') {
+      markers.push('HEVC');
+      markers.push('HDR');  // Lisbon 4K is HDR
+    } else if (quality === '2160p') {
+      markers.push('HEVC');
+    } else {
+      markers.push('x264');
+    }
+
+    // Audio — Cinejoy streams are English (multi-audio for some)
+    markers.push('English');
+
+    // Build the enriched title
+    // Format: "{title} [{server} server] {quality} WEB-DL {codec} {hdr} {audio}"
+    // The server tag is already in the scraper's title, so we append markers
+    const baseTitle = s.title || title;
+    const enrichedTitle = baseTitle + ' ' + markers.join(' ');
+
+    return {
+      ...s,
+      title: enrichedTitle,
+      name: s.name || 'Cinejoy',
+    };
+  });
+}
+
 export class Cinejoy extends Source {
   constructor(fetcher) {
     super();
@@ -26,7 +99,7 @@ export class Cinejoy extends Source {
     this.label = 'Cinejoy';
     this.contentTypes = ['movie', 'series'];
     this.countryCodes = [CountryCode.multi, CountryCode.en];
-    this.baseUrl = 'https://hdhub.thevolecitor.qzz.io';
+    this.baseUrl = 'https://api.shegu.st';
     this.fetcher = fetcher;
     this.ttl = 10 * 60 * 1000; // 10min
   }
@@ -45,8 +118,12 @@ export class Cinejoy extends Source {
       timeoutMs: 25000,
     });
 
+    // Enrich stream titles with metadata markers before buildStreamResults
+    // so StreamResolver.enrichMeta can parse sourceType/codec/HDR/audio
+    const enrichedStreams = enrichStreamTitles(streams, title);
+
     return buildStreamResults({
-      streams,
+      streams: enrichedStreams,
       title,
       sourceId: this.id,
       sourceLabel: this.label,
