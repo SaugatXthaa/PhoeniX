@@ -2,16 +2,20 @@
 // watchanimeworld.top — anime with multi-language streams (Hindi, Tamil, Telugu, etc.)
 //
 // Flow:
-//   1. Search: /?s={title} → find /anime/{slug}/
-//   2. Anime page: find episode links /episode/{slug}-{season}x{episode}/
+//   1. Search: /?s={title} → find /series/{slug}/ or /movies/{slug}/
+//   2. For series: episode URL /episode/{slug}-{season}x{episode}/
 //   3. Episode page: find iframe to play.zephyrix.top/video/{hash}
 //   4. FirePlayer API: POST /player/index.php?data={hash}&do=getVideo
 //      → returns { videoSource: "https://play.zephyrix.top/cdn/hls/{hash}/master.m3u8?..." }
 //   5. HLS URL requires Referer: https://play.zephyrix.top/ to play
 //
 // Supports sub + dub via multiple audio tracks in the HLS playlist.
-// Also has Server 2 (ABYSS) with language-specific short.icu links — but
-// short.icu is DNS-dead, so only Server 1 (zephyrix) is used.
+//
+// IMPORTANT: The site's search treats colons in titles as separators, so
+// searching for "Demon Slayer: Kimetsu no Yaiba" only returns the movie
+// (which contains the full subtitle in its title) — never the series.
+// We try multiple query variants: full title, main title before colon,
+// and title with colons replaced by spaces.
 
 import * as cheerio from 'cheerio';
 import { CountryCode, Format } from '../types.js';
@@ -27,6 +31,22 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 // Normalize for fuzzy matching
 const normalize = (s) => (s || '').toLowerCase()
   .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+// Build a list of search queries to try, in order:
+//   1. Full TMDB title
+//   2. Main title only (before first colon) — e.g. "Demon Slayer"
+//   3. Title with colons replaced by spaces
+const buildQueries = (title) => {
+  const queries = [title];
+  const colonIdx = title.indexOf(':');
+  if (colonIdx > 0) {
+    const main = title.substring(0, colonIdx).trim();
+    if (main) queries.push(main);
+    const joined = title.replace(/:/g, ' ').replace(/\s+/g, ' ').trim();
+    if (joined && joined !== title) queries.push(joined);
+  }
+  return [...new Set(queries.filter(Boolean))];
+};
 
 export class AnimeWorld extends Source {
   constructor(fetcher) {
@@ -45,13 +65,17 @@ export class AnimeWorld extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Step 1: Search for the anime
-    const animeUrl = await this.findAnime(ctx, name);
+    // Step 1: Search for the anime (strict type filter — series for TV, movies for movies)
+    const wantedType = tmdbId.season ? 'series' : 'movies';
+    const animeUrl = await this.findAnime(ctx, name, wantedType);
     if (!animeUrl) return [];
 
-    // Step 2: Find episode URL
-    const episodeUrl = await this.findEpisode(ctx, animeUrl, tmdbId, name);
-    if (!episodeUrl) return [];
+    // Step 2: Find episode URL (series only — movies skip directly to stream extraction)
+    let episodeUrl = animeUrl;
+    if (tmdbId.season) {
+      episodeUrl = await this.findEpisode(ctx, animeUrl, tmdbId);
+      if (!episodeUrl) return [];
+    }
 
     // Step 3: Fetch episode page → find play.zephyrix.top embed URL
     const playerHash = await this.findPlayerHash(ctx, episodeUrl);
@@ -94,51 +118,91 @@ export class AnimeWorld extends Source {
     } catch { return null; }
   }
 
-  // Search for anime by name
-  async findAnime(ctx, name) {
-    // First try direct URL (more reliable than search)
-    // Normalize: replace special chars (ū→u, é→e, etc.) before slugifying
-    const slug = name.toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip diacritics
-      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const directUrl = `${BASE_URL}/anime/${slug}/`;
-    const testHtml = await this.fetchPage(directUrl);
-    if (testHtml && testHtml.includes('episode')) return directUrl;
-
-    // Fallback: search
-    const searchUrl = `${BASE_URL}/?s=${encodeURIComponent(name)}`;
-    const html = await this.fetchPage(searchUrl);
-    if (!html) return null;
-
-    const $ = cheerio.load(html);
+  // Search for anime by name — tries multiple query variants and only
+  // accepts results of the correct type (series for TV, movies for movies).
+  async findAnime(ctx, name, wantedType) {
+    const queries = buildQueries(name);
     const nameNorm = normalize(name);
 
-    // Use scoring to avoid matching wrong anime (e.g. "Naruto" matching "Naruto Shippuden")
-    let bestMatch = null;
-    let bestScore = 0;
-    $('a[href*="/anime/"]').each((_i, el) => {
-      const href = $(el).attr('href');
-      const text = normalize($(el).text());
-      if (!href || text.length <= 3) return;
+    for (const query of queries) {
+      const searchUrl = `${BASE_URL}/?s=${encodeURIComponent(query)}`;
+      const html = await this.fetchPage(searchUrl);
+      if (!html) continue;
 
-      let score = 0;
-      if (text === nameNorm) score = 100;
-      else if (text.includes(nameNorm) || nameNorm.includes(text)) {
-        score = Math.min(text.length, nameNorm.length) / Math.max(text.length, nameNorm.length) * 90;
-      }
-      if (score > bestScore) {
-        bestScore = score;
-        bestMatch = href;
-      }
-    });
+      const $ = cheerio.load(html);
 
-    // Only accept matches with score >= 60
-    if (bestMatch && bestScore >= 60) return bestMatch;
+      // Collect all results of the correct type with scoring
+      const candidates = [];
+      const seen = new Set();
+      $('a[href]').each((_i, el) => {
+        const href = $(el).attr('href') || '';
+        // Match /series/{slug}/ or /movies/{slug}/
+        const match = href.match(new RegExp(`${BASE_URL.replace(/\./g, '\\.')}/(series|movies)/([^/?#]+)/?`));
+        if (!match) return;
+        const type = match[1];
+        const slug = match[2];
+        if (type !== wantedType) return;
+        if (slug === 'page' || seen.has(slug)) return;
+        seen.add(slug);
+
+        // The <a> tag itself is often empty (class="lnk-blk") — the title is
+        // in the enclosing <article>'s <h1>/<h2>/<h3> or in the <img alt>.
+        // Walk up to the nearest <article> and look for a heading.
+        const $article = $(el).closest('article');
+        let text = '';
+        if ($article.length > 0) {
+          text = $article.find('h1, h2, h3, h4, h5, h6').first().text().trim()
+                || $article.find('img').first().attr('alt')?.replace(/^Image\s+/i, '').trim()
+                || '';
+        }
+        // Fallback: the <a> tag's own text
+        if (!text) text = $(el).text().trim();
+        // Fallback: title attr
+        if (!text) text = $(el).attr('title') || '';
+
+        const textNorm = normalize(text);
+        if (!textNorm || textNorm.length <= 3) return;
+
+        let score = 0;
+        if (textNorm === nameNorm) score = 100;
+        else if (nameNorm.startsWith(textNorm) && textNorm.length >= 6) score = 92;
+        else if (textNorm.includes(nameNorm)) score = 90;
+        else if (nameNorm.includes(textNorm) && textNorm.length >= 6) score = 85;
+        else {
+          // Word-overlap scoring — count how many words match
+          const nameWords = nameNorm.split(' ').filter(w => w.length > 2);
+          const textWords = textNorm.split(' ').filter(w => w.length > 2);
+          if (nameWords.length > 0 && textWords.length > 0) {
+            const common = nameWords.filter(w => textWords.includes(w));
+            const overlap = common.length / Math.max(nameWords.length, textWords.length);
+            if (overlap >= 0.5) score = overlap * 80;
+          }
+        }
+
+        if (score > 0) {
+          candidates.push({ url: href, score, text: textNorm, slug });
+        }
+      });
+
+      if (candidates.length === 0) {
+        // No matches for this query — try next query variant
+        continue;
+      }
+
+      // Sort by score descending — best match first
+      candidates.sort((a, b) => b.score - a.score);
+
+      // Accept the best match if score >= 40
+      if (candidates[0].score >= 40) {
+        return candidates[0].url;
+      }
+    }
+
     return null;
   }
 
   // Find episode URL from anime page
-  async findEpisode(ctx, animeUrl, tmdbId, name) {
+  async findEpisode(ctx, animeUrl, tmdbId) {
     const html = await this.fetchPage(animeUrl);
     if (!html) return null;
 

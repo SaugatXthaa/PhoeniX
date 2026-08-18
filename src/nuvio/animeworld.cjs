@@ -30,23 +30,59 @@ function httpPost(url, body, headers) {
   })
 }
 
+// Build a list of search queries to try, in order:
+//   1. Full TMDB title (e.g. "Demon Slayer: Kimetsu no Yaiba")
+//   2. Main title only — before the first colon (e.g. "Demon Slayer")
+//      The watchanimeworld.top search treats colons as separators, so the
+//      full title with subtitle only matches the movie (which contains the
+//      full subtitle in its title) but never the series (which is just
+//      "Demon Slayer" without the subtitle).
+//   3. Title with colons replaced by spaces
+function buildQueries(title) {
+  var queries = [title]
+  var colonIdx = title.indexOf(':')
+  if (colonIdx > 0) {
+    var main = title.substring(0, colonIdx).trim()
+    if (main) queries.push(main)
+    var joined = title.replace(/:/g, ' ').replace(/\s+/g, ' ').trim()
+    if (joined && joined !== title) queries.push(joined)
+  }
+  var seen = {}
+  return queries.filter(function(q) { if (!q || seen[q]) return false; seen[q] = true; return true })
+}
+
 function searchSite(title, mediaType) {
-  var url = BASE + '/?s=' + encodeURIComponent(title)
-  return httpGet(url, { 'Referer': BASE + '/' })
-    .then(function(html) {
-      var results = []
-      var re = /href="(https:\/\/watchanimeworld.top\/(series|movies)\/([^\/\"]+)\/)"/g
-      var m
-      while ((m = re.exec(html)) !== null) {
-        var link = m[1], type = m[2], slug = m[3]
-        if (slug && slug !== 'page') {
-          results.push({ url: link, type: type, slug: slug })
+  var queries = buildQueries(title)
+  var wantedType = mediaType === 'movie' ? 'movies' : 'series'
+
+  // Try queries sequentially — stop at the first one that yields at least
+  // one result of the correct type.
+  function tryQuery(idx) {
+    if (idx >= queries.length) return Promise.resolve([])
+    var query = queries[idx]
+    var url = BASE + '/?s=' + encodeURIComponent(query)
+    return httpGet(url, { 'Referer': BASE + '/' })
+      .then(function(html) {
+        var results = []
+        var re = /href="(https:\/\/watchanimeworld.top\/(series|movies)\/([^\/\"]+)\/)"/g
+        var m
+        while ((m = re.exec(html)) !== null) {
+          var link = m[1], type = m[2], slug = m[3]
+          if (slug && slug !== 'page') {
+            results.push({ url: link, type: type, slug: slug })
+          }
         }
-      }
-      return results.filter(function(r) {
-        return mediaType === 'movie' ? r.type === 'movies' : r.type === 'series'
+        // Strict type filter — only keep results of the correct type
+        var filtered = results.filter(function(r) { return r.type === wantedType })
+        if (filtered.length === 0) {
+          // No results of correct type — try next query variant
+          return tryQuery(idx + 1)
+        }
+        return filtered
       })
-    })
+  }
+
+  return tryQuery(0)
 }
 
 function getEpisodeUrl(seriesUrl, season, episode) {
