@@ -1,4 +1,4 @@
-ROLLBACK POINT — recorded before anime + movie source investigation
+ROLLBACK POINT — before anime + movie source fixes
 Date: $(date -u)
-Branch: main
+Branch: $(git branch --show-current)
 HEAD: $(git rev-parse HEAD)
