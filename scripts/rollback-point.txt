@@ -1,0 +1,16 @@
+ROLLBACK POINT — recorded before HubExtractor / 4khdhub_one.cjs changes
+Date: Tue Aug 18 12:42:07 UTC 2026
+Branch: main
+HEAD: a595c462b9fe620b04889b8637f87301b8b4f602
+HEAD subject: 932c1f0a-a34f-43d1-b89e-67cd768b7da6
+
+=== git status at rollback point ===
+ m research/sootio-stremio-addon
+ m research/stremify
+ m research/webstreamr
+?? scripts/dump_hubdrive.py
+?? scripts/inspect_4khdhub_post.py
+?? scripts/inspect_neodrive.py
+?? scripts/rollback-point.txt
+?? scripts/trace_hubdrive.py
+?? tool-results/read_1787056609332_2d362ceef5c0.txt
