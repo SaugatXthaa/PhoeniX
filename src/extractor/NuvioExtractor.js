@@ -34,6 +34,14 @@ const NUVIO_SOURCE_IDS = new Set([
   'zinkmovies',
   // 1Embed — movies/TV HLS via 1embed.cc API, requires Referer: 1embed.cc
   'oneembed',
+  // Re-added sources (from uploaded Nuvio scrapers):
+  // zxcstream — embed URLs from player.zxcstream.xyz (route through /proxy)
+  // cinejoy — HLS m3u8 from hdhub.thevolecitor.qzz.io (direct, no Referer)
+  // animezey — anime HLS from workers.dev (direct)
+  // uhdmovies — movies from googleusercontent (Referer: driveseed.org)
+  // NOTE: hdhub4u is NOT here — its hubcdn/hubcloud URLs are handled by
+  // HubExtractor/HubCloud downstream, not NuvioExtractor.
+  'zxcstream', 'cinejoy', 'animezey', 'uhdmovies',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

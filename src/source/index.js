@@ -77,6 +77,12 @@ import { Movies4u } from './Movies4u.js';
 import { DahmerMovies } from './DahmerMovies.js';
 import { DahmerMovies4k } from './DahmerMovies4k.js';
 import { PlayImdb } from './PlayImdb.js';
+// Re-added sources (from uploaded Nuvio scrapers — each with dedicated source file)
+import { ZXCStream } from './ZXCStream.js';
+import { Cinejoy } from './Cinejoy.js';
+import { AnimeZeY } from './AnimeZeY.js';
+import { UHDMovies } from './UHDMovies.js';
+import { HDHub4u } from './HDHub4u.js';
 // Nuvio provider sources — Batch 2 (each has its own dedicated source file)
 import { VidEasy } from './VidEasy.js';
 import { AnikotoTV } from './AnikotoTV.js';
@@ -194,6 +200,17 @@ export const createSources = (fetcher) => {
     new DahmerMovies4k(fetcher),
     // playimdb — movies/TV HLS (scalableimpactgroup.site, 1080p)
     new PlayImdb(fetcher),
+    // ─── Re-added sources (from uploaded Nuvio scrapers) ───
+    // zxcstream — movies/series/anime via player.zxcstream.xyz embed URLs
+    new ZXCStream(fetcher),
+    // cinejoy — movies/series via HdHub addon resolve endpoint (HLS m3u8)
+    new Cinejoy(fetcher),
+    // animezey — anime-only sub+dub (workers.dev)
+    new AnimeZeY(fetcher),
+    // uhdmovies — movies-only (googleusercontent, 4K/1080p)
+    new UHDMovies(fetcher),
+    // hdhub4u — movies/series via hubcdn/hubcloud/pixeldrain download links
+    new HDHub4u(fetcher),
     // ─── Nuvio provider sources — Batch 2 ───
     // videasy — movies/TV HLS (moon.ironwallnet.net, 10 speedracelight servers, Referer: vidking.net)
     new VidEasy(fetcher),
