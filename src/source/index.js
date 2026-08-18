@@ -13,7 +13,6 @@ import { Eurostreaming } from './Eurostreaming.js';
 import { Fmovies } from './Fmovies.js';
 import { FourKHDHub } from './FourKHDHub.js';
 import { FrenchCloud } from './FrenchCloud.js';
-import { HDHub4u } from './HDHub4u.js';
 import { MegaKino } from './MegaKino.js';
 import { MeineCloud } from './MeineCloud.js';
 import { MostraGuarda } from './MostraGuarda.js';
@@ -51,9 +50,7 @@ import { NowHDTime } from './NowHDTime.js';
 import { CineFreak } from './CineFreak.js';
 import { AniVault } from './AniVault.js';
 import { AniPriv8 } from './AniPriv8.js';
-import { ZXCStream } from './ZXCStream.js';
 import { HDGharTV } from './HDGharTV.js';
-import { Cinejoy } from './Cinejoy.js';
 import { Pantyflix } from './Pantyflix.js';
 import { AnimeGG } from './AnimeGG.js';
 import { Peckle } from './Peckle.js';
@@ -80,10 +77,7 @@ import { Movies4u } from './Movies4u.js';
 import { DahmerMovies } from './DahmerMovies.js';
 import { DahmerMovies4k } from './DahmerMovies4k.js';
 import { PlayImdb } from './PlayImdb.js';
-import { AnimeZeY } from './AnimeZeY.js';
 // Nuvio provider sources — Batch 2 (each has its own dedicated source file)
-import { UHDMovies } from './UHDMovies.js';
-import { VidLove } from './VidLove.js';
 import { VidEasy } from './VidEasy.js';
 import { AnikotoTV } from './AnikotoTV.js';
 import { VixSrc2 } from './VixSrc2.js';
@@ -99,7 +93,6 @@ export const createSources = (fetcher) => {
   return [
     // multi
     new FourKHDHub(fetcher),
-    new HDHub4u(fetcher),
     new VidSrc(),
     new Vidzee(fetcher),
     new MovieBox(fetcher),
@@ -163,17 +156,12 @@ export const createSources = (fetcher) => {
     // filmeonlinehd.digital — Hindi movies/series via linksdrive → HubCloud/GDFlix
     // cinefreak.net — movies/series/anime/kdrama → generate.php → r2.dev direct MKV
     new CineFreak(fetcher),
-    // cinejoy.to — movies/series via new lumen-gate-v1 protocol (4K/1080p/720p/360p)
-    new Cinejoy(fetcher),
     // anivault.co — anime sub/dub via AniVault API (AnimeHeaven MP4 + Anikoto HLS)
     new AniVault(fetcher),
     // anipriv8.online — anime sub/dub via AniPriv8 pipeline API (5 providers)
     new AniPriv8(fetcher),
-    // zxcstream.xyz — movies/series/anime/kdrama via 7 ZXC backend servers (sub/dub)
-    new ZXCStream(fetcher),
     // hdghartv.cc — movies/series/anime with multi-audio HLS (Hindi/English/Tamil/Telugu)
     new HDGharTV(fetcher),
-    // cinejoy.to — movies/series via shegu.st encrypted API + scrypt PoW (4K/1080p/720p/360p)
     // pantyflix.org — movies/series/anime via /api/streamrip/download (direct MP4/MKV)
     new Pantyflix(fetcher),
     // animegg.org — anime sub+dub direct MP4 (720p/1080p)
@@ -206,13 +194,7 @@ export const createSources = (fetcher) => {
     new DahmerMovies4k(fetcher),
     // playimdb — movies/TV HLS (scalableimpactgroup.site, 1080p)
     new PlayImdb(fetcher),
-    // animezey — anime-only sub+dub (workers.dev, movies don't work)
-    new AnimeZeY(fetcher),
     // ─── Nuvio provider sources — Batch 2 ───
-    // uhdmovies — movies-only (googleusercontent, 4K/1080p, Referer: driveseed.org)
-    new UHDMovies(fetcher),
-    // vidlove — movies/TV HLS (ballerinacappuccino..., 1080p, Referer: player.vidlove.cc)
-    new VidLove(fetcher),
     // videasy — movies/TV HLS (moon.ironwallnet.net, 10 speedracelight servers, Referer: vidking.net)
     new VidEasy(fetcher),
     // anikototv — anime-only sub+dub (megap.akirax.buzz, Referer: megaplay.buzz)

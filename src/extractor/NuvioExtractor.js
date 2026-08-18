@@ -23,15 +23,13 @@ import { Extractor } from './Extractor.js';
 // Nuvio source IDs handled by this extractor
 const NUVIO_SOURCE_IDS = new Set([
   'cineby', 'desiflix', 'goated', 'hindmoviez', 'movieblast',
-  'movies4u', 'dahmermovies', 'dahmermovies4k', 'playimdb', 'animezey',
-  // Batch 2: uhdmovies, vidlove, videasy, anikototv, vixsrc2, animesalt,
+  'movies4u', 'dahmermovies', 'dahmermovies4k', 'playimdb',
+  // Batch 2: videasy, anikototv, vixsrc2, animesalt,
   // animeworldindia, animesdigital
-  'uhdmovies', 'vidlove', 'videasy', 'anikototv', 'vixsrc2',
+  'videasy', 'anikototv', 'vixsrc2',
   'animesalt', 'animeworldindia', 'animesdigital',
   // AniChan — anime sub+dub HLS via AniList ID + anichan.net API
   'anichan',
-  // Cinejoy — movies/series via lumen-gate-v1 protocol, direct HLS on movieboxnoob.cc
-  'cinejoy',
   // ZinkMovies — movies/series via gemma416okl.com API, HLS on rasta428jem.com
   'zinkmovies',
   // 1Embed — movies/TV HLS via 1embed.cc API, requires Referer: 1embed.cc

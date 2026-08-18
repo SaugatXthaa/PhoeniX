@@ -38,9 +38,6 @@ import { Netlio } from './Netlio.js';
 import { AnimeDirect } from './AnimeDirect.js';
 // Megaplay — megaplay.buzz / vidtube.site embed pages (Anikoto, StreamXTV anime)
 import { Megaplay } from './Megaplay.js';
-// ZXCStream — passthrough for ZXCStream direct CDN URLs (must come before Netlio
-// so it claims *.workers.dev URLs from ZXCStream source, preserving correct format)
-import { ZXCStream as ZXCStreamExtractor } from './ZXCStream.js';
 // HDGharTV — passthrough for streamraiwind.stream HLS URLs
 import { HDGharTV as HDGharTVExtractor } from './HDGharTV.js';
 // AniPriv8 — routes anipriv8.online HLS through /proxy for m3u8 URL rewriting
@@ -70,9 +67,6 @@ export const createExtractors = (fetcher, logger) => {
   const hubExtractor = new HubExtractor(fetcher, logger);
 
   return [
-    // ZXCStream — must come BEFORE Netlio to claim *.workers.dev URLs from
-    // ZXCStream source (Netlio would otherwise force them to HLS format)
-    new ZXCStreamExtractor(fetcher, logger),
     // HDGharTV — passthrough for streamraiwind.stream HLS URLs
     new HDGharTVExtractor(fetcher, logger),
     // AniPriv8 — routes anipriv8.online HLS through /proxy for m3u8 URL rewriting
