@@ -36,78 +36,115 @@ function cleanTitle(title) {
     .trim()
 }
 
+// Build a list of search queries to try, in order:
+//   1. Full TMDB title (e.g. "Demon Slayer: Kimetsu no Yaiba")
+//   2. Main title only — before the first colon (e.g. "Demon Slayer")
+//      This handles TMDB titles with subtitles, where the site's search
+//      treats the colon as a hard separator and only matches titles that
+//      contain the full subtitle (so the series "Demon Slayer" is missed
+//      when searching for "Demon Slayer: Kimetsu no Yaiba").
+//   3. Title with colons replaced by spaces (e.g. "Demon Slayer Kimetsu no Yaiba")
+function buildQueries(title) {
+  var queries = [title]
+  var colonIdx = title.indexOf(':')
+  if (colonIdx > 0) {
+    var main = title.substring(0, colonIdx).trim()
+    if (main) queries.push(main)
+    var joined = title.replace(/:/g, ' ').replace(/\s+/g, ' ').trim()
+    if (joined && joined !== title) queries.push(joined)
+  }
+  var seen = {}
+  return queries.filter(function(q) { if (!q || seen[q]) return false; seen[q] = true; return true })
+}
+
 function searchSite(title, mediaType, year) {
-  var url = BASE + '/?s=' + encodeURIComponent(title)
-  return httpGet(url, { 'Referer': BASE + '/' })
-    .then(function(html) {
-      var results = []
-      var containerMatch = html.match(/id="movies-a"([\s\S]*?)(?=<footer|id="footer|class="footer)/m)
-      var searchHtml = containerMatch ? containerMatch[1] : html
+  var queries = buildQueries(title)
 
-      var articleRegex = /<article[^>]*>([\s\S]*?)<\/article>/g
-      var articleMatch
-      while ((articleMatch = articleRegex.exec(searchHtml)) !== null) {
-        var articleHtml = articleMatch[1]
-        var linkMatch = articleHtml.match(/href="(https:\/\/animesalt.link\/(series|movies)\/([^\/\"]+)\/?)\"/)
-        var titleMatch = articleHtml.match(/class="entry-title"[^>]*>([^<]+)</)
-        var yearMatch = articleHtml.match(/class="year"[^>]*>(\d{4})</)
+  // Try queries sequentially — stop at the first one that yields at least
+  // one result of the correct type. This way "Demon Slayer: Kimetsu no Yaiba"
+  // falls back to "Demon Slayer" if the full title only matches the movie.
+  function tryQuery(idx) {
+    if (idx >= queries.length) {
+      console.log('[AnimeSalt] No results of correct type for: ' + title + ' (' + year + ')')
+      return Promise.resolve([])
+    }
+    var query = queries[idx]
+    var url = BASE + '/?s=' + encodeURIComponent(query)
+    return httpGet(url, { 'Referer': BASE + '/' })
+      .then(function(html) {
+        var results = []
+        var containerMatch = html.match(/id="movies-a"([\s\S]*?)(?=<footer|id="footer|class="footer)/m)
+        var searchHtml = containerMatch ? containerMatch[1] : html
 
-        if (linkMatch && titleMatch) {
-          var slug = linkMatch[3]
-          var type = linkMatch[2]
-          var itemTitle = titleMatch[1].trim()
-          var itemYear = yearMatch ? parseInt(yearMatch[1]) : null
-          var exists = false
-          for (var i = 0; i < results.length; i++) {
-            if (results[i].slug === slug) { exists = true; break }
-          }
-          if (!exists && slug && slug !== 'page') {
-            results.push({ url: linkMatch[1], type: type, slug: slug, title: itemTitle, year: itemYear })
+        var articleRegex = /<article[^>]*>([\s\S]*?)<\/article>/g
+        var articleMatch
+        while ((articleMatch = articleRegex.exec(searchHtml)) !== null) {
+          var articleHtml = articleMatch[1]
+          var linkMatch = articleHtml.match(/href="(https:\/\/animesalt.link\/(series|movies)\/([^\/\"]+)\/?)\"/)
+          var titleMatch = articleHtml.match(/class="entry-title"[^>]*>([^<]+)</)
+          var yearMatch = articleHtml.match(/class="year"[^>]*>(\d{4})</)
+
+          if (linkMatch && titleMatch) {
+            var slug = linkMatch[3]
+            var type = linkMatch[2]
+            var itemTitle = titleMatch[1].trim()
+            var itemYear = yearMatch ? parseInt(yearMatch[1]) : null
+            var exists = false
+            for (var i = 0; i < results.length; i++) {
+              if (results[i].slug === slug) { exists = true; break }
+            }
+            if (!exists && slug && slug !== 'page') {
+              results.push({ url: linkMatch[1], type: type, slug: slug, title: itemTitle, year: itemYear })
+            }
           }
         }
-      }
 
-      console.log('[AnimeSalt] Raw: ' + results.length + ' for: ' + title + ' (' + year + ')')
+        console.log('[AnimeSalt] Raw: ' + results.length + ' for query: ' + query)
 
-      var filtered = results
-      if (mediaType === 'movie') {
-        var movies = results.filter(function(r) { return r.type === 'movies' })
-        if (movies.length > 0) filtered = movies
-      } else {
-        var series = results.filter(function(r) { return r.type === 'series' })
-        if (series.length > 0) filtered = series
-      }
+        // Strict type filter — never fall back to wrong-type results.
+        // Using a movie URL for a TV episode request always fails episode
+        // extraction; using a series URL for a movie request returns no stream.
+        var wantedType = mediaType === 'movie' ? 'movies' : 'series'
+        var filtered = results.filter(function(r) { return r.type === wantedType })
 
-      var withYear = []
-      var withoutYear = []
-      if (year) {
-        withYear = filtered.filter(function(r) {
-          return r.year && Math.abs(r.year - year) <= 1
+        if (filtered.length === 0) {
+          // No results of correct type — try next query variant
+          return tryQuery(idx + 1)
+        }
+
+        var withYear = []
+        var withoutYear = []
+        if (year) {
+          withYear = filtered.filter(function(r) {
+            return r.year && Math.abs(r.year - year) <= 1
+          })
+          withoutYear = filtered.filter(function(r) { return !r.year })
+        }
+
+        var candidates = withYear.length > 0 ? withYear : (year ? withoutYear : filtered)
+        if (candidates.length === 0) candidates = filtered
+
+        var cleanSearch = cleanTitle(title)
+        candidates.sort(function(a, b) {
+          var cleanA = cleanTitle(a.title)
+          var cleanB = cleanTitle(b.title)
+          var exactA = cleanA === cleanSearch ? 0 : 1
+          var exactB = cleanB === cleanSearch ? 0 : 1
+          if (exactA !== exactB) return exactA - exactB
+          var startsA = cleanA.indexOf(cleanSearch) === 0 ? 0 : 1
+          var startsB = cleanB.indexOf(cleanSearch) === 0 ? 0 : 1
+          if (startsA !== startsB) return startsA - startsB
+          return cleanA.length - cleanB.length
         })
-        withoutYear = filtered.filter(function(r) { return !r.year })
-      }
 
-      var candidates = withYear.length > 0 ? withYear : (year ? withoutYear : filtered)
-      if (candidates.length === 0) candidates = filtered
-
-      var cleanSearch = cleanTitle(title)
-      candidates.sort(function(a, b) {
-        var cleanA = cleanTitle(a.title)
-        var cleanB = cleanTitle(b.title)
-        var exactA = cleanA === cleanSearch ? 0 : 1
-        var exactB = cleanB === cleanSearch ? 0 : 1
-        if (exactA !== exactB) return exactA - exactB
-        var startsA = cleanA.indexOf(cleanSearch) === 0 ? 0 : 1
-        var startsB = cleanB.indexOf(cleanSearch) === 0 ? 0 : 1
-        if (startsA !== startsB) return startsA - startsB
-        return cleanA.length - cleanB.length
+        if (candidates.length > 0) {
+          console.log('[AnimeSalt] Best: ' + candidates[0].title + ' (' + candidates[0].year + ')')
+        }
+        return candidates
       })
+  }
 
-      if (candidates.length > 0) {
-        console.log('[AnimeSalt] Best: ' + candidates[0].title + ' (' + candidates[0].year + ')')
-      }
-      return candidates
-    })
+  return tryQuery(0)
 }
 
 function getEpisodeUrl(seriesUrl, season, episode) {
