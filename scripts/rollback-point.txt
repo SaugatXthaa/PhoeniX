@@ -1,4 +1,4 @@
-ROLLBACK POINT — before anime + movie source fixes
+ROLLBACK POINT — before removing 6 broken sources
 Date: $(date -u)
 Branch: $(git branch --show-current)
 HEAD: $(git rev-parse HEAD)
