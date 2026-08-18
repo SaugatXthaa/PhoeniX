@@ -72,7 +72,7 @@ export class AniBD extends Source {
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
     // Step 1: Search for the anime
-    const animeInfo = await this.findAnime(name);
+    const animeInfo = await this.findAnime(name, year);
     if (!animeInfo) return [];
 
     // Step 2: Get episodes (epid = anilist ID)
@@ -141,14 +141,23 @@ export class AniBD extends Source {
   }
 
   // Search AniBD by name and return {postid, anilist} of the best match
-  async findAnime(name) {
+  async findAnime(name, year) {
     const queries = [
       name,
       name.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
       name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(),
+      // Try the main title before the first colon — TMDB titles often have
+      // subtitles (e.g. "Demon Slayer: Kimetsu no Yaiba") but the AniBD API
+      // indexes by Japanese romanization ("Kimetsu no Yaiba BD"), so searching
+      // for just the prefix or just the subtitle yields different results.
+      ...(name.indexOf(':') > 0 ? [
+        name.substring(0, name.indexOf(':')).trim(),
+        name.substring(name.indexOf(':') + 1).trim(),
+      ] : []),
     ].filter((q, i, arr) => q && arr.indexOf(q) === i);
 
     const nameNorm = normalize(name);
+    const yearNum = year ? parseInt(String(year), 10) : null;
 
     for (const query of queries) {
       const data = await apiGet(`${SEARCH_API}?keyword=${encodeURIComponent(query)}`);
@@ -158,7 +167,15 @@ export class AniBD extends Source {
       let bestScore = 0;
       const nameWords = new Set(nameNorm.split(' ').filter(w => w.length > 2));
       for (const r of data.data) {
-        const titles = [r.postname, r.english, r.romaji, r.native].filter(Boolean);
+        // The API only returns postname (Japanese romanization) — no english
+        // field. Try multiple variants: strip common suffixes like "BD", "TV".
+        const rawPostname = r.postname || '';
+        const cleanedPostname = rawPostname
+          .replace(/\s+(BD|TV|Movie|OVA|ONA|Special)\s*$/i, '')
+          .replace(/[():]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const titles = [cleanedPostname, rawPostname].filter(Boolean);
         let itemBest = 0;
         for (const t of titles) {
           const tNorm = normalize(t);
@@ -168,15 +185,26 @@ export class AniBD extends Source {
           else if (tNorm.includes(nameNorm) || nameNorm.includes(tNorm)) {
             score = Math.min(tNorm.length, nameNorm.length) / Math.max(tNorm.length, nameNorm.length) * 90;
           }
-          // Word-overlap scoring — handles romanization variants like
-          // "Shippuden" vs "Shippuuden" (normalized to same) and extra
-          // words like "the"/"BD" that prevent substring matching.
+          // Word-overlap scoring — lowered threshold from 0.6 to 0.4 because
+          // TMDB uses "Demon Slayer" prefix while the API indexes by Japanese
+          // romanization ("Kimetsu no Yaiba"). The two share only "kimetsu"
+          // and "yaiba" — that's a 50% overlap, which is still a strong
+          // match when paired with year matching (below).
           if (score < 50 && nameWords.size >= 2) {
             const titleWords = new Set(tNorm.split(' ').filter(w => w.length > 2));
             const common = [...nameWords].filter(w => titleWords.has(w));
             const overlap = common.length / Math.max(nameWords.size, titleWords.size);
-            if (overlap >= 0.6) {
-              score = overlap * 80; // 60% word overlap → score 48, 75% → 60
+            if (overlap >= 0.4) {
+              score = overlap * 80;
+            }
+          }
+          // Year matching — strong signal. TMDB year should match API postyear.
+          if (score > 0 && yearNum) {
+            const postYear = parseInt(r.postyear, 10);
+            if (!isNaN(postYear) && Math.abs(postYear - yearNum) <= 1) {
+              score += 25; // year match is strong confirmation
+            } else if (!isNaN(postYear) && Math.abs(postYear - yearNum) > 2) {
+              score -= 15; // year mismatch is a strong negative signal
             }
           }
           if (score > itemBest) itemBest = score;
@@ -187,11 +215,10 @@ export class AniBD extends Source {
         }
       }
 
-      // Only accept matches with score >= 0.5 (at least 50% title overlap).
-      // Lower thresholds cause wrong anime matches (e.g. "Naruto The Lost
-      // Story" matching "ROAD TO NINJA: NARUTO THE MOVIE" — both contain
-      // "Naruto" but are completely different titles).
-      if (best && bestScore >= 50) {
+      // Lower threshold from 50 to 40 — TMDB titles with subtitles don't
+      // match well against the API's Japanese romanization postnames, even
+      // with year matching the score may only reach ~50.
+      if (best && bestScore >= 40) {
         return { postid: best.postid, anilist: best.anilist };
       }
     }

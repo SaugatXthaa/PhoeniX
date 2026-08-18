@@ -41,17 +41,37 @@ const normalize = (s) => (s || '').toLowerCase()
 async function apiGet(path, referer = BASE_URL + '/') {
   const { gotScraping } = await import('got-scraping');
   const url = path.startsWith('http') ? path : BASE_URL + path;
-  const res = await gotScraping.get(url, {
-    headers: {
-      'User-Agent': UA,
-      'Accept': 'application/json',
-      'Referer': referer,
-    },
-    timeout: { request: 25000 },
-    throwHttpErrors: false,
-  });
-  if (res.statusCode !== 200) return null;
-  try { return JSON.parse(res.body); } catch { return null; }
+  // Cloudflare challenges some AniKage endpoints (e.g. /episodes/, /servers/,
+  // /sources/) but not others (e.g. /browse). The challenge returns 403 with
+  // a "Just a moment..." page. To bypass it, we must send browser-like
+  // headers including Sec-Fetch-* and Origin. The headerGeneratorOptions
+  // tells got-scraping to generate a full set of Chrome-like headers
+  // (sec-ch-ua, sec-fetch-*, accept-language, etc.) which CF accepts.
+  try {
+    const res = await gotScraping.get(url, {
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': referer,
+        'Origin': BASE_URL,
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+      timeout: { request: 25000 },
+      throwHttpErrors: false,
+      headerGeneratorOptions: {
+        browsers: ['chrome'],
+        devices: ['desktop'],
+        operatingSystems: ['windows'],
+      },
+    });
+    if (res.statusCode !== 200) return null;
+    try { return JSON.parse(res.body); } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export class AniKage extends Source {
@@ -80,11 +100,14 @@ export class AniKage extends Source {
 
     // Step 2: Fetch episodes list
     const epData = await apiGet(`/api/media/anime/${slug}/episodes`);
-    if (!epData?.episodes?.length) return [];
+    // API returns either an array of episodes directly, or an object
+    // with an `episodes` field. Handle both forms.
+    const episodes = Array.isArray(epData) ? epData : (epData?.episodes || []);
+    if (!episodes.length) return [];
 
     // Step 3: Find the requested episode
     const targetEp = tmdbId.season ? (tmdbId.episode || 1) : 1;
-    const episode = epData.episodes.find(ep => ep.number === targetEp) || epData.episodes[0];
+    const episode = episodes.find(ep => ep.number === targetEp) || episodes[0];
     if (!episode) return [];
 
     // Step 4: Fetch available servers for this episode
