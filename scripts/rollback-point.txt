@@ -1,4 +1,2 @@
-ROLLBACK POINT — before re-adding 5 sources from uploads
-Date: $(date -u)
-Branch: $(git branch --show-current)
+ROLLBACK POINT — before updating cinejoy/zxcstream/animezey from new uploads
 HEAD: $(git rev-parse HEAD)
