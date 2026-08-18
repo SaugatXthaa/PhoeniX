@@ -1,2 +1,2 @@
-ROLLBACK POINT — before updating cinejoy/zxcstream/animezey from new uploads
+ROLLBACK POINT — before fixing 5 sources + removing dahmermovies
 HEAD: $(git rev-parse HEAD)
