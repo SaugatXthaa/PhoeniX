@@ -147,6 +147,9 @@ function extractMovieLinks(html) {
     seen.add(href);
 
     // Skip hubcloud.ist — only use hubdrive.tips (resolves to direct CDN)
+    if (href.includes('hubcloud.ist')) return;
+
+    // Skip hubcloud.ist — only use hubdrive.tips (resolves to direct CDN)
     // hubcloud.ist resolves to pixel.hubcloud.cx → workers.dev which has
     // 302 redirect + 403 issues that make streams unplayable.
     if (href.includes('hubcloud.ist')) return;
@@ -173,6 +176,8 @@ function extractMovieLinks(html) {
     const qualityKey = quality || 'default';
     if (seenQualities.has(qualityKey)) return;
     seenQualities.add(qualityKey);
+
+    // Deduplicate by quality — only keep first link per quality
 
     links.push({ url: href, quality, size, text, host: text.replace('Download ', '') });
   });
