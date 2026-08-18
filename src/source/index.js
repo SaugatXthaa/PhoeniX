@@ -71,7 +71,6 @@ import { FourKHDHubOne } from './FourKHDHubOne.js';
 // Nuvio provider sources (additive — each has its own dedicated source file)
 import { Cineby } from './Cineby.js';
 import { DesiFlix } from './DesiFlix.js';
-import { Goated } from './Goated.js';
 import { MovieBlast } from './MovieBlast.js';
 import { Movies4u } from './Movies4u.js';
 import { PlayImdb } from './PlayImdb.js';
@@ -185,8 +184,6 @@ export const createSources = (fetcher) => {
     new Cineby(fetcher),
     // desiflix — movies/TV/anime HLS (multi-audio, manifest.desitvhub.eu.org)
     new DesiFlix(fetcher),
-    // goated.cx — movies/TV HLS (cdn.reallyfast.xyz)
-    new Goated(fetcher),
     // hindmoviez — movies/TV MKV (hshare.ink → workers.dev, 4K/1080p)
     // movieblast — movies/TV HLS (mblinkmove.mycdn-mb.xyz, 1080p)
     new MovieBlast(fetcher),
