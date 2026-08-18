@@ -132,8 +132,13 @@ function findBestMatch(results, tmdbTitle, tmdbYear, isMovie) {
 }
 
 // Extract download links from a movie post page
-// Only returns hubdrive.tips URLs (skips hubcloud.ist) to avoid duplicate
-// streams — HubExtractor resolves hubdrive.tips → hubcloud.cx → direct CDN.
+// Returns hubcloud.ist URLs (skips hubdrive.tips) because hubdrive.tips now
+// requires sign-in (returns 401 "Not signed in" on /ajax.php?ajax=info),
+// while hubcloud.ist resolves cleanly via HubExtractor → HubCloud →
+// pixel.hubcloud.cx / workers.dev direct CDN URLs.
+// Each quality on 4khdhub.one has both a hubcloud.ist and a hubdrive.tips
+// link; hubcloud.ist appears first in the HTML, so the dedup-by-quality
+// logic keeps it and the hubdrive.tips duplicate is skipped.
 function extractMovieLinks(html) {
   const $ = cheerio.load(html);
   const links = [];
@@ -146,13 +151,10 @@ function extractMovieLinks(html) {
     if (seen.has(href)) return;
     seen.add(href);
 
-    // Skip hubcloud.ist — only use hubdrive.tips (resolves to direct CDN)
-    if (href.includes('hubcloud.ist')) return;
-
-    // Skip hubcloud.ist — only use hubdrive.tips (resolves to direct CDN)
-    // hubcloud.ist resolves to pixel.hubcloud.cx → workers.dev which has
-    // 302 redirect + 403 issues that make streams unplayable.
-    if (href.includes('hubcloud.ist')) return;
+    // Skip hubdrive.tips — requires sign-in (401 "Not signed in"),
+    // so HubExtractor cannot resolve it server-side. hubcloud.ist
+    // is the working alternative and appears first in the HTML.
+    if (href.includes('hubdrive.tips')) return;
 
     // Walk up to find quality header
     let quality = '';
@@ -196,12 +198,15 @@ function extractEpisodeLinks(html, targetSeason, targetEpisode) {
     const seasonNum = seasonText.match(/S(\d+)/)?.[1];
     if (!seasonNum || parseInt(seasonNum) !== targetSeason) return;
 
-    // Find ALL hubdrive links in this season (skip hubcloud.ist — unplayable)
-    $(seasonEl).find('a[href*="hubdrive"]').each((_k, dl) => {
+    // Find ALL hubcloud/hubdrive links in this season.
+    // Prefer hubcloud.ist (resolves via HubCloud extractor); skip
+    // hubdrive.tips because it now requires sign-in (401).
+    $(seasonEl).find('a[href*="hubcloud"], a[href*="hubdrive"]').each((_k, dl) => {
       const href = $(dl).attr('href') || '';
       const text = $(dl).text().trim();
       if (seen.has(href)) return;
       seen.add(href);
+      if (href.includes('hubdrive.tips')) return;
 
       let quality = '';
       let size = '';
