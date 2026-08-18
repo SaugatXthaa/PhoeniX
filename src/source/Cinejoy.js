@@ -92,6 +92,31 @@ function enrichStreamTitles(streams, title) {
   });
 }
 
+// Filter out streams from servers that are known to be broken.
+// The Solara server (lol.movieboxnoob.cc/content?v=...) returns 403
+// "Invalid token" — the CDN requires session-specific tokens that expire
+// quickly. Including these streams causes Stremio to try loading them,
+// get 403, and appear "slow" before falling back to other servers.
+// Lisbon (info.movieboxnoob.cc) and Athens/Castle (api.shegu.st/synthetic)
+// are fast and reliable — those are kept.
+function filterBrokenServers(streams) {
+  if (!Array.isArray(streams)) return streams;
+
+  return streams.filter(s => {
+    if (!s || !s.url) return false;
+    const url = s.url.toLowerCase();
+
+    // Solara server — consistently returns 403 "Invalid token"
+    // The token in the URL expires within seconds, making the stream
+    // unplayable from Stremio. Filter it out to avoid slow 403 failures.
+    if (url.includes('lol.movieboxnoob.cc/content')) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
 export class Cinejoy extends Source {
   constructor(fetcher) {
     super();
@@ -118,9 +143,12 @@ export class Cinejoy extends Source {
       timeoutMs: 25000,
     });
 
+    // Filter out broken Solara streams (403 "Invalid token") before enrichment
+    const filteredStreams = filterBrokenServers(streams);
+
     // Enrich stream titles with metadata markers before buildStreamResults
     // so StreamResolver.enrichMeta can parse sourceType/codec/HDR/audio
-    const enrichedStreams = enrichStreamTitles(streams, title);
+    const enrichedStreams = enrichStreamTitles(filteredStreams, title);
 
     return buildStreamResults({
       streams: enrichedStreams,
