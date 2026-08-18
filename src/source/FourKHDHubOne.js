@@ -1,22 +1,9 @@
 // src/source/FourKHDHubOne.js
-// 4khdhub.one — movies & TV series with HubCloud/HubDrive download links (up to 4K)
+// 4khdhub.one — movies & TV series with direct playable CDN streams (up to 4K)
 //
 // Separate from the existing FourKHDHub.js source (which uses 4khdhub.link).
-// This source uses 4khdhub.one which has a different site structure.
-//
-// Flow:
-//   1. Search via /?s={title} (HTML, no CF challenge)
-//   2. Match by title + year (movies) or season (TV)
-//   3. For movies: extract hubcloud.ist / hubdrive.tips links with quality
-//   4. For series: filter by season+episode, extract links
-//   5. HubExtractor resolves hubcloud/hubdrive → direct CDN URLs
-//
-// Enriched metadata (like 4KHDHub):
-//   - height: 480, 720, 1080, 2160 (from quality badge)
-//   - sourceType: 'BluRay' or 'WebDL' (from quality text)
-//   - bytes: file size (from badge)
-//   - countryCodes: [multi, hi, en] (dual audio content)
-//   - title: movie/show title with quality + host label
+// This source resolves hubdrive.tips URLs itself (bypasses HubExtractor
+// to avoid cache conflicts with the existing 4KHDHub source).
 
 import { createRequire } from 'module';
 import path from 'path';
@@ -30,13 +17,45 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require_ = createRequire(import.meta.url);
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', '4khdhub_one.cjs');
 
-// Cache the scraper module
-let _scraperMod = null;
-function getScraperModule() {
-  if (_scraperMod) return _scraperMod;
-  try { _scraperMod = require_(PROVIDER_PATH); }
-  catch (e) { console.error(`[4khdhubone] failed to load scraper: ${e?.message || e}`); }
-  return _scraperMod;
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+// Resolve hubdrive.tips URL to direct playable CDN URL using the Fetcher
+// (which handles cookies and redirects properly).
+// Chain: hubdrive.tips → hubcloud.cx → pixel.hubcloud.cx → workers.dev
+async function resolveHubdrive(fetcher, ctx, url) {
+  try {
+    // Step 1: Fetch hubdrive.tips page
+    const html1 = await fetcher.text(ctx, url, { headers: { 'User-Agent': UA } });
+    // Find hubcloud link
+    const hubcloudMatch = html1.match(/https:\/\/hubcloud\.[a-z]+\/drive\/[a-zA-Z0-9_]+/);
+    if (!hubcloudMatch) return null;
+
+    // Step 2: Fetch hubcloud.cx page
+    const html2 = await fetcher.text(ctx, new URL(hubcloudMatch[0]), {
+      headers: { 'User-Agent': UA, 'Referer': 'https://hubdrive.tips/' }
+    });
+
+    // Find pixel.hubcloud.cx URL
+    const pixelMatch = html2.match(/https:\/\/pixel\.hubcloud\.cx\/\?id=[^"'\s<>]+/);
+    if (pixelMatch) {
+      // Follow pixel.hubcloud.cx redirect to get workers.dev URL
+      const res = await fetch(pixelMatch[0], {
+        headers: { 'Referer': 'https://hubcloud.cx/' },
+        redirect: 'manual',
+      });
+      const location = res.headers.get('location');
+      if (location) return location;
+    }
+
+    // Try finding any workers.dev URL
+    const workersMatch = html2.match(/https:\/\/[a-z0-9-]+\.workers\.dev\/[a-zA-Z0-9_/-]+/);
+    if (workersMatch) return workersMatch[0];
+
+    return null;
+  } catch (e) {
+    console.error(`[4khdhubone] resolveHubdrive error: ${e.message}`);
+    return null;
+  }
 }
 
 function parseHeight(q) {
@@ -68,7 +87,7 @@ export class FourKHDHubOne extends Source {
     this.countryCodes = [CountryCode.multi, CountryCode.hi, CountryCode.en];
     this.baseUrl = 'https://4khdhub.one';
     this.fetcher = fetcher;
-    this.ttl = 30 * 60 * 1000; // 30min
+    this.ttl = 30 * 60 * 1000;
   }
 
   async handleInternal(ctx, _type, id) {
@@ -76,7 +95,15 @@ export class FourKHDHubOne extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    const mod = getScraperModule();
+    // Load the scraper module
+    let mod;
+    try {
+      delete require_.cache[require_.resolve(PROVIDER_PATH)];
+      mod = require_(PROVIDER_PATH);
+    } catch (e) {
+      console.error(`[4khdhubone] failed to load scraper: ${e?.message || e}`);
+      return [];
+    }
     if (!mod || typeof mod.getStreams !== 'function') return [];
 
     const mediaType = tmdbId.season ? 'tv' : 'movie';
@@ -93,23 +120,32 @@ export class FourKHDHubOne extends Source {
 
     if (!Array.isArray(streams) || streams.length === 0) return [];
 
+    // Resolve hubdrive.tips URLs to direct CDN URLs using the Fetcher
+    // (bypasses HubExtractor to avoid cache conflicts with existing 4KHDHub source)
+    const resolved = await Promise.all(streams.map(async (s) => {
+      if (!s.url || !s.url.includes('hubdrive.tips')) return s;
+      const directUrl = await resolveHubdrive(this.fetcher, ctx, new URL(s.url));
+      if (!directUrl) return null;
+      return { ...s, resolvedUrl: directUrl };
+    }));
+
+    const valid = resolved.filter(r => r !== null);
+    console.log(`[4khdhubone] Resolved ${valid.length}/${streams.length} URLs`);
+
     const results = [];
     const seenUrls = new Set();
 
-    for (const s of streams) {
-      if (!s || !s.url || typeof s.url !== 'string') continue;
-      if (!s.url.startsWith('http')) continue;
-      if (seenUrls.has(s.url)) continue;
-      seenUrls.add(s.url);
+    for (const s of valid) {
+      const urlStr = s.resolvedUrl || s.url;
+      if (seenUrls.has(urlStr)) continue;
+      seenUrls.add(urlStr);
 
       let url;
-      try { url = new URL(s.url); } catch { continue; }
+      try { url = new URL(urlStr); } catch { continue; }
 
       const height = parseHeight(s.quality);
       const fileSize = parseSize(s.size);
       const sourceType = detectSourceType(s.quality + ' ' + s.name);
-
-      // Build display title like 4KHDHub format
       const qualityLabel = s.quality || (height ? `${height}p` : 'Download');
       const sizeLabel = s.size ? ` [${s.size}]` : '';
       const hostLabel = s.host || s.text?.replace('Download ', '') || '';
