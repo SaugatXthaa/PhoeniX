@@ -132,16 +132,24 @@ function findBestMatch(results, tmdbTitle, tmdbYear, isMovie) {
 }
 
 // Extract download links from a movie post page
+// Only returns hubdrive.tips URLs (skips hubcloud.ist) to avoid duplicate
+// streams — HubExtractor resolves hubdrive.tips → hubcloud.cx → direct CDN.
 function extractMovieLinks(html) {
   const $ = cheerio.load(html);
   const links = [];
   const seen = new Set();
+  const seenQualities = new Set();
 
   $('a[href*="hubcloud"], a[href*="hubdrive"]').each((_i, el) => {
     const href = $(el).attr('href') || '';
     const text = $(el).text().trim();
     if (seen.has(href)) return;
     seen.add(href);
+
+    // Skip hubcloud.ist — only use hubdrive.tips (resolves to direct CDN)
+    // hubcloud.ist resolves to pixel.hubcloud.cx → workers.dev which has
+    // 302 redirect + 403 issues that make streams unplayable.
+    if (href.includes('hubcloud.ist')) return;
 
     // Walk up to find quality header
     let quality = '';
@@ -161,6 +169,11 @@ function extractMovieLinks(html) {
       parent = parent.parent();
     }
 
+    // Deduplicate by quality — only keep first link per quality
+    const qualityKey = quality || 'default';
+    if (seenQualities.has(qualityKey)) return;
+    seenQualities.add(qualityKey);
+
     links.push({ url: href, quality, size, text, host: text.replace('Download ', '') });
   });
 
@@ -171,14 +184,15 @@ function extractEpisodeLinks(html, targetSeason, targetEpisode) {
   const $ = cheerio.load(html);
   const links = [];
   const seen = new Set();
+  const seenQualities = new Set();
 
   $('.season-content').each((_i, seasonEl) => {
     const seasonText = $(seasonEl).find('.episode-number').first().text().trim();
     const seasonNum = seasonText.match(/S(\d+)/)?.[1];
     if (!seasonNum || parseInt(seasonNum) !== targetSeason) return;
 
-    // Find ALL hubcloud/hubdrive links in this season
-    $(seasonEl).find('a[href*="hubcloud"], a[href*="hubdrive"]').each((_k, dl) => {
+    // Find ALL hubdrive links in this season (skip hubcloud.ist — unplayable)
+    $(seasonEl).find('a[href*="hubdrive"]').each((_k, dl) => {
       const href = $(dl).attr('href') || '';
       const text = $(dl).text().trim();
       if (seen.has(href)) return;
@@ -197,13 +211,17 @@ function extractEpisodeLinks(html, targetSeason, targetEpisode) {
             size = badgeText;
           }
         });
-        // Also check sibling/parent text for quality
         const parentText = parent.text().trim();
         const qMatch = parentText.match(/(2160p|1080p|720p|480p|4K|HDR|UHD|BluRay|HEVC|AVC|WEB)/i);
         if (qMatch && !quality) quality = qMatch[1];
         if (quality) break;
         parent = parent.parent();
       }
+
+      // Deduplicate by quality
+      const qualityKey = quality || 'default';
+      if (seenQualities.has(qualityKey)) return;
+      seenQualities.add(qualityKey);
 
       links.push({ url: href, quality, size, text, host: text.replace('Download ', '') });
     });
@@ -266,7 +284,7 @@ async function getStreams(tmdbId, type, season, episode) {
     if (seen.has(l.url)) continue;
     seen.add(l.url);
     unique.push(l);
-    if (unique.length >= 12) break; // Limit to 12 links
+    if (unique.length >= 6) break; // Limit to 6 links
   }
 
   return unique.map(l => ({

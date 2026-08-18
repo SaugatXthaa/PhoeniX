@@ -444,11 +444,15 @@ export class StreamResolver {
       // bcdn.hakunaymatata.com for direct MP4 streams that play fine without
       // proxy. MovieBox URLs (which DO need proxy) have requestHeaders set and
       // are handled by the hasProxyHeaders block below.
-      const needsProxy = /valentine|fukggl|fileserver|animeheaven/.test(finalUrl.hostname);
+      const needsProxy = /valentine|fukggl|fileserver|animeheaven|pixel\.hubcloud|workers\.dev/.test(finalUrl.hostname);
 
       if (!isAlreadyProxied && !hasProxyHeaders && needsProxy) {
         const proxyUrl = new URL('/proxy', ctx.hostUrl);
         proxyUrl.searchParams.set('url', finalUrl.href);
+        // Add Referer for HubCloud CDN (pixel.hubcloud.cx → workers.dev redirect chain)
+        if (/pixel\.hubcloud|workers\.dev/.test(finalUrl.hostname)) {
+          proxyUrl.searchParams.set('referer', 'https://hubcloud.cx/');
+        }
         finalUrl = proxyUrl;
       }
 
