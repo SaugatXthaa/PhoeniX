@@ -84,7 +84,7 @@ export class FourKHDHubOne extends Source {
     try {
       streams = await Promise.race([
         mod.getStreams(tmdbId.id, mediaType, tmdbId.season, tmdbId.episode),
-        new Promise(r => setTimeout(() => r(null), 25000)),
+        new Promise(r => setTimeout(() => r(null), 28000)),
       ]);
     } catch (e) {
       console.error(`[4khdhubone] getStreams error: ${e?.message || e}`);
