@@ -62,7 +62,7 @@ export class HubExtractor extends Extractor {
     }
 
     // HubDrive: resolve→hubcloud then strip query params
-    const cached = this.resolutionCache.get(url.href + "__" + (meta?.sourceId || ""));
+    const cached = this.resolutionCache.get(url.href);
     if (cached && Date.now() - cached.ts < HUBCLOUD_CACHE_TTL) {
       return this.stripQueryParams(cached.url);
     }
@@ -70,7 +70,7 @@ export class HubExtractor extends Extractor {
     try {
       const resolved = await this.resolveHubDriveToHubCloud(ctx, url);
       if (resolved) {
-        this.resolutionCache.set(url.href + "__" + (meta?.sourceId || ""), { url: resolved.url, meta: resolved.meta, ts: Date.now() });
+        this.resolutionCache.set(url.href, { url: resolved.url, meta: resolved.meta, ts: Date.now() });
         if (this.resolutionCache.size > this.evictionThreshold) {
           this.evictExpired(this.resolutionCache);
         }
@@ -112,7 +112,7 @@ export class HubExtractor extends Extractor {
 
     // Gyanigurus → resolve to hubdrive.tips, then delegate to hubdrive resolution
     if (/gyanigurus/.test(url.hostname)) {
-      const cached = this.resolutionCache.get(url.href + "__" + (meta?.sourceId || ""));
+      const cached = this.resolutionCache.get(url.href);
       if (cached && Date.now() - cached.ts < HUBCLOUD_CACHE_TTL) {
         try {
           const enrichedMeta = { ...cached.meta, ...meta };
@@ -132,25 +132,16 @@ export class HubExtractor extends Extractor {
         });
         if (hubDriveUrl) {
           const resolved = new URL(hubDriveUrl);
-          this.resolutionCache.set(url.href + "__" + (meta?.sourceId || ""), { url: resolved, ts: Date.now(), meta: {} });
+          this.resolutionCache.set(url.href, { url: resolved, ts: Date.now(), meta: {} });
           return await this.extractViaHubCloud(ctx, resolved, meta);
         }
       } catch { return []; }
       return [];
     }
 
-    // HubDrive → try resolution cache first, then fallback
+    // HubDrive → always do fresh extraction (skip resolution cache to avoid
+    // sourceId conflicts when multiple sources return the same hubdrive URL)
     if (/hubdrive/.test(url.hostname)) {
-      const cached = this.resolutionCache.get(url.href + "__" + (meta?.sourceId || ""));
-      if (cached && Date.now() - cached.ts < HUBCLOUD_CACHE_TTL) {
-        try {
-          const enrichedMeta = { ...cached.meta, ...meta, countryCodes: [...new Set([...(cached.meta.countryCodes ?? []), ...(meta.countryCodes ?? [])])] };
-          return await this.hubCloud.extractInternal(ctx, cached.url, enrichedMeta);
-        } catch {
-          return [];
-        }
-      }
-
       return this.extractViaHubCloud(ctx, url, meta);
     }
 
