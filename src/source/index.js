@@ -74,8 +74,6 @@ import { DesiFlix } from './DesiFlix.js';
 import { Goated } from './Goated.js';
 import { MovieBlast } from './MovieBlast.js';
 import { Movies4u } from './Movies4u.js';
-import { DahmerMovies } from './DahmerMovies.js';
-import { DahmerMovies4k } from './DahmerMovies4k.js';
 import { PlayImdb } from './PlayImdb.js';
 // Re-added sources (from uploaded Nuvio scrapers — each with dedicated source file)
 import { ZXCStream } from './ZXCStream.js';
@@ -194,10 +192,6 @@ export const createSources = (fetcher) => {
     new MovieBlast(fetcher),
     // movies4u — movies-only MKV (r2.dev + googleusercontent, 4K/1080p)
     new Movies4u(fetcher),
-    // dahmermovies — movies/TV (p.111477.xyz bulk proxy, 4K/1080p)
-    new DahmerMovies(fetcher),
-    // dahmermovies-4k — movies/TV 4K-focused (p.111477.xyz bulk proxy)
-    new DahmerMovies4k(fetcher),
     // playimdb — movies/TV HLS (scalableimpactgroup.site, 1080p)
     new PlayImdb(fetcher),
     // ─── Re-added sources (from uploaded Nuvio scrapers) ───
