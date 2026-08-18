@@ -1,5 +1,8 @@
 // src/source/MoviesHunt.js
-// movieshunt.work — movies, series, anime, K-drama with HubCloud + GDFlix links
+// movieshunt.casa — movies, series, anime, K-drama with HubCloud + GDFlix links
+// (Site moved from movieshunt.work → movieshunt.casa. The .work domain 301-redirects
+// to .casa, but the redirect breaks the BASE_URL-based href matching below because
+// the returned HTML contains movieshunt.casa links, not movieshunt.work links.)
 //
 // Flow:
 //   1. Search via WP REST API: /wp-json/wp/v2/posts?search={title}
@@ -18,7 +21,7 @@ import { CountryCode } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId, findCountryCodes, findHeight } from '../utils/index.js';
 import { Source } from './Source.js';
 
-const BASE_URL = 'https://movieshunt.work';
+const BASE_URL = 'https://movieshunt.casa';
 
 // Check if a URL is a download link (hubcloud, gdflix, vcloud.fit, gdtot.dad).
 // Also matches href.li/? redirects that wrap these hosts.
