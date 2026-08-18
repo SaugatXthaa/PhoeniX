@@ -121,14 +121,34 @@ export class AnimeFlix extends Source {
       $('a[href*="/anime/"]').each((_i, el) => {
         const href = $(el).attr('href');
         if (!href || href.includes('/anime/?') || href.includes('/az-list') || href.includes('/genres/')) return;
-        const text = $(el).text().trim().toLowerCase();
+
+        // The <a> tag's text is polluted with status/type labels.
+        // Walk up to the nearest <article> and use its heading instead.
+        const $article = $(el).closest('article');
+        let text = '';
+        if ($article.length > 0) {
+          text = $article.find('h1, h2, h3, h4, h5, h6').first().text().trim();
+        }
+        if (!text) text = $(el).text().trim();
         if (!text) return;
+        const textLower = text.toLowerCase();
 
         let score = 0;
-        if (text === nameLower) score = 100;
-        else if (text === nameAscii) score = 95;
-        else if (text.includes(nameLower) || nameLower.includes(text)) {
-          score = Math.min(text.length, nameLower.length) / Math.max(text.length, nameLower.length) * 90;
+        if (textLower === nameLower) score = 100;
+        else if (textLower === nameAscii) score = 95;
+        else if (textLower.includes(nameLower) || nameLower.includes(textLower)) {
+          score = Math.min(textLower.length, nameLower.length) / Math.max(textLower.length, nameLower.length) * 90;
+        }
+        // Word-overlap fallback — handles TMDB titles that don't match any
+        // site entry exactly (per-arc/per-season pages on anime sites).
+        if (score < 50) {
+          const nameWords = nameLower.split(/\s+/).filter(w => w.length > 2);
+          const textWords = textLower.split(/\s+/).filter(w => w.length > 2);
+          const common = nameWords.filter(w => textWords.includes(w));
+          if (nameWords.length > 0 && common.length >= Math.min(nameWords.length, 2)) {
+            const overlap = common.length / Math.max(nameWords.length, textWords.length);
+            if (overlap >= 0.5) score = Math.max(score, overlap * 75);
+          }
         }
 
         // Bonus for matching year
@@ -142,7 +162,9 @@ export class AnimeFlix extends Source {
         }
       });
 
-      if (bestMatch && bestScore >= 60) return new URL(bestMatch, this.baseUrl);
+      // Lower threshold to 40 (from 60) — per-arc pages on anime sites
+      // often have slightly different titles than TMDB.
+      if (bestMatch && bestScore >= 40) return new URL(bestMatch, this.baseUrl);
     }
 
     return null;
