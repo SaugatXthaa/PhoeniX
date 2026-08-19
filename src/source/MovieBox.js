@@ -33,7 +33,7 @@ const normalize = (s) => (s || '').toLowerCase()
 // JWT token cache (90 days, but refresh weekly for safety)
 let jwtToken = null;
 let jwtTokenTs = 0;
-const JWT_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+const JWT_TTL = 60 * 60 * 1000; // 1 hour (was 7 days — token expires faster)
 
 async function getJwt() {
   if (jwtToken && Date.now() - jwtTokenTs < JWT_TTL) return jwtToken;
