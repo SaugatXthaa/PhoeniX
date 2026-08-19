@@ -92,8 +92,28 @@ export class FourKHDHub extends Source {
           .replace(/\[.*?]/, '')
           .trim();
 
-        const fuse = new Fuse([movieCardTitle], { threshold: 0.3 });
-        return fuse.search(name).length > 0;
+        // Title matching: the card title must match the search name.
+        // Use exact match first, then check that the card title STARTS WITH
+        // the search name (not just contains it as a substring).
+        // This prevents "Mutiny" from matching "The Bus: A French Football Mutiny"
+        // while still matching "The Dark Knight" → "The Dark Knight".
+        const cardNorm = movieCardTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+        const nameNorm = name.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+        // Exact match
+        if (cardNorm === nameNorm) return true;
+        // Card starts with the search name (allows "The Dark Knight" to match
+        // "The Dark Knight" even if card has trailing quality info)
+        if (cardNorm.startsWith(nameNorm)) return true;
+        // Search name starts with card title (allows "The Dark Knight Rises" search
+        // to match "The Dark Knight" card — but year filter handles this)
+        if (nameNorm.startsWith(cardNorm) && cardNorm.length > 3) return true;
+        // Fuzzy match with tight threshold for minor spelling variations only
+        const fuse = new Fuse([movieCardTitle], { threshold: 0.2, includeScore: true });
+        const results = fuse.search(name);
+        if (results.length > 0 && results[0].score <= 0.15) return true;
+
+        return false;
       })
       .map(async (_i, el) => new URL($(el).attr('href'), await this.getBaseUrl(ctx)))
       .get(0);

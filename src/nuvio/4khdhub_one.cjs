@@ -69,9 +69,14 @@ async function search(title) {
     const slug = href.replace(/^\//, '').replace(/\/$/, '');
     const slugNorm = normalize(slug.replace(/-(?:movie|series)-\d+$/, '').replace(/-/g, ' '));
 
-    // Match if slug contains any word from the title
-    const titleWords = nameNorm.split(' ').filter(w => w.length > 2);
-    const matched = titleWords.some(w => slugNorm.includes(w));
+    // Match: the slug must start with or be the search title.
+    // This prevents "Mutiny" from matching "the-bus-a-french-football-mutiny"
+    // while still matching "the-dark-knight" → "the-dark-knight".
+    // Use startsWith for the slug, and also check if the slug IS the search
+    // (the slug is just the title with dashes).
+    const titleDashed = nameNorm.replace(/\s+/g, '-');
+    const matched = slugNorm === nameNorm || slugNorm.startsWith(nameNorm) ||
+                    (titleDashed.length > 3 && slugNorm.startsWith(titleDashed));
     if (matched) {
       // Extract type (movie or series)
       const isMovie = href.includes('-movie-');
