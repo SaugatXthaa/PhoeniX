@@ -442,6 +442,12 @@ export class StreamResolver {
       if (/^hubcloud\.(cx|ist|net)$/.test(filterHost) && urlResult.url.pathname.includes('/tg/')) {
         continue;
       }
+      // Filter out known-dead pixeldrain files. The file ID 'negn6f' has been
+      // deleted from PixelDrain and returns 404. This is a known-dead file.
+      // Other pixeldrain files may still work — only filter this specific ID.
+      if (filterHost.includes('pixeldrain') && urlResult.url.pathname.includes('negn6f')) {
+        continue;
+      }
 
       // Dedup by URL + sourceId — allows the same URL from different sources
       // (e.g., HiAnime and AnimeKai both use zokoanime.video backend)
