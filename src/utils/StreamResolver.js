@@ -432,9 +432,14 @@ export class StreamResolver {
       // Filter out HubCloud CDN redirect URLs (pixel/gpdl/gpdl2.hubcloud.*).
       // These return HTML redirect pages (text/html) that redirect to dead
       // Cloudflare Workers (HTTP 500). Stremio can't parse HTML as video.
-      // Only direct *.workers.dev URLs (which return video/x-matroska) are kept.
+      // Only direct *.workers.dev, *.r2.dev, r2.cloudflarestorage.com, and
+      // pixeldrain.dev URLs (which return actual video content) are kept.
       const filterHost = urlResult.url.hostname || '';
       if (/^(pixel|gpdl|gpdl2)\.hubcloud\.(cx|ist|net)$/.test(filterHost)) {
+        continue;
+      }
+      // Also filter hubcloud.cx/tg/* (Telegram redirect — not a video URL)
+      if (/^hubcloud\.(cx|ist|net)$/.test(filterHost) && urlResult.url.pathname.includes('/tg/')) {
         continue;
       }
 
@@ -461,7 +466,7 @@ export class StreamResolver {
       // bcdn.hakunaymatata.com for direct MP4 streams that play fine without
       // proxy. MovieBox URLs (which DO need proxy) have requestHeaders set and
       // are handled by the hasProxyHeaders block below.
-      const needsProxy = /valentine|fukggl|fileserver|animeheaven|pixel\.hubcloud|workers\.dev/.test(finalUrl.hostname);
+      const needsProxy = /valentine|fukggl|fileserver|animeheaven|pixel\.hubcloud|gpdl\.hubcloud|workers\.dev/.test(finalUrl.hostname);
 
       if (!isAlreadyProxied && !hasProxyHeaders && needsProxy) {
         const proxyUrl = new URL('/proxy', ctx.hostUrl);
