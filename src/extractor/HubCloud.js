@@ -13,13 +13,10 @@ const RETRY_DELAY_MS = 2500;
 const SERVER_CATEGORIES = [
   { buttonIncludes: 'FSLv2', buttonExcludes: '', label: 'HubCloud (FSLv2)', extractorId: 'hubcloud_fslv2', priority: 4, seekable: true },
   { buttonIncludes: 'FSL', buttonExcludes: 'FSLv2', label: 'HubCloud (FSL)', extractorId: 'hubcloud_fsl', priority: 5, seekable: true },
-  { buttonIncludes: '10Gbps', buttonExcludes: '', label: 'HubCloud (10Gbps)', extractorId: 'hubcloud_fast', priority: 2, seekable: false },
+  { buttonIncludes: '10Gbps', buttonExcludes: '', label: 'HubCloud (10Gbps)', extractorId: 'hubcloud_fast', priority: 2, seekable: true },
   { buttonIncludes: 'PixelServer', buttonExcludes: '', label: 'HubCloud (PxlSrv)', extractorId: 'hubcloud_pixelserver', priority: 3, seekable: true },
   { buttonIncludes: 'PDL', buttonExcludes: '', label: 'HubCloud (PDL)', extractorId: 'hubcloud_pdl', priority: 1, seekable: false },
-  // (Download) — direct download links. Marked not-seekable so Stremio handles
-  // them as download-style streams. Lowest priority (0) so seekable FSL/FSLv2
-  // streams are preferred when available.
-  { buttonIncludes: 'Download File', buttonExcludes: '', label: 'HubCloud (Download)', extractorId: 'hubcloud_direct', priority: 0, seekable: false },
+  { buttonIncludes: 'Download File', buttonExcludes: '', label: 'HubCloud (Download)', extractorId: 'hubcloud_direct', priority: 0, seekable: true },
 ];
 
 const LABEL_TO_SEEKABLE = new Map(

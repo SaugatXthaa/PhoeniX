@@ -429,6 +429,15 @@ export class StreamResolver {
     for (const urlResult of urlResults) {
       if (urlResult.error) continue;
 
+      // Filter out HubCloud CDN redirect URLs (pixel/gpdl/gpdl2.hubcloud.*).
+      // These return HTML redirect pages (text/html) that redirect to dead
+      // Cloudflare Workers (HTTP 500). Stremio can't parse HTML as video.
+      // Only direct *.workers.dev URLs (which return video/x-matroska) are kept.
+      const filterHost = urlResult.url.hostname || '';
+      if (/^(pixel|gpdl|gpdl2)\.hubcloud\.(cx|ist|net)$/.test(filterHost)) {
+        continue;
+      }
+
       // Dedup by URL + sourceId — allows the same URL from different sources
       // (e.g., HiAnime and AnimeKai both use zokoanime.video backend)
       const urlKey = `${urlResult.url.href}__${urlResult.meta?.sourceId || ''}`;
