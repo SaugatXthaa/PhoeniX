@@ -398,7 +398,7 @@ export class StreamResolver {
     // This prevents OOM on Render's 512MB free tier — without it, all 74
     // sources run simultaneously, each holding response data in memory.
     // The global cutoff ensures we collect results and free memory quickly.
-    const GLOBAL_TIMEOUT_MS = 20_000;
+    const GLOBAL_TIMEOUT_MS = 33_000;
     await Promise.race([
       Promise.all(sortedSources.map(s => handleSource(s))),
       new Promise(resolve => setTimeout(resolve, GLOBAL_TIMEOUT_MS)),
