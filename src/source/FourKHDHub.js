@@ -39,7 +39,23 @@ export class FourKHDHub extends Source {
       return [];
     }
 
-    const html = await this.fetcher.text(ctx, pageUrl);
+    // Use got-scraping for CF bypass on Render (plain Fetcher is sometimes
+    // blocked by Cloudflare from Render's egress IPs).
+    let html;
+    try {
+      const { gotScraping } = await import('got-scraping');
+      const res = await gotScraping(pageUrl.href, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Accept': 'text/html',
+        },
+        timeout: { request: 15000 },
+        throwHttpErrors: false,
+      });
+      html = res.body;
+    } catch {
+      html = await this.fetcher.text(ctx, pageUrl);
+    }
     const $ = cheerio.load(html);
 
     if (tmdbId.season) {
@@ -71,7 +87,22 @@ export class FourKHDHub extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
 
     const searchUrl = new URL(`/?s=${encodeURIComponent(name)}`, await this.getBaseUrl(ctx));
-    const html = await this.fetcher.text(ctx, searchUrl);
+    // Use got-scraping for CF bypass on Render
+    let html;
+    try {
+      const { gotScraping } = await import('got-scraping');
+      const res = await gotScraping(searchUrl.href, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Accept': 'text/html',
+        },
+        timeout: { request: 15000 },
+        throwHttpErrors: false,
+      });
+      html = res.body;
+    } catch {
+      html = await this.fetcher.text(ctx, searchUrl);
+    }
 
     const $ = cheerio.load(html);
 

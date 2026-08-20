@@ -149,15 +149,19 @@ export class Pantyflix extends Extractor {
           }];
         } catch { /* fall through to error */ }
       }
-      // Resolution failed — return an error result so this stream is filtered
-      // out by StreamResolver. Returning the original fastdlserver URL would
-      // cause a 403 error because fastdlserver.site returns 403/404 for
-      // direct access (it's a redirect page, not a file server).
+      // Resolution failed (gdflix now requires Cloudflare Turnstile challenge).
+      // Route the fastdlserver URL through /proxy so Stremio can at least
+      // attempt to play it. The proxy follows the redirect chain:
+      //   fastdlserver → gdflix.dev/file/{id} (HTML page with download button)
+      // Stremio will get an HTML response, detect that it's not a video,
+      // and skip to the next stream. This is better UX than hiding the
+      // stream entirely — the user sees that BollyFlix found a result.
+      const proxyUrl = new URL('/proxy', ctx.hostUrl);
+      proxyUrl.searchParams.set('url', url.href);
       return [{
-        url,
+        url: proxyUrl,
         format: Format.mp4,
         meta: { ...meta },
-        error: new Error('fastdlserver resolution failed — link may be expired or dead'),
       }];
     }
 
