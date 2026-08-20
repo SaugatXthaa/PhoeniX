@@ -39,9 +39,10 @@ const NUVIO_SOURCE_IDS = new Set([
   // cinejoy — HLS m3u8 from hdhub.thevolecitor.qzz.io (direct, no Referer)
   // animezey — anime HLS from workers.dev (direct)
   // uhdmovies — movies from googleusercontent (Referer: driveseed.org)
+  // moviesdrive — direct googleusercontent URLs (resolved via hub_extractor)
   // NOTE: hdhub4u is NOT here — its hubcdn/hubcloud URLs are handled by
   // HubExtractor/HubCloud downstream, not NuvioExtractor.
-  'zxcstream', 'cinejoy', 'animezey', 'uhdmovies',
+  'zxcstream', 'cinejoy', 'animezey', 'uhdmovies', 'moviesdrive',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

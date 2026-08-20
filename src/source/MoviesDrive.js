@@ -1,13 +1,36 @@
 // src/source/MoviesDrive.js
-// new1.moviesdrive.christmas — movies/series with HubCloud links
-// Search: /?s={query} → post page → mdrive.lol/archive/{id} → hubcloud.cx/drive/{id}
-// The HubCloud links are resolved by the HubExtractor to direct CDN URLs.
+// moviesdrive — movies/series via new2.moviesdrive.christmas
+//
+// Uses the Nuvio scraper (src/nuvio/moviesdrive.cjs) which:
+//   1. Resolves TMDB ID → title/year via TMDB API
+//   2. Searches MoviesDrive via WordPress REST API
+//   3. Fetches movie page → finds archive links (mdrive.lol, direct hubcloud,
+//      or search-recover.php URLs)
+//   4. For each archive: resolves to hubcloud.cx/drive/{id}
+//   5. Resolves hubcloud URL → gamerxyt → pixel.hubcloud.cx → workers.dev →
+//      video-downloads.googleusercontent.com (direct playable GDrive URL)
+//
+// The scraper uses hub_extractor_full.cjs which handles the full resolution
+// chain with got-scraping (Chrome TLS fingerprint) for Cloudflare bypass.
+//
+// Honeypot detection: When a movie has been DMCA-removed from HubCloud, the
+// search-recover.php API returns a fake "Three Thousand Years of Longing"
+// file (ID: 9fm1fbqq04e9qq_). The scraper detects and skips these so we
+// return 0 streams instead of wrong-movie streams.
+//
+// Stream URL routing:
+//   - googleusercontent.com URLs: direct playable, no Referer needed
+//   - NuvioExtractor handles them as direct URLs (no /proxy)
 
-import * as cheerio from 'cheerio';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear, TmdbId, findCountryCodes, findHeight } from '../utils/index.js';
-import { HUB_HOST_PATTERN } from '../utils/hub.js';
+import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
+import { buildStreamResults, callNuvioProvider } from './nuvioHelpers.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'moviesdrive.cjs');
 
 export class MoviesDrive extends Source {
   constructor(fetcher) {
@@ -18,439 +41,30 @@ export class MoviesDrive extends Source {
     this.countryCodes = [CountryCode.multi, CountryCode.hi, CountryCode.en];
     this.baseUrl = 'https://new2.moviesdrive.christmas';
     this.fetcher = fetcher;
+    this.ttl = 5 * 60 * 1000; // 5min — scraper resolves to direct GDrive URLs
   }
 
   async handleInternal(ctx, _type, id) {
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
-
-    // Search for the title
-    const postUrls = await this.searchPosts(ctx, name, year, tmdbId);
-    if (postUrls.length === 0) return [];
-
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
-    const results = [];
 
-    // Fetch each post page and find mdrive.lol archive links
-    for (const postUrl of postUrls.slice(0, 5)) {
-      try {
-        // Use got-scraping for CF bypass on Render (plain Fetcher is
-        // blocked by Cloudflare from Render's egress IPs).
-        let postHtml;
-        try {
-          const { gotScraping } = await import('got-scraping');
-          const res = await gotScraping.get(postUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-              'Accept': 'text/html',
-            },
-            timeout: { request: 15000 },
-            throwHttpErrors: false,
-          });
-          postHtml = res.body;
-        } catch {
-          postHtml = await this.fetcher.text(ctx, new URL(postUrl));
-        }
-        const $post = cheerio.load(postHtml);
+    const mediaType = tmdbId.season ? 'tv' : 'movie';
+    const streams = await callNuvioProvider(PROVIDER_PATH, {
+      tmdbId: tmdbId.id,
+      mediaType,
+      season: tmdbId.season || null,
+      episode: tmdbId.episode || null,
+      timeoutMs: 30000, // scraper does multiple resolution steps, allow 30s
+    });
 
-        // Find mdrive.lol archive links
-        const archiveLinks = [];
-        $post('a[href*="mdrive.lol/archive"]').each((_i, el) => {
-          const href = $post(el).attr('href');
-          const text = $post(el).text().trim();
-          if (href && !archiveLinks.find(a => a.url === href)) {
-            archiveLinks.push({ url: href, label: text });
-          }
-        });
-
-        // Also find direct hubcloud links on the post page itself.
-        // The site structure changed — post pages now link directly to
-        // hubcloud.foo/drive/search-recover.php?from_ac=... instead of
-        // going through mdrive.lol/archive. These are JS-redirect pages
-        // that call an API to find the actual hubcloud.cx/drive/{id} URL.
-        // We call the API directly to resolve the real drive URL.
-        if (archiveLinks.length === 0) {
-          const directEntries = [];
-          $post('a[href*="hubcloud"]').each((_i, el) => {
-            const href = $post(el).attr('href');
-            const text = $post(el).text().trim();
-            if (!href || !HUB_HOST_PATTERN.test(href)) return;
-
-            // Parse quality and size from the link text
-            const qualityMatch = text.match(/(\d{3,})p|4k|2160p/i);
-            const sizeMatch = text.match(/([\d.]+)\s*(GB|MB)/i);
-
-            let quality = null;
-            if (qualityMatch) {
-              if (/4k|2160/i.test(qualityMatch[0])) quality = '2160p';
-              else quality = qualityMatch[1] + 'p';
-            }
-
-            directEntries.push({
-              episode: null,
-              quality,
-              size: sizeMatch ? `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}` : null,
-              url: href,
-              label: text,
-            });
-          });
-
-          // Process direct entries — resolve search-recover.php URLs via API
-          for (const entry of directEntries) {
-            if (tmdbId.season) {
-              const reqEp = tmdbId.episode || 1;
-              if (!entry.episode || entry.episode !== reqEp) continue;
-            }
-
-            let entryTitle = entry.label || title;
-            const countryCodes = [CountryCode.multi, ...findCountryCodes(entryTitle)];
-            const height = entry.quality ? parseInt(entry.quality) : findHeight(entryTitle);
-
-            let fileSize = undefined;
-            if (entry.size) {
-              const sm = entry.size.match(/([\d.]+)\s*(GB|MB)/i);
-              if (sm) {
-                const val = parseFloat(sm[1]);
-                const unit = sm[2].toUpperCase();
-                fileSize = unit === 'GB' ? val * 1024 * 1024 * 1024 : val * 1024 * 1024;
-              }
-            }
-
-            // If this is a search-recover.php URL, resolve it via the API
-            // to get the actual hubcloud.cx/drive/{id} URL that HubExtractor
-            // can handle. The API returns all episodes for the show, so we
-            // filter by requested season+episode using the file_name field.
-            let resolvedUrl = entry.url;
-            if (entry.url.includes('search-recover.php')) {
-              try {
-                const parsed = new URL(entry.url);
-                const fromAc = parsed.searchParams.get('from_ac') || '';
-                const q = parsed.searchParams.get('q') || '';
-                // Decode q if it's base64
-                let query = q;
-                try { query = Buffer.from(q, 'base64').toString('utf-8'); } catch {}
-
-                const apiUrl = new URL('/drive/search-recover.php', parsed.origin);
-                apiUrl.searchParams.set('api', 'search');
-                apiUrl.searchParams.set('q', query);
-                apiUrl.searchParams.set('page', '1');
-                apiUrl.searchParams.set('from_ac', fromAc);
-
-                // Use got-scraping for CF bypass
-                let apiRes;
-                try {
-                  const { gotScraping } = await import('got-scraping');
-                  const gsRes = await gotScraping.get(apiUrl, {
-                    headers: {
-                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                      'Accept': 'application/json',
-                    },
-                    timeout: { request: 8000 },
-                    throwHttpErrors: false,
-                  });
-                  apiRes = JSON.parse(gsRes.body);
-                } catch {
-                  apiRes = await this.fetcher.json(ctx, apiUrl, {
-                    headers: { 'Accept': 'application/json' },
-                    timeout: 8000,
-                  });
-                }
-
-                if (apiRes?.hits && Array.isArray(apiRes.hits) && apiRes.hits.length > 0) {
-                  // HubCloud honeypot detection:
-                  // When the requested movie's files have been DMCA-removed from
-                  // HubCloud, the search-recover.php API returns a fallback
-                  // "honeypot" file — "Three Thousand Years of Longing (2022)"
-                  // with file ID '9fm1fbqq04e9qq_'. This is true regardless of
-                  // what query was sent. We detect this honeypot and skip it so
-                  // we don't show the user streams for the wrong movie.
-                  //
-                  // The honeypot is detected by:
-                  //   1. File ID matches '9fm1fbqq04e9qq_' (current honeypot ID)
-                  //   2. File name contains 'Three Thousand Years of Longing'
-                  //      AND that's not what the user searched for
-                  const isHoneypot = (hit) => {
-                    const url = String(hit.url || '');
-                    const fileName = String(hit.file_name || '').toLowerCase();
-                    const nameLower = name.toLowerCase();
-                    // Honeypot by ID
-                    if (url.includes('9fm1fbqq04e9qq_')) return true;
-                    // Honeypot by title — file is "Three Thousand Years of Longing"
-                    // but the user didn't search for that movie
-                    if (fileName.includes('three thousand years of longing') &&
-                        !nameLower.includes('three thousand') &&
-                        !nameLower.includes('longing')) {
-                      return true;
-                    }
-                    return false;
-                  };
-
-                  // Filter out honeypot hits
-                  const realHits = apiRes.hits.filter(h => !isHoneypot(h));
-                  if (realHits.length === 0) {
-                    // All hits were honeypot — skip this entry entirely.
-                    // The user searched for a movie that HubCloud doesn't have
-                    // indexed (DMCA'd). Better to return 0 streams than to
-                    // show wrong movie streams.
-                    continue;
-                  }
-
-                  // For series: find the hit matching the requested SxxExx
-                  // The file_name contains the season/episode info (e.g.
-                  // "House.of.the.Dragon.S02E01.720p...")
-                  let bestHit = realHits[0];
-                  if (tmdbId.season) {
-                    const reqS = tmdbId.season;
-                    const reqE = tmdbId.episode || 1;
-                    // Build regex: S{season}E{episode} (with optional leading zeros)
-                    const sxxexxRegex = new RegExp(`S0*${reqS}E0*${reqE}[^0-9]`, 'i');
-                    const matchingHit = realHits.find(h =>
-                      sxxexxRegex.test(String(h.file_name || '')));
-                    if (matchingHit) {
-                      bestHit = matchingHit;
-                    } else {
-                      // No matching episode found — skip this entry entirely
-                      // to prevent wrong episodes from showing up
-                      continue;
-                    }
-                  }
-                  resolvedUrl = bestHit.url;
-                  // Update file size from API if available
-                  if (bestHit.size && !fileSize) {
-                    const sm = String(bestHit.size).match(/([\d.]+)\s*(GB|MB)/i);
-                    if (sm) {
-                      const val = parseFloat(sm[1]);
-                      const unit = sm[2].toUpperCase();
-                      fileSize = unit === 'GB' ? val * 1024 * 1024 * 1024 : val * 1024 * 1024;
-                    }
-                  }
-                  // Update title with the actual file name from API (more accurate)
-                  if (bestHit.file_name) {
-                    entryTitle = bestHit.file_name;
-                  }
-                }
-              } catch { /* API failed — use original URL (HubExtractor will try) */ }
-            }
-
-            results.push({
-              url: new URL(resolvedUrl),
-              meta: {
-                countryCodes,
-                ...(height && { height }),
-                title: entryTitle,
-                ...(fileSize && { bytes: fileSize }),
-              },
-            });
-          }
-        }
-
-        // For each archive link, fetch it and extract hubcloud links
-        for (const archive of archiveLinks) {
-          try {
-            // Use got-scraping for CF bypass
-            let archHtml;
-            try {
-              const { gotScraping } = await import('got-scraping');
-              const archRes = await gotScraping.get(archive.url, {
-                headers: {
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                  'Accept': 'text/html',
-                },
-                timeout: { request: 15000 },
-                throwHttpErrors: false,
-              });
-              archHtml = archRes.body;
-            } catch {
-              archHtml = await this.fetcher.text(ctx, new URL(archive.url));
-            }
-            const $arch = cheerio.load(archHtml);
-
-            // Extract all h5 elements that contain EP{N} labels followed by hubcloud links
-            const entries = [];
-            const h5s = $arch('h5').toArray();
-            // Track the current season as we iterate through h5s.
-            // Archive pages have season headers like "Season 3 [Hindi – English] 480p"
-            // followed by episode entries like "EP01 – 480p [252.7 MB]".
-            // Without tracking the season, EP01 from Season 3 would match a
-            // request for S1E1 — showing the wrong episode.
-            let currentSeason = null;
-
-            for (let i = 0; i < h5s.length; i++) {
-              const h5Text = $arch(h5s[i]).text().trim();
-
-              // Check if this h5 is a season header (e.g. "Season 3 [Hindi – English] 480p")
-              const seasonHeaderMatch = h5Text.match(/^Season\s+(\d+)/i);
-              if (seasonHeaderMatch) {
-                currentSeason = parseInt(seasonHeaderMatch[1]);
-                continue;
-              }
-
-              // Check if this h5 has an EP label (e.g. "EP01 – 1080p [1.3GB]")
-              const epMatch = h5Text.match(/EP\s*0*(\d+)/i);
-              const qualityMatch = h5Text.match(/(\d{3,})p/i);
-              const sizeMatch = h5Text.match(/([\d.]+)\s*(GB|MB)/i);
-
-              // Check if next h5 has a hubcloud link
-              const nextH5 = h5s[i + 1];
-              if (nextH5) {
-                const link = $arch(nextH5).find('a[href*="hubcloud"]').attr('href');
-                if (link) {
-                  entries.push({
-                    episode: epMatch ? parseInt(epMatch[1]) : null,
-                    season: currentSeason,
-                    quality: qualityMatch ? qualityMatch[1] + 'p' : null,
-                    size: sizeMatch ? `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}` : null,
-                    url: link,
-                  });
-                }
-              }
-            }
-
-            // Also check for standalone hubcloud links (movies without episodes)
-            if (entries.length === 0) {
-              $arch('a[href*="hubcloud"]').each((_i, el) => {
-                const href = $arch(el).attr('href');
-                if (href && HUB_HOST_PATTERN.test(href)) {
-                  // Walk up to find quality/size context
-                  const parent = $arch(el).closest('h5, h4, p, div');
-                  const context = parent.text().trim();
-                  const qualityMatch = context.match(/(\d{3,})p/i);
-                  const sizeMatch = context.match(/([\d.]+)\s*(GB|MB)/i);
-                  entries.push({
-                    episode: null,
-                    season: null,
-                    quality: qualityMatch ? qualityMatch[1] + 'p' : null,
-                    size: sizeMatch ? `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}` : null,
-                    url: href,
-                  });
-                }
-              });
-            }
-
-            // Filter by requested season+episode for series
-            for (const entry of entries) {
-              if (tmdbId.season) {
-                const reqS = tmdbId.season;
-                const reqEp = tmdbId.episode || 1;
-                // Only include entries that explicitly match BOTH the requested
-                // season AND episode. Skip null-season/episode entries (can't
-                // verify match) — prevents wrong episodes from showing.
-                if (entry.season !== reqS || !entry.episode || entry.episode !== reqEp) continue;
-              }
-
-              // Build meta
-              const entryTitle = archive.label || title;
-              const countryCodes = [CountryCode.multi, ...findCountryCodes(entryTitle)];
-              const height = entry.quality ? parseInt(entry.quality) : findHeight(entryTitle);
-
-              let fileSize = undefined;
-              if (entry.size) {
-                const sm = entry.size.match(/([\d.]+)\s*(GB|MB)/i);
-                if (sm) {
-                  const val = parseFloat(sm[1]);
-                  const unit = sm[2].toUpperCase();
-                  fileSize = unit === 'GB' ? val * 1024 * 1024 * 1024 : val * 1024 * 1024;
-                }
-              }
-
-              results.push({
-                url: new URL(entry.url),
-                meta: {
-                  countryCodes,
-                  ...(height && { height }),
-                  title: entryTitle,
-                  ...(fileSize && { bytes: fileSize }),
-                },
-              });
-            }
-          } catch { /* skip failed archive page */ }
-        }
-      } catch { /* skip failed post page */ }
-    }
-
-    return results;
-  }
-
-  async searchPosts(ctx, name, year, tmdbId) {
-    // Use WordPress REST API (regular search form doesn't work on this site)
-    const queries = [
-      name,
-      name.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(),
-    ].filter((q, i, arr) => q && arr.indexOf(q) === i);
-
-    const postUrls = [];
-
-    // Normalize a string for fuzzy matching:
-    // - decode HTML entities (&#038; → &, &amp; → &)
-    // - replace & and "and" with space (so "Minions & Monsters" and "Minions and Monsters" both match)
-    // - strip special chars
-    // - collapse whitespace
-    const normalize = (s) => {
-      return s
-        .toLowerCase()
-        .replace(/&#0*38;/g, '&')   // HTML entity for &
-        .replace(/&amp;/g, '&')      // another HTML entity form
-        .replace(/&/g, ' ')          // & → space
-        .replace(/\band\b/g, ' ')    // "and" → space
-        .replace(/[^a-z0-9\s]/g, '') // strip remaining special chars
-        .replace(/\s+/g, ' ')        // collapse whitespace
-        .trim();
-    };
-
-    const nameNormalized = normalize(name);
-    const yearStr = year ? String(year) : '';
-
-    for (const query of queries) {
-      const apiUrl = new URL(`/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=10`, this.baseUrl);
-      try {
-        // Use got-scraping instead of plain Fetcher — the MoviesDrive site
-        // is behind Cloudflare which blocks Render's IP with plain fetch.
-        // got-scraping uses Chrome's TLS fingerprint to bypass CF.
-        let posts;
-        try {
-          const { gotScraping } = await import('got-scraping');
-          const res = await gotScraping.get(apiUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-              'Accept': 'application/json',
-            },
-            timeout: { request: 10000 },
-            throwHttpErrors: false,
-          });
-          posts = JSON.parse(res.body);
-        } catch {
-          // Fallback to plain Fetcher
-          posts = await this.fetcher.json(ctx, apiUrl, { timeout: 10000 });
-        }
-        if (Array.isArray(posts)) {
-          for (const post of posts) {
-            const link = post.link;
-            if (!link) continue;
-            const title = post.title?.rendered || '';
-            const titleNormalized = normalize(title);
-
-            // Strict matching: the post title MUST contain the full movie/series name.
-            // Both are normalized so "Minions & Monsters" matches "Minions and Monsters"
-            // and "Minions &#038; Monsters".
-            if (!titleNormalized.includes(nameNormalized)) continue;
-
-            // Year matching: the post title or URL must contain the release year.
-            // This prevents matching sequel/spinoff posts (e.g. searching for
-            // "The Dark Knight" 2008 should NOT match "The Dark Knight Rises" 2012).
-            // Skip the year check if we don't have a year (rare).
-            if (yearStr) {
-              const hasYearInTitle = titleNormalized.includes(yearStr);
-              const hasYearInUrl = link.includes(yearStr);
-              if (!hasYearInTitle && !hasYearInUrl) continue;
-            }
-
-            if (!postUrls.includes(link)) postUrls.push(link);
-          }
-        }
-        if (postUrls.length > 0) break;
-      } catch { /* continue to next query */ }
-    }
-
-    return postUrls;
+    return buildStreamResults({
+      streams,
+      title,
+      sourceId: this.id,
+      sourceLabel: this.label,
+      countryCodes: this.countryCodes,
+      ctx,
+    });
   }
 }
