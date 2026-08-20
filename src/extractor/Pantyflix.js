@@ -1,10 +1,19 @@
 // src/extractor/Pantyflix.js
 // Extractor for Pantyflix + BollyFlix direct download streams.
 //
-// Both sources return dl.fastdlserver.site URLs that need to be resolved:
-//   fastdlserver → gdflix page → /cflare/ → cloud-dl workers.dev direct URL
+// Both sources return dl.fastdlserver.site URLs that need to be resolved.
+// The current resolution chain (Aug 2026):
+//   1. fastdlserver.site/?id={base64} → 302 redirect → gdflix.dev/file/{id}
+//   2. gdflix.dev/file/{id} HTML page contains 'Instant DL' button →
+//      instant.busycdn.xyz/{hash}::{hash}?bytes={size}
+//   3. busycdn URL → 302 redirect → fastdl-one.pages.dev/?url={googleusercontent_url}
+//   4. The 'url' query param is the direct playable googleusercontent.com URL
+//      (returns video/mkv with Content-Length — confirmed playable in Stremio)
 //
-// The resolution uses got-scraping (not curl) for Render compatibility.
+// Older /cflare/ endpoint now requires Cloudflare Turnstile challenge —
+// the /file/ endpoint bypasses it because the busycdn URL is in the HTML
+// directly (no JS challenge needed).
+//
 // googleusercontent.com, workers.dev, hakunaymatata.com work directly without
 // resolution. Only fastdlserver.site URLs need the redirect chain resolution.
 //
@@ -35,8 +44,8 @@ async function getGotScraping() {
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-// Resolve fastdlserver URL to direct playable URL using got-scraping.
-// Chain: fastdlserver → gdflix page → /cflare/ → cloud-dl workers.dev
+// Resolve fastdlserver URL to direct playable googleusercontent URL.
+// Chain: fastdlserver → gdflix /file/{id} → busycdn URL → 302 → fastdl-one.pages.dev/?url={googleusercontent}
 async function resolveFastDlServer(url) {
   // Check cache first
   const cached = _resolveCache.get(url.href);
@@ -48,7 +57,9 @@ async function resolveFastDlServer(url) {
   if (!gotScraping) return null;
 
   try {
-    // Step 1: Fetch fastdlserver page
+    // Step 1: Follow fastdlserver → gdflix /file/{id} page
+    // fastdlserver returns 302 to https://gdflix.dev/file/{id} which redirects
+    // to https://new3.gdflix.io/file/{id} (HTML page with download buttons).
     const res1 = await gotScraping(url.href, {
       timeout: { request: 10000 },
       throwHttpErrors: false,
@@ -61,48 +72,56 @@ async function resolveFastDlServer(url) {
 
     if (res1.statusCode >= 400 || !res1.body) return null;
 
-    // Try direct cloud-dl URL first
-    const directMatch = res1.body.match(/https:\/\/cloud-dl[^"'\s<>]+/i);
-    if (directMatch) {
-      const resolved = directMatch[0];
-      _resolveCache.set(url.href, { url: resolved, ts: Date.now() });
-      return resolved;
+    // Step 2: Extract the instant.busycdn.xyz URL from the /file/ page.
+    // The URL has a specific format: instant.busycdn.xyz/{hash}::{hash}?bytes={size}
+    // We need the FULL URL including the ?bytes= parameter (without it, busycdn
+    // returns 500 "Cannot read properties of undefined").
+    const busyCdnMatch = res1.body.match(/https:\/\/instant\.busycdn\.xyz\/[^"'\s<>]+/i);
+    if (!busyCdnMatch) {
+      // Older /cflare/ fallback — try the cloud-dl pattern (legacy)
+      const cloudDlMatch = res1.body.match(/https:\/\/cloud-dl[^"'\s<>]+/i);
+      if (cloudDlMatch) {
+        const resolved = cloudDlMatch[0];
+        _resolveCache.set(url.href, { url: resolved, ts: Date.now() });
+        return resolved;
+      }
+      return null;
     }
 
-    // Extract /cflare/ link
-    const cflareMatch = res1.body.match(/href="(\/cflare\/[^"]+)"/);
-    if (!cflareMatch) return null;
+    const busycdnUrl = busyCdnMatch[0];
 
-    // Step 2: Fetch cflare page
-    const cflareUrl = `https://new3.gdflix.io${cflareMatch[1]}`;
-    const res2 = await gotScraping(cflareUrl, {
+    // Step 3: Follow busycdn 302 redirect to fastdl-one.pages.dev/?url={googleusercontent_url}
+    // We DON'T follow redirects here — we just want the Location header which
+    // contains the fastdl-one.pages.dev URL with the googleusercontent URL in
+    // the 'url' query parameter.
+    const res2 = await gotScraping(busycdnUrl, {
       timeout: { request: 10000 },
       throwHttpErrors: false,
-      followRedirect: true,
+      followRedirect: false,  // We want the Location header, not the body
       headers: {
         'User-Agent': UA,
         'Referer': 'https://new3.gdflix.io/',
       },
     });
 
-    if (res2.statusCode >= 400 || !res2.body) return null;
-
-    // Extract direct URL (cloud-dl workers.dev or busycdn)
-    const cloudDlMatch = res2.body.match(/https:\/\/cloud-dl[^"'\s<>]+/i);
-    if (cloudDlMatch) {
-      const resolved = cloudDlMatch[0];
-      _resolveCache.set(url.href, { url: resolved, ts: Date.now() });
-      return resolved;
+    if (res2.statusCode !== 302 || !res2.headers.location) {
+      // busycdn didn't redirect — try with followRedirect to see if it serves
+      // the file directly (some files may not need the pages.dev hop)
+      return null;
     }
 
-    const busyCdnMatch = res2.body.match(/https:\/\/instant\.busycdn\.xyz[^"'\s<>]+/i);
-    if (busyCdnMatch) {
-      const resolved = busyCdnMatch[0];
-      _resolveCache.set(url.href, { url: resolved, ts: Date.now() });
-      return resolved;
+    // Step 4: Extract the 'url' query parameter from the Location header.
+    // Location format: https://fastdl-one.pages.dev/?url={encoded googleusercontent URL}
+    const locUrl = new URL(res2.headers.location);
+    const downloadUrl = locUrl.searchParams.get('url');
+    if (!downloadUrl || !downloadUrl.startsWith('http')) {
+      return null;
     }
 
-    return null;
+    // The googleusercontent URL is a direct playable video URL.
+    // Cache and return.
+    _resolveCache.set(url.href, { url: downloadUrl, ts: Date.now() });
+    return downloadUrl;
   } catch (e) {
     console.error(`[pantyflix] resolveFastDlServer error: ${e.message}`);
     return null;
@@ -149,13 +168,11 @@ export class Pantyflix extends Extractor {
           }];
         } catch { /* fall through to error */ }
       }
-      // Resolution failed (gdflix now requires Cloudflare Turnstile challenge).
+      // Resolution failed (gdflix /file/ page didn't have a busycdn URL,
+      // OR busycdn didn't redirect to fastdl-one.pages.dev).
       // Route the fastdlserver URL through /proxy so Stremio can at least
-      // attempt to play it. The proxy follows the redirect chain:
-      //   fastdlserver → gdflix.dev/file/{id} (HTML page with download button)
-      // Stremio will get an HTML response, detect that it's not a video,
-      // and skip to the next stream. This is better UX than hiding the
-      // stream entirely — the user sees that BollyFlix found a result.
+      // attempt to play it. The proxy follows the redirect chain and Stremio
+      // will detect non-video responses and skip to the next stream.
       const proxyUrl = new URL('/proxy', ctx.hostUrl);
       proxyUrl.searchParams.set('url', url.href);
       return [{

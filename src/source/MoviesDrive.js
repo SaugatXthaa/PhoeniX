@@ -157,16 +157,54 @@ export class MoviesDrive extends Source {
                 }
 
                 if (apiRes?.hits && Array.isArray(apiRes.hits) && apiRes.hits.length > 0) {
+                  // HubCloud honeypot detection:
+                  // When the requested movie's files have been DMCA-removed from
+                  // HubCloud, the search-recover.php API returns a fallback
+                  // "honeypot" file — "Three Thousand Years of Longing (2022)"
+                  // with file ID '9fm1fbqq04e9qq_'. This is true regardless of
+                  // what query was sent. We detect this honeypot and skip it so
+                  // we don't show the user streams for the wrong movie.
+                  //
+                  // The honeypot is detected by:
+                  //   1. File ID matches '9fm1fbqq04e9qq_' (current honeypot ID)
+                  //   2. File name contains 'Three Thousand Years of Longing'
+                  //      AND that's not what the user searched for
+                  const isHoneypot = (hit) => {
+                    const url = String(hit.url || '');
+                    const fileName = String(hit.file_name || '').toLowerCase();
+                    const nameLower = name.toLowerCase();
+                    // Honeypot by ID
+                    if (url.includes('9fm1fbqq04e9qq_')) return true;
+                    // Honeypot by title — file is "Three Thousand Years of Longing"
+                    // but the user didn't search for that movie
+                    if (fileName.includes('three thousand years of longing') &&
+                        !nameLower.includes('three thousand') &&
+                        !nameLower.includes('longing')) {
+                      return true;
+                    }
+                    return false;
+                  };
+
+                  // Filter out honeypot hits
+                  const realHits = apiRes.hits.filter(h => !isHoneypot(h));
+                  if (realHits.length === 0) {
+                    // All hits were honeypot — skip this entry entirely.
+                    // The user searched for a movie that HubCloud doesn't have
+                    // indexed (DMCA'd). Better to return 0 streams than to
+                    // show wrong movie streams.
+                    continue;
+                  }
+
                   // For series: find the hit matching the requested SxxExx
                   // The file_name contains the season/episode info (e.g.
                   // "House.of.the.Dragon.S02E01.720p...")
-                  let bestHit = apiRes.hits[0];
+                  let bestHit = realHits[0];
                   if (tmdbId.season) {
                     const reqS = tmdbId.season;
                     const reqE = tmdbId.episode || 1;
                     // Build regex: S{season}E{episode} (with optional leading zeros)
                     const sxxexxRegex = new RegExp(`S0*${reqS}E0*${reqE}[^0-9]`, 'i');
-                    const matchingHit = apiRes.hits.find(h =>
+                    const matchingHit = realHits.find(h =>
                       sxxexxRegex.test(String(h.file_name || '')));
                     if (matchingHit) {
                       bestHit = matchingHit;
