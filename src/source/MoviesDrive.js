@@ -34,7 +34,23 @@ export class MoviesDrive extends Source {
     // Fetch each post page and find mdrive.lol archive links
     for (const postUrl of postUrls.slice(0, 5)) {
       try {
-        const postHtml = await this.fetcher.text(ctx, new URL(postUrl));
+        // Use got-scraping for CF bypass on Render (plain Fetcher is
+        // blocked by Cloudflare from Render's egress IPs).
+        let postHtml;
+        try {
+          const { gotScraping } = await import('got-scraping');
+          const res = await gotScraping.get(postUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'Accept': 'text/html',
+            },
+            timeout: { request: 15000 },
+            throwHttpErrors: false,
+          });
+          postHtml = res.body;
+        } catch {
+          postHtml = await this.fetcher.text(ctx, new URL(postUrl));
+        }
         const $post = cheerio.load(postHtml);
 
         // Find mdrive.lol archive links
@@ -120,10 +136,25 @@ export class MoviesDrive extends Source {
                 apiUrl.searchParams.set('page', '1');
                 apiUrl.searchParams.set('from_ac', fromAc);
 
-                const apiRes = await this.fetcher.json(ctx, apiUrl, {
-                  headers: { 'Accept': 'application/json' },
-                  timeout: 8000,
-                });
+                // Use got-scraping for CF bypass
+                let apiRes;
+                try {
+                  const { gotScraping } = await import('got-scraping');
+                  const gsRes = await gotScraping.get(apiUrl, {
+                    headers: {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                      'Accept': 'application/json',
+                    },
+                    timeout: { request: 8000 },
+                    throwHttpErrors: false,
+                  });
+                  apiRes = JSON.parse(gsRes.body);
+                } catch {
+                  apiRes = await this.fetcher.json(ctx, apiUrl, {
+                    headers: { 'Accept': 'application/json' },
+                    timeout: 8000,
+                  });
+                }
 
                 if (apiRes?.hits && Array.isArray(apiRes.hits) && apiRes.hits.length > 0) {
                   // For series: find the hit matching the requested SxxExx
@@ -178,7 +209,22 @@ export class MoviesDrive extends Source {
         // For each archive link, fetch it and extract hubcloud links
         for (const archive of archiveLinks) {
           try {
-            const archHtml = await this.fetcher.text(ctx, new URL(archive.url));
+            // Use got-scraping for CF bypass
+            let archHtml;
+            try {
+              const { gotScraping } = await import('got-scraping');
+              const archRes = await gotScraping.get(archive.url, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                  'Accept': 'text/html',
+                },
+                timeout: { request: 15000 },
+                throwHttpErrors: false,
+              });
+              archHtml = archRes.body;
+            } catch {
+              archHtml = await this.fetcher.text(ctx, new URL(archive.url));
+            }
             const $arch = cheerio.load(archHtml);
 
             // Extract all h5 elements that contain EP{N} labels followed by hubcloud links
@@ -319,7 +365,25 @@ export class MoviesDrive extends Source {
     for (const query of queries) {
       const apiUrl = new URL(`/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=10`, this.baseUrl);
       try {
-        const posts = await this.fetcher.json(ctx, apiUrl, { timeout: 10000 });
+        // Use got-scraping instead of plain Fetcher — the MoviesDrive site
+        // is behind Cloudflare which blocks Render's IP with plain fetch.
+        // got-scraping uses Chrome's TLS fingerprint to bypass CF.
+        let posts;
+        try {
+          const { gotScraping } = await import('got-scraping');
+          const res = await gotScraping.get(apiUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'Accept': 'application/json',
+            },
+            timeout: { request: 10000 },
+            throwHttpErrors: false,
+          });
+          posts = JSON.parse(res.body);
+        } catch {
+          // Fallback to plain Fetcher
+          posts = await this.fetcher.json(ctx, apiUrl, { timeout: 10000 });
+        }
         if (Array.isArray(posts)) {
           for (const post of posts) {
             const link = post.link;
