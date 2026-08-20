@@ -106,43 +106,18 @@ export class CineWave extends Source {
 
           const nameTitle = `${stream.name || ''} ${stream.description || ''}`;
 
-          // Filter out streams that belong to a different movie.
-          // The CineWave/HdHub API returns ALL movies matching the search term,
-          // so we must verify the stream's title matches the requested movie.
-          // Strategy: the movie name must appear as a COMPLETE PHRASE in the
-          // stream text, not just as a substring of a longer word.
-          // "Mutiny" should NOT match "The.Caine.Mutiny.Court.Martial" because
-          // "Mutiny" is part of a longer title, not the movie name itself.
+          // Filter out streams that clearly belong to a different movie.
+          // Only apply filter when the stream text is long enough to contain
+          // a movie title (not just "HdHub VM 1080p" which is a server label).
           const streamText = (nameTitle + ' ' + (stream.title || '')).toLowerCase();
           const nameLower = name.toLowerCase();
           const nameNormalized = nameLower.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
           const streamNormalized = streamText.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-
-          if (nameNormalized.length > 3 && streamNormalized.length > 30) {
-            // Check that the movie name appears as a word boundary phrase.
-            // Use word-boundary regex to ensure "mutiny" matches only when
-            // it's a complete word, not when it's part of "mutinycourtmartial"
-            // (after normalization, dots become spaces so "the caine mutiny
-            // court martial" → "the caine mutiny court martial" which contains
-            // "mutiny" as a word but it's NOT the movie title).
-            //
-            // The real fix: check that the stream text, when stripped of quality/
-            // codec/size info, STARTS WITH the movie name or IS the movie name.
-            // Extract just the title portion (before quality info like "1080p")
-            const titlePart = streamNormalized.split(/\d{3,}p|\d{3,} gb|\d{3,} mb|\d+\.\d+ gb|\d+\.\d+ mb/i)[0].trim();
-            if (!titlePart.startsWith(nameNormalized) && titlePart !== nameNormalized) {
-              // Also check if the title part is short enough to be the movie name
-              // (some streams have server label prefix like "vm fsl" before the title)
-              // Check the last N words of the title part
-              const nameWords = nameNormalized.split(' ');
-              const titleWords = titlePart.split(' ');
-              // If the title part ends with the movie name, it's a match
-              // (e.g. "vm fsl the caine mutiny court martial" → ends with "mutiny"? NO)
-              const endsWithName = titleWords.slice(-nameWords.length).join(' ') === nameNormalized;
-              if (!endsWithName) {
-                continue;
-              }
-            }
+          // Only filter if stream text is substantial (has a real title, not just quality info)
+          if (nameNormalized.length > 3 && streamNormalized.length > 30 &&
+              !streamNormalized.includes(nameNormalized) &&
+              !nameNormalized.includes(streamNormalized.split(' ').slice(0, 3).join(' '))) {
+            continue;
           }
 
           const heightMatch = nameTitle.match(/(\d{3,})p/i);

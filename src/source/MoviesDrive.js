@@ -327,16 +327,10 @@ export class MoviesDrive extends Source {
             const title = post.title?.rendered || '';
             const titleNormalized = normalize(title);
 
-            // Strict matching: the post title must START WITH or EQUAL the
-            // movie name (not just contain it as a substring).
-            // This prevents "Mutiny" from matching "The Bus: A French Football Mutiny"
-            // while still matching "The Dark Knight" → "The Dark Knight".
-            // Also check if the movie name starts with the post title
-            // (e.g. searching "The Dark Knight Rises" should match a post
-            // titled "The Dark Knight" — year filter handles disambiguation).
-            if (!(titleNormalized === nameNormalized ||
-                  titleNormalized.startsWith(nameNormalized) ||
-                  (nameNormalized.startsWith(titleNormalized) && titleNormalized.length > 3))) continue;
+            // Strict matching: the post title MUST contain the full movie/series name.
+            // Both are normalized so "Minions & Monsters" matches "Minions and Monsters"
+            // and "Minions &#038; Monsters".
+            if (!titleNormalized.includes(nameNormalized)) continue;
 
             // Year matching: the post title or URL must contain the release year.
             // This prevents matching sequel/spinoff posts (e.g. searching for
