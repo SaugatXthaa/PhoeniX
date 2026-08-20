@@ -422,6 +422,13 @@ app.get('/proxy', async (req, res) => {
     if (response.statusCode >= 400) {
       logger.error(`[${ADDON_NAME}] proxy upstream ${response.statusCode} for ${targetUrl.hostname}`);
       stream.destroy();
+      // For workers.dev 403 (expired token) or text/html responses (redirect pages),
+      // return a clean error so Stremio can try the next stream automatically.
+      // Don't return 502 (looks like server error) — return the actual status.
+      const ct = (response.headers['content-type'] || '').toLowerCase();
+      if (response.statusCode === 403 || ct.includes('text/html') || ct.includes('text/plain')) {
+        return res.status(response.statusCode).send(`Upstream error: ${response.statusCode}`);
+      }
       return res.status(response.statusCode).send(`Upstream error: ${response.statusCode}`);
     }
 

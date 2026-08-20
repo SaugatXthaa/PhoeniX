@@ -76,8 +76,11 @@ export class HubCloud extends Extractor {
     super(fetcher, logger);
     this.id = 'hubcloud';
     this.label = 'HubCloud';
-    this.cacheVersion = 12;
-    this.ttl = HUBCLOUD_CACHE_TTL;
+    this.cacheVersion = 13;
+    // Short TTL (30s) — HubCloud workers.dev URLs contain session tokens
+    // that expire quickly. With 5min TTL, cached URLs would be stale
+    // by the time Stremio plays them, causing 403 "Access Denied".
+    this.ttl = 30 * 1000; // 30s
   }
 
   supports(_ctx, url) {
@@ -153,7 +156,7 @@ export class HubCloud extends Extractor {
               classified.push({
                 url: apiUrl,
                 format: Format.unknown,
-                ttl: HUBCLOUD_CACHE_TTL,
+                ttl: 30 * 1000,
                 label: category.label,
                 meta: { ...meta, bytes: fileSize, extractorId: category.extractorId, countryCodes, height, title },
                 requestHeaders: { Referer: userUrl.href },
