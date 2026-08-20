@@ -34,11 +34,13 @@ export class ExtractorRegistry {
       return cached.results;
     }
 
-    // Evict expired entries to prevent OOM on Render's 512MB free tier
-    if (this.urlResultCache.size > 200) {
+    // Aggressive eviction to prevent OOM on Render's 512MB free tier.
+    // Each cached extraction result holds URL objects + metadata — 200
+    // entries can use 30+MB. Evict at 80 entries (was 200).
+    if (this.urlResultCache.size > 80) {
       const now = Date.now();
       for (const [key, val] of this.urlResultCache) {
-        if (now - val.ts > (val.ttl || 900000)) this.urlResultCache.delete(key);
+        if (now - val.ts > (val.ttl || 300000)) this.urlResultCache.delete(key);
       }
       this.lazyUrlResultCache.clear(); // Clear lazy cache too
     }

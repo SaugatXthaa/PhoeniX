@@ -64,12 +64,14 @@ export class Source {
       return cached.data;
     }
 
-    // Evict expired entries periodically to prevent unbounded memory growth
-    // (Render free tier has 512MB limit)
-    if (sourceResultCache.size > 100) {
+    // Aggressive eviction to prevent OOM on Render's 512MB free tier.
+    // Each cached source result can hold 10+ stream objects with URLs,
+    // metadata, and titles — 100 entries can use 50+MB.
+    // Evict at 40 entries (was 100) and use shorter TTLs.
+    if (sourceResultCache.size > 40) {
       const now = Date.now();
       for (const [key, val] of sourceResultCache) {
-        if (now - val.ts > 43200000) sourceResultCache.delete(key);
+        if (now - val.ts > (val.ttl || 300000)) sourceResultCache.delete(key);
       }
     }
 
@@ -98,7 +100,11 @@ export class Source {
     //
     // Non-empty results still get the full this.ttl (5-12min).
     const isEmpty = !Array.isArray(results) || results.length === 0;
-    const effectiveTtl = isEmpty ? 15_000 : this.ttl;
+    // Short TTL for empty results (15s) — retry quickly after transient failures.
+    // Short TTL for non-empty results (5min) — prevents cache from holding
+    // large stream arrays for too long on Render's 512MB free tier.
+    // Was 12h — that's way too long and causes OOM when many movies are cached.
+    const effectiveTtl = isEmpty ? 15_000 : 5 * 60 * 1000;
     sourceResultCache.set(cacheKey, { data: results, ts: Date.now(), ttl: effectiveTtl });
     return results;
   }

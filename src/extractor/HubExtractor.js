@@ -21,7 +21,7 @@ export const cdnHash = (url) => {
   return (hash >>> 0).toString(16).padStart(8, '0').slice(0, 4);
 };
 
-const DEFAULT_EVICTION_THRESHOLD = 256;
+const DEFAULT_EVICTION_THRESHOLD = 64;
 
 export class HubExtractor extends Extractor {
   constructor(fetcher, logger, hubCloud, evictionThreshold) {

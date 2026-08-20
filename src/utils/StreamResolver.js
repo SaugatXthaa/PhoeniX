@@ -394,7 +394,15 @@ export class StreamResolver {
       }
     };
 
-    await Promise.all(sortedSources.map(s => handleSource(s)));
+    // GLOBAL TIMEOUT: Return whatever streams we have after 20s.
+    // This prevents OOM on Render's 512MB free tier — without it, all 74
+    // sources run simultaneously, each holding response data in memory.
+    // The global cutoff ensures we collect results and free memory quickly.
+    const GLOBAL_TIMEOUT_MS = 20_000;
+    await Promise.race([
+      Promise.all(sortedSources.map(s => handleSource(s))),
+      new Promise(resolve => setTimeout(resolve, GLOBAL_TIMEOUT_MS)),
+    ]);
 
     // Stash timings on the instance for the /debug/stream endpoint to read.
     // (Not returned in the normal /stream response to avoid breaking Stremio.)
