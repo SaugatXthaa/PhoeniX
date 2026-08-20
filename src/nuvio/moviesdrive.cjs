@@ -14,7 +14,7 @@
 'use strict';
 
 var cheerio = require('cheerio');
-var hubExtractor = require('./hub_extractor_full.cjs');
+var hubExtractor = require('./hub_extractor.cjs');
 
 var PROVIDER_NAME = 'MoviesDrive';
 var BASE_URL = 'https://new2.moviesdrive.christmas';
