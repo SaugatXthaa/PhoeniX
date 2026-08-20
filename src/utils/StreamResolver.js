@@ -529,9 +529,11 @@ export class StreamResolver {
     else if (height >= 480) parts.push('480p');
     else if (height > 0) parts.push(getClosestResolution(height));
 
-    // Source label + subsource (server name, provider, etc.)
+    // Source label + subsource (server name, provider, HubCloud server type, etc.)
     if (meta.sourceLabel) {
-      const subSource = meta.serverName || meta.provider || meta.subSource;
+      // Use extractor label (e.g. "HubCloud (FSL)", "HubCloud (FSLv2)",
+      // "HubCloud (10Gbps)", "HubCloud (Download)") as subSource if available
+      const subSource = meta.extractorLabel || meta.serverName || meta.provider || meta.subSource;
       if (subSource && subSource !== meta.sourceLabel) {
         parts.push(`${meta.sourceLabel} · ${subSource}`);
       } else {

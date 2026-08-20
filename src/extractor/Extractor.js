@@ -23,12 +23,15 @@ export class Extractor {
         ...r,
         label: r.label || this.label,
         ttl: r.ttl ?? this.ttl,
+        // Pass the extractor label through to meta so StreamResolver
+        // can display it (e.g. "HubCloud (FSL)", "HubCloud (Download)")
+        meta: { ...r.meta, extractorLabel: r.label || this.label },
       }));
     } catch (error) {
       if (error instanceof NotFoundError) return [];
       return [{
         url, format: Format.unknown, isExternal: true, error,
-        label: this.label, ttl: 0, meta,
+        label: this.label, ttl: 0, meta: { ...meta, extractorLabel: this.label },
       }];
     }
   }
