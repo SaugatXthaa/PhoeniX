@@ -21,13 +21,30 @@
 
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import { CountryCode } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
-import { buildStreamResults, callNuvioProvider } from './nuvioHelpers.js';
+import { buildStreamResults } from './nuvioHelpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'videasy.cjs');
+const require_ = createRequire(import.meta.url);
+
+// Cache the scraper module — videasy.cjs is obfuscated and has
+// initialization side effects that break on reload. Caching is safe
+// because the module code doesn't change between requests.
+let _scraperMod = null;
+function getScraperModule() {
+  if (_scraperMod) return _scraperMod;
+  try {
+    _scraperMod = require_(PROVIDER_PATH);
+  } catch (e) {
+    console.error(`[videasy] failed to load scraper: ${e?.message || e}`);
+    return null;
+  }
+  return _scraperMod;
+}
 
 // Map TMDB original_language to PhoeniX CountryCode
 const LANG_TO_CC = {
@@ -83,13 +100,23 @@ export class VidEasy extends Source {
       : [CountryCode.multi]; // Unknown language — don't show wrong audio
 
     const mediaType = tmdbId.season ? 'tv' : 'movie';
-    const streams = await callNuvioProvider(PROVIDER_PATH, {
-      tmdbId: tmdbId.id,
-      mediaType,
-      season: tmdbId.season || null,
-      episode: tmdbId.episode || null,
-      timeoutMs: 25000, // Videasy queries 10 servers, cap at 25s
-    });
+    // Use direct require (cached) instead of callNuvioProvider — the
+    // obfuscated videasy scraper has initialization that breaks when
+    // loaded via createRequire(providerPath).
+    const mod = getScraperModule();
+    if (!mod || typeof mod.getStreams !== 'function') return [];
+
+    let streams;
+    try {
+      streams = await Promise.race([
+        mod.getStreams(tmdbId.id, mediaType, tmdbId.season || null, tmdbId.episode || null),
+        new Promise(r => setTimeout(() => r(null), 35000)),
+      ]);
+    } catch (e) {
+      console.error(`[videasy] getStreams error: ${e?.message || e}`);
+      return [];
+    }
+    if (!Array.isArray(streams)) return [];
 
     return buildStreamResults({
       streams,

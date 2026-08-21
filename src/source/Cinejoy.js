@@ -93,12 +93,11 @@ function enrichStreamTitles(streams, title) {
 }
 
 // Filter out streams from servers that are known to be broken.
-// The Solara server (lol.movieboxnoob.cc/content?v=...) returns 403
-// "Invalid token" — the CDN requires session-specific tokens that expire
-// quickly. Including these streams causes Stremio to try loading them,
-// get 403, and appear "slow" before falling back to other servers.
-// Lisbon (info.movieboxnoob.cc) and Athens/Castle (api.shegu.st/synthetic)
-// are fast and reliable — those are kept.
+// - Solara (lol.movieboxnoob.cc/content?v=...) returns 403 "Invalid token"
+//   (session-specific tokens that expire within seconds)
+// - Lisbon (info.movieboxnoob.cc/playlist/*.m3u8) returns 200 for the m3u8
+//   but segments return 404 — causes "stuck on loading" in Stremio because
+//   the master playlist loads but no segments play.
 function filterBrokenServers(streams) {
   if (!Array.isArray(streams)) return streams;
 
@@ -107,13 +106,44 @@ function filterBrokenServers(streams) {
     const url = s.url.toLowerCase();
 
     // Solara server — consistently returns 403 "Invalid token"
-    // The token in the URL expires within seconds, making the stream
-    // unplayable from Stremio. Filter it out to avoid slow 403 failures.
     if (url.includes('lol.movieboxnoob.cc/content')) {
       return false;
     }
 
+    // Lisbon server — m3u8 loads but segments return 404
+    if (url.includes('info.movieboxnoob.cc/playlist')) {
+      return false;
+    }
+
     return true;
+  });
+}
+
+// Add Referer headers to streams that require them for segment playback.
+// Athens/Castle (api.shegu.st) streams need Referer: https://api.shegu.st/
+// for segment requests — without it, segments return 404.
+// This Referer is passed via the stream's headers field so buildStreamResults
+// picks it up as nuvioReferer → NuvioExtractor routes through /proxy with
+// the Referer header for both the m3u8 and all segment requests.
+function addRefererHeaders(streams) {
+  if (!Array.isArray(streams)) return streams;
+
+  return streams.map(s => {
+    if (!s || !s.url) return s;
+    const url = s.url.toLowerCase();
+
+    // Athens/Castle (api.shegu.st) — needs Referer for segments
+    if (url.includes('api.shegu.st')) {
+      return {
+        ...s,
+        headers: {
+          ...(s.headers || {}),
+          Referer: 'https://api.shegu.st/',
+        },
+      };
+    }
+
+    return s;
   });
 }
 
@@ -143,12 +173,16 @@ export class Cinejoy extends Source {
       timeoutMs: 25000,
     });
 
-    // Filter out broken Solara streams (403 "Invalid token") before enrichment
+    // Filter out broken Solara/Lisbon streams before enrichment
     const filteredStreams = filterBrokenServers(streams);
+
+    // Add Referer headers for Athens/Castle (api.shegu.st) streams
+    // so NuvioExtractor routes them through /proxy with the correct Referer
+    const streamsWithReferer = addRefererHeaders(filteredStreams);
 
     // Enrich stream titles with metadata markers before buildStreamResults
     // so StreamResolver.enrichMeta can parse sourceType/codec/HDR/audio
-    const enrichedStreams = enrichStreamTitles(filteredStreams, title);
+    const enrichedStreams = enrichStreamTitles(streamsWithReferer, title);
 
     return buildStreamResults({
       streams: enrichedStreams,

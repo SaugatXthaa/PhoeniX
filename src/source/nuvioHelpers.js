@@ -227,9 +227,12 @@ export function buildStreamResults({ streams, title, sourceId, sourceLabel, coun
  */
 export async function callNuvioProvider(providerPath, { tmdbId, mediaType, season, episode, timeoutMs = 25000 }) {
   const require_ = createRequire(providerPath);
-  try {
-    delete require_.cache[require_.resolve(providerPath)];
-  } catch {}
+
+  // NOTE: Do NOT delete require_.cache here. Clearing the cache forces a
+  // module reload on every call, which breaks obfuscated scrapers (videasy,
+  // animezey, etc.) that have initialization side effects or dynamic imports
+  // that don't complete properly on reload. The module code doesn't change
+  // between requests, so caching is safe and improves performance.
 
   let provider;
   try {
