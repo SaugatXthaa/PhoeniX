@@ -24,9 +24,9 @@ import { Extractor } from './Extractor.js';
 const NUVIO_SOURCE_IDS = new Set([
   'cineby', 'desiflix', 'hindmoviez', 'movieblast',
   'movies4u', 'playimdb',
-  // Batch 2: videasy, anikototv, vixsrc2, animesalt,
+  // Batch 2: videasy, anikototv, animesalt,
   // animeworldindia, animesdigital
-  'videasy', 'anikototv', 'vixsrc2',
+  'videasy', 'anikototv',
   'animesalt', 'animeworldindia', 'animesdigital',
   // AniChan — anime sub+dub HLS via AniList ID + anichan.net API
   'anichan',

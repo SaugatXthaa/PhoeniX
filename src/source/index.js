@@ -7,7 +7,6 @@ import { AnimeWorld } from './AnimeWorld.js';
 import { AniDB } from './AniDB.js';
 import { AniNeko } from './AniNeko.js';
 import { AcerMovies } from './AcerMovies.js';
-import { Cuevana } from './Cuevana.js';
 import { Einschalten } from './Einschalten.js';
 import { Eurostreaming } from './Eurostreaming.js';
 import { Fmovies } from './Fmovies.js';
@@ -83,7 +82,6 @@ import { HDHub4u } from './HDHub4u.js';
 // Nuvio provider sources — Batch 2 (each has its own dedicated source file)
 import { VidEasy } from './VidEasy.js';
 import { AnikotoTV } from './AnikotoTV.js';
-import { VixSrc2 } from './VixSrc2.js';
 import { AnimeSalt } from './AnimeSalt.js';
 import { AnimeWorldIN } from './AnimeWorldIN.js';
 import { AnimesDigital } from './AnimesDigital.js';
@@ -126,7 +124,6 @@ export const createSources = (fetcher) => {
     new AniNeko(fetcher),
     // AL
     // ES / MX
-    new Cuevana(fetcher),
     new VerHdLink(fetcher),
     // DE
     new Einschalten(fetcher),
@@ -207,8 +204,6 @@ export const createSources = (fetcher) => {
     new VidEasy(fetcher),
     // anikototv — anime-only sub+dub (megap.akirax.buzz, Referer: megaplay.buzz)
     new AnikotoTV(fetcher),
-    // vixsrc2 — movies/TV HLS (komiknostalgia.id, direct provider — no MediaFlowProxy needed)
-    new VixSrc2(fetcher),
     // animesalt — anime-only (as-cdn21.top, 720p, Referer: as-cdn21.top)
     new AnimeSalt(fetcher),
     // animeworldindia — anime-only (play.zephyrix.top, 1080p, watchanimeworld.top)

@@ -22,7 +22,6 @@ import { Vidara } from './Vidara.js';
 import { Vidsonic } from './Vidsonic.js';
 import { VidSrc } from './VidSrc.js';
 import { Vidzee } from './Vidzee.js';
-import { VixSrc } from './VixSrc.js';
 import { VidKing } from './VidKing.js';
 import { Voe } from './Voe.js';
 // Cinepro-org/core ports (additive — no existing extractor modified)
@@ -125,7 +124,6 @@ export const createExtractors = (fetcher, logger) => {
       'vsembed.su',
       'vsrc.su',
     ]),
-    new VixSrc(fetcher, logger),
     new VidKing(fetcher, logger),
 
     // Cinepro-org/core ports (additive — placed before fallback)
