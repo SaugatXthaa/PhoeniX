@@ -36,7 +36,53 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const _cache = new Map();
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
+// got-scraping loader (Chrome TLS fingerprint — bypasses CF on Render)
+// Native fetch() fails on Render for gemma416okl.com — got-scraping works.
+let _gotScraping = null;
+async function getGotScraping() {
+  if (_gotScraping) return _gotScraping;
+  try {
+    const mod = await import('got-scraping');
+    _gotScraping = mod.gotScraping;
+  } catch (e) {
+    console.error('[ZinkMovies] Failed to load got-scraping:', e.message);
+    _gotScraping = false;
+  }
+  return _gotScraping;
+}
+
 async function fetchText(url, options = {}, timeout = 15000) {
+  const headers = { 'User-Agent': UA, 'Accept': '*/*', ...(options.headers || {}) };
+
+  // Strategy 1: got-scraping (Chrome TLS — works on Render for CF bypass)
+  const gs = await getGotScraping();
+  if (gs) {
+    try {
+      const opts = {
+        method: options.method || 'GET',
+        headers,
+        timeout: { request: timeout },
+        throwHttpErrors: false,
+        followRedirect: true,
+        http2: false, // avoid GOAWAY errors
+      };
+      // Only include body if it's actually set — passing body: undefined
+      // causes some servers to treat the request as having an empty body,
+      // which can trigger rate-limiting (gemma416okl.com returns "7").
+      if (options.body !== undefined && options.body !== null) {
+        opts.body = options.body;
+      }
+      const res = await gs(url, opts);
+      if (res.statusCode >= 200 && res.statusCode < 400) {
+        return res.body;
+      }
+      // Non-2xx — fall through to native fetch
+    } catch (e) {
+      // got-scraping failed — fall through to native fetch
+    }
+  }
+
+  // Strategy 2: native fetch (fallback for non-CF-protected URLs)
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {

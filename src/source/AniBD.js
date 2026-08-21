@@ -71,14 +71,31 @@ export class AniBD extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Step 1: Search for the anime
-    const animeInfo = await this.findAnime(name, year);
-    if (!animeInfo) return [];
+    // Step 1a: Try AniList GraphQL API to get the anilist ID by English title.
+    // This is more reliable than text matching because AniBD indexes by
+    // Japanese romanization (e.g. "Shingeki no Kyojin") while TMDB gives
+    // English titles (e.g. "Attack on Titan"). AniList maps both.
+    let anilistId = null;
+    let serverName = '';
+    try {
+      const anilistData = await this.getAniListId(name);
+      if (anilistData?.id) {
+        anilistId = String(anilistData.id);
+        // Use romaji title for display if available
+        if (anilistData.romaji) serverName = anilistData.romaji;
+      }
+    } catch { /* fall through to text search */ }
+
+    // Step 1b: If AniList lookup failed, fall back to text search
+    if (!anilistId) {
+      const animeInfo = await this.findAnime(name, year);
+      if (!animeInfo) return [];
+      anilistId = animeInfo.anilist;
+      if (!anilistId) return [];
+      serverName = animeInfo.postname || serverName;
+    }
 
     // Step 2: Get episodes (epid = anilist ID)
-    const anilistId = animeInfo.anilist;
-    if (!anilistId) return [];
-
     const servers = await apiGet(`${EPISODES_API}?epid=${anilistId}`);
     if (!Array.isArray(servers) || servers.length === 0) return [];
 
@@ -86,6 +103,7 @@ export class AniBD extends Source {
     // Only one server ("S-sub") exists — SUB-only site
     const server = servers[0];
     if (!server?.server_data?.length) return [];
+    if (!serverName) serverName = server.server_name || 'AniBD';
 
     const targetEp = tmdbId.season ? (tmdbId.episode || 1) : 1;
     let episode = null;
@@ -138,6 +156,35 @@ export class AniBD extends Source {
     }];
 
     return results;
+  }
+
+  // Look up the AniList ID + romaji title via GraphQL API.
+  // This maps English TMDB titles to the AniList ID (which AniBD uses as
+  // its 'epid' parameter) without relying on text matching against the
+  // Japanese romanization that AniBD indexes by.
+  async getAniListId(name) {
+    const { gotScraping } = await import('got-scraping');
+    const query = 'query($search: String) { Media(search: $search, type: ANIME, sort: SEARCH_MATCH) { id title { romaji english } } }';
+    try {
+      const res = await gotScraping.post('https://graphql.anilist.co', {
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': UA },
+        body: JSON.stringify({ query, variables: { search: name } }),
+        timeout: { request: 10000 },
+        throwHttpErrors: false,
+        http2: false,
+      });
+      if (res.statusCode !== 200) return null;
+      const data = JSON.parse(res.body);
+      const media = data?.data?.Media;
+      if (!media?.id) return null;
+      return {
+        id: media.id,
+        romaji: media.title?.romaji || '',
+        english: media.title?.english || '',
+      };
+    } catch {
+      return null;
+    }
   }
 
   // Search AniBD by name and return {postid, anilist} of the best match

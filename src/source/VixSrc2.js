@@ -4,6 +4,11 @@
 // Uses the Nuvio provider (src/nuvio/vixsrc.cjs) which fetches HLS playlists
 // from komiknostalgia.id. Requires Referer: https://komiknostalgia.id/
 //
+// NOTE: komiknostalgia.id domain is DEAD (DNS doesn't resolve as of Aug 2026).
+// The scraper still works if/when the domain comes back online or if a new
+// mirror is configured. This source gracefully returns 0 streams when the
+// domain is unreachable — it does NOT crash or affect other sources.
+//
 // This is a direct provider (returns playable stream URLs) — different from the
 // existing VixSrc source which uses embed URLs and requires MediaFlowProxy.
 // ID is 'vixsrc2' to avoid conflict with existing 'vixsrc' source.
@@ -30,7 +35,7 @@ export class VixSrc2 extends Source {
     this.label = 'VixSrc 2';
     this.contentTypes = ['movie', 'series'];
     this.countryCodes = [CountryCode.multi];
-    this.baseUrl = 'https://komiknostalgia.id';
+    this.baseUrl = 'https://vixsrc.to';
     this.fetcher = fetcher;
     this.ttl = 10 * 60 * 1000; // 10min
   }
@@ -46,6 +51,7 @@ export class VixSrc2 extends Source {
       mediaType,
       season: tmdbId.season || null,
       episode: tmdbId.episode || null,
+      timeoutMs: 12000, // shorter timeout — domain is dead, fail fast
     });
 
     return buildStreamResults({
@@ -58,3 +64,4 @@ export class VixSrc2 extends Source {
     });
   }
 }
+

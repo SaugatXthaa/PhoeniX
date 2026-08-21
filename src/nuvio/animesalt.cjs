@@ -4,28 +4,75 @@
 var TMDB_KEY = 'd80ba92bc7cefe3359668d30d06f3305'
 var BASE = 'https://animesalt.link'
 var CDN = 'https://as-cdn21.top'
-var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+
+// got-scraping loader — animesalt.link is behind Cloudflare which blocks
+// native fetch() with 403. got-scraping uses Chrome's TLS fingerprint to
+// bypass CF. Falls back to native fetch if got-scraping fails to load.
+var _gotScraping = null
+function getGotScraping() {
+  if (_gotScraping !== null) return Promise.resolve(_gotScraping)
+  return import('got-scraping').then(function(mod) {
+    _gotScraping = mod.gotScraping
+    return _gotScraping
+  }).catch(function() {
+    _gotScraping = false
+    return false
+  })
+}
 
 function httpGet(url, headers) {
-  return fetch(url, {
-    headers: Object.assign({ 'User-Agent': UA }, headers || {})
-  }).then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status)
-    return r.text()
+  return getGotScraping().then(function(gs) {
+    if (gs) {
+      return gs.get(url, {
+        headers: Object.assign({ 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml,*/*' }, headers || {}),
+        timeout: { request: 15000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+        http2: false,
+      }).then(function(res) {
+        if (res.statusCode >= 400) throw new Error('HTTP ' + res.statusCode)
+        return res.body
+      })
+    }
+    // Fallback: native fetch
+    return fetch(url, {
+      headers: Object.assign({ 'User-Agent': UA }, headers || {})
+    }).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      return r.text()
+    })
   })
 }
 
 function httpPost(url, body, headers) {
-  return fetch(url, {
-    method: 'POST',
-    headers: Object.assign({
-      'User-Agent': UA,
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }, headers || {}),
-    body: body
-  }).then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status)
-    return r.json()
+  return getGotScraping().then(function(gs) {
+    if (gs) {
+      return gs.post(url, {
+        headers: Object.assign({ 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json, text/javascript, */*; q=0.01' }, headers || {}),
+        body: body,
+        timeout: { request: 15000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+        http2: false,
+      }).then(function(res) {
+        if (res.statusCode >= 400) throw new Error('HTTP ' + res.statusCode)
+        // Parse JSON response — callers expect a parsed object (data.videoSource etc.)
+        try { return JSON.parse(res.body) } catch (e) { throw new Error('JSON parse failed: ' + e.message) }
+      })
+    }
+    // Fallback: native fetch
+    return fetch(url, {
+      method: 'POST',
+      headers: Object.assign({
+        'User-Agent': UA,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }, headers || {}),
+      body: body
+    }).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      return r.json()
+    })
   })
 }
 

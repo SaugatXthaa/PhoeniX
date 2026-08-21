@@ -13,7 +13,7 @@ export class Cuevana extends Source {
     this.label = 'Cuevana';
     this.contentTypes = ['movie', 'series'];
     this.countryCodes = [CountryCode.es, CountryCode.mx];
-    this.baseUrl = 'https://ww1.cuevana3.is';
+    this.baseUrl = 'https://wv3.cuevana3.eu';
     this.fetcher = fetcher;
   }
 
@@ -76,7 +76,26 @@ export class Cuevana extends Source {
           return { url, meta };
         }
 
-        const html = await this.fetcher.text(ctx, url, { headers: { Referer: pageUrl.origin } });
+        // Use got-scraping for CF bypass on Render
+        let html;
+        try {
+          const { gotScraping } = await import('got-scraping');
+          const res = await gotScraping.get(url.href, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+              'Referer': pageUrl.origin + '/',
+            },
+            timeout: { request: 15000 },
+            throwHttpErrors: false,
+            followRedirect: true,
+            http2: false,
+          });
+          html = res.body;
+        } catch {
+          html = await this.fetcher.text(ctx, url, { headers: { Referer: pageUrl.origin } });
+        }
 
         const urlMatcher = html.match(/url ?= ?'(.*)'/);
 
@@ -87,7 +106,26 @@ export class Cuevana extends Source {
 
   async fetchPageUrl(ctx, keyword) {
     const searchUrl = new URL(`/search/${encodeURIComponent(keyword)}/`, this.baseUrl);
-    const html = await this.fetcher.text(ctx, searchUrl, { headers: { Referer: searchUrl.origin } });
+    // Use got-scraping for CF bypass on Render — plain Fetcher returns 403
+    let html;
+    try {
+      const { gotScraping } = await import('got-scraping');
+      const res = await gotScraping.get(searchUrl.href, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+          'Referer': searchUrl.origin + '/',
+        },
+        timeout: { request: 15000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+        http2: false,
+      });
+      html = res.body;
+    } catch {
+      html = await this.fetcher.text(ctx, searchUrl, { headers: { Referer: searchUrl.origin } });
+    }
 
     const $ = cheerio.load(html);
 
@@ -100,7 +138,26 @@ export class Cuevana extends Source {
   }
 
   async fetchEpisodeUrl(ctx, pageUrl, tmdbId) {
-    const html = await this.fetcher.text(ctx, pageUrl, { headers: { Referer: pageUrl.origin } });
+    // Use got-scraping for CF bypass on Render
+    let html;
+    try {
+      const { gotScraping } = await import('got-scraping');
+      const res = await gotScraping.get(pageUrl.href, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+          'Referer': pageUrl.origin + '/',
+        },
+        timeout: { request: 15000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+        http2: false,
+      });
+      html = res.body;
+    } catch {
+      html = await this.fetcher.text(ctx, pageUrl, { headers: { Referer: pageUrl.origin } });
+    }
 
     const $ = cheerio.load(html);
 
