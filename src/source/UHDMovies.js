@@ -12,13 +12,30 @@
 
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import { CountryCode } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
-import { buildStreamResults, callNuvioProvider } from './nuvioHelpers.js';
+import { buildStreamResults } from './nuvioHelpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'uhdmovies.cjs');
+const require_ = createRequire(import.meta.url);
+
+// Cache the scraper module — the obfuscated uhdmovies.cjs has initialization
+// side effects that break when loaded via createRequire(providerPath) in
+// callNuvioProvider. Caching is safe because module code doesn't change.
+let _scraperMod = null;
+function getScraperModule() {
+  if (_scraperMod) return _scraperMod;
+  try {
+    _scraperMod = require_(PROVIDER_PATH);
+  } catch (e) {
+    console.error(`[uhdmovies] failed to load scraper: ${e?.message || e}`);
+    return null;
+  }
+  return _scraperMod;
+}
 
 // Strip invisible/control chars from a string — BOM, zero-width spaces, etc.
 // The obfuscated uhdmovies scraper injects these into stream names as
@@ -86,13 +103,23 @@ export class UHDMovies extends Source {
     // UHDMovies is movies-only — skip if this is a TV series request
     if (tmdbId.season) return [];
 
-    const streams = await callNuvioProvider(PROVIDER_PATH, {
-      tmdbId: tmdbId.id,
-      mediaType: 'movie',
-      season: null,
-      episode: null,
-      timeoutMs: 35000, // UHDMovies resolves via DriveSeed which can be slow
-    });
+    // Use direct require (cached) instead of callNuvioProvider — the
+    // obfuscated uhdmovies scraper has initialization that breaks when loaded
+    // via createRequire(providerPath) in callNuvioProvider.
+    const mod = getScraperModule();
+    if (!mod || typeof mod.getStreams !== 'function') return [];
+
+    let streams;
+    try {
+      streams = await Promise.race([
+        mod.getStreams(tmdbId.id, 'movie', null, null),
+        new Promise(r => setTimeout(() => r(null), 40000)), // DriveSeed resolution can be slow
+      ]);
+    } catch (e) {
+      console.error(`[uhdmovies] getStreams error: ${e?.message || e}`);
+      return [];
+    }
+    if (!Array.isArray(streams)) return [];
 
     // Sanitize stream names and titles before buildStreamResults
     // This strips invisible BOM/zero-width chars and cleans up the title format
