@@ -8,6 +8,7 @@ import { AniDB } from './AniDB.js';
 import { AniNeko } from './AniNeko.js';
 import { AcerMovies } from './AcerMovies.js';
 import { Einschalten } from './Einschalten.js';
+import { FrameX } from './FrameX.js';
 import { Eurostreaming } from './Eurostreaming.js';
 import { Fmovies } from './Fmovies.js';
 import { FourKHDHub } from './FourKHDHub.js';
@@ -224,5 +225,7 @@ export const createSources = (fetcher) => {
     new OneDesireMovies(fetcher),
     // 4khdhub.one — movies/TV via HubCloud/HubDrive (up to 4K, separate from 4KHDHub.link)
     new FourKHDHubOne(fetcher),
+    // framextv.tech — movies/TV/anime (sub+dub) via FrameX API (up to 4K HLS)
+    new FrameX(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
