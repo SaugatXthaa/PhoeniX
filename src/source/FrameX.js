@@ -52,11 +52,14 @@ export class FrameX extends Source {
     // Load scraper module (cached via nuvioHelpers)
     const { callNuvioProvider } = await import('./nuvioHelpers.js');
 
-    // Determine type: anime detection via original_language
-    // TMDB's original_language = 'ja' + type = 'tv' → anime
-    let apiType = tmdbId.season ? 'tv' : 'movie';
+    // FrameX API only supports 'movie' and 'tv' types.
+    // Anime is handled as type=tv (anime IS TV on TMDB).
+    // The API resolves anime by TMDB TV ID directly — no AniList mapping needed.
+    const apiType = tmdbId.season ? 'tv' : 'movie';
+    let isAnime = false;
+
+    // Detect anime for metadata enrichment (Japanese audio marker)
     if (tmdbId.season) {
-      // Check if this is anime (Japanese origin)
       try {
         const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId.id}?api_key=${process.env.TMDB_API_KEY || '439c478a771f35c05022f9feabcca01c'}`;
         const { gotScraping } = await import('got-scraping');
@@ -66,12 +69,8 @@ export class FrameX extends Source {
         });
         if (r.statusCode === 200) {
           const data = JSON.parse(r.body);
-          // Japanese anime: original_language=ja + genres include Animation (16)
-          const isAnime = data.original_language === 'ja' &&
+          isAnime = data.original_language === 'ja' &&
             (data.genres || []).some(g => g.id === 16);
-          if (isAnime) {
-            apiType = 'anime';
-          }
         }
       } catch { /* best effort */ }
     }
@@ -81,7 +80,7 @@ export class FrameX extends Source {
       mediaType: apiType,
       season: tmdbId.season || null,
       episode: tmdbId.episode || null,
-      timeoutMs: 30000, // Movies/TV are fast (~2s). Anime may timeout.
+      timeoutMs: 20000, // Movies/TV/anime all fast (~2-5s)
     });
 
     // Enrich streams with metadata markers for StreamResolver.enrichMeta
@@ -100,11 +99,9 @@ export class FrameX extends Source {
         else if (s.quality && s.quality.includes('1080')) markers.push('x264');
         else markers.push('x264');
 
-        // Audio language
-        if (s.category === 'sub' || apiType === 'anime') {
+        // Audio language — anime is Japanese, others are English
+        if (isAnime) {
           markers.push('Japanese');
-        } else if (s.category === 'dub') {
-          markers.push('English');
         } else {
           markers.push('English');
         }

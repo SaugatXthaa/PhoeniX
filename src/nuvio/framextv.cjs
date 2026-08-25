@@ -88,48 +88,26 @@ async function checkProviders(id, type, season, episode) {
 }
 
 async function getStreams(tmdbId, type, season, episode) {
-  const isAnime = type === 'anime';
-  const isTV = type === 'tv' || isAnime;
+  // FrameX API only supports 'movie' and 'tv' types.
+  // Anime is handled as type=tv (anime IS TV on TMDB).
+  // The API resolves anime by TMDB TV ID directly — no AniList mapping needed.
+  const isTV = type === 'tv' || type === 'anime';
+  const apiType = isTV ? 'tv' : 'movie';
 
-  console.log(`[FrameX] Request: tmdb=${tmdbId} type=${type} S${season || '?'}E${episode || '?'}`);
-
-  // For anime, convert TMDB ID to AniList ID
-  let apiId = tmdbId;
-  let apiType = type === 'tv' ? 'tv' : (isAnime ? 'anime' : 'movie');
-  let animeTitle = '';
-
-  if (isAnime) {
-    // Get title from TMDB first
-    const tmdbData = await fetchJson(`https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}`);
-    if (!tmdbData) {
-      console.log('[FrameX] TMDB lookup failed');
-      return [];
-    }
-    animeTitle = tmdbData.name || tmdbData.title || '';
-    console.log(`[FrameX] TMDB: ${animeTitle}`);
-
-    // Get AniList ID
-    const anilist = await getAniListId(animeTitle);
-    if (!anilist?.id) {
-      console.log('[FrameX] AniList lookup failed for: ' + animeTitle);
-      return [];
-    }
-    apiId = anilist.id;
-    console.log(`[FrameX] AniList ID: ${apiId}`);
-  }
+  console.log(`[FrameX] Request: tmdb=${tmdbId} type=${apiType} S${season || '?'}E${episode || '?'}`);
 
   // Build API URL
-  const params = new URLSearchParams({ id: String(apiId), type: apiType });
+  const params = new URLSearchParams({ id: String(tmdbId), type: apiType });
   if (isTV && season) {
     params.set('season', String(season));
     params.set('episode', String(episode || 1));
   }
 
-  // Try default (barbarian) provider first — it's the fastest
+  // Fetch streams from API
   const apiUrl = `${API_BASE}/api/stream?${params}`;
   console.log(`[FrameX] Fetching: ${apiUrl}`);
 
-  const data = await fetchJson(apiUrl, 25000);
+  const data = await fetchJson(apiUrl, 20000);
   if (!data || !data.success || !Array.isArray(data.sources) || data.sources.length === 0) {
     console.log('[FrameX] No streams from default provider');
     return [];
@@ -153,7 +131,7 @@ async function getStreams(tmdbId, type, season, episode) {
     const category = src.category || '';
 
     // Build display title
-    let titleLine = animeTitle || `TMDB ${tmdbId}`;
+    let titleLine = `TMDB ${tmdbId}`;
     if (isTV) {
       titleLine += ` S${String(season || 1).padStart(2, '0')}E${String(episode || 1).padStart(2, '0')}`;
     }
