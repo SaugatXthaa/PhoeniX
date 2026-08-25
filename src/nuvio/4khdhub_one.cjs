@@ -99,7 +99,7 @@ function findBestMatch(results, tmdbTitle, tmdbYear, isMovie) {
 
   // Filter by type (movie vs series)
   const filtered = results.filter(r => r.isMovie === isMovie);
-  if (filtered.length === 0) return results[0]; // fallback to first result
+  if (filtered.length === 0) return null;
 
   let best = null;
   let bestScore = 0;
@@ -124,11 +124,13 @@ function findBestMatch(results, tmdbTitle, tmdbYear, isMovie) {
     }
   }
 
-  if (best && bestScore >= 30) {
+  // Only return matches with score >= 60 — prevents random movie matches
+  if (best && bestScore >= 60) {
     console.log('[4KHDHubOne] Matched: ' + best.slug + ' (score=' + bestScore + ')');
     return best;
   }
-  return filtered[0] || results[0];
+  console.log('[4KHDHubOne] No good match found (best score=' + bestScore + ', need >= 60)');
+  return null;
 }
 
 // Extract download links from a movie post page
@@ -143,27 +145,24 @@ function extractMovieLinks(html) {
   const $ = cheerio.load(html);
   const links = [];
   const seen = new Set();
-  const seenQualities = new Set();
 
-  $('a[href*="hubcloud"], a[href*="hubdrive"]').each((_i, el) => {
+  $('a[href*="hubcloud"]').each((_i, el) => {
     const href = $(el).attr('href') || '';
     const text = $(el).text().trim();
     if (seen.has(href)) return;
     seen.add(href);
 
-    // Skip hubdrive.tips — requires sign-in (401 "Not signed in"),
-    // so HubExtractor cannot resolve it server-side. hubcloud.ist
-    // is the working alternative and appears first in the HTML.
-    if (href.includes('hubdrive.tips')) return;
-
-    // Walk up to find quality header
+    // Walk up to find quality badges in the same container
     let quality = '';
     let size = '';
-    let parent = $(el).parent();
-    for (let depth = 0; depth < 5; depth++) {
-      parent.find('.badge, span').each((_j, badge) => {
+    let parent = $(el);
+    for (let depth = 0; depth < 8; depth++) {
+      parent = parent.parent();
+      if (!parent.length) break;
+
+      parent.find('.badge').each((_j, badge) => {
         const badgeText = $(badge).text().trim();
-        if (badgeText.match(/2160p|1080p|720p|480p|4K|HDR|UHD|IMAX|BluRay|WEB/i) && !quality) {
+        if (badgeText.match(/2160p|1080p|720p|480p|4K|HDR|UHD|IMAX|BluRay|WEB|REMUX|HEVC|x264|x265|10bit|Dual/i) && !quality) {
           quality = badgeText;
         }
         if (badgeText.match(/[\d.]+\s*(?:GB|MB)/i) && !size) {
@@ -171,15 +170,25 @@ function extractMovieLinks(html) {
         }
       });
       if (quality) break;
-      parent = parent.parent();
     }
 
-    // Deduplicate by quality — only keep first link per quality
-    const qualityKey = quality || 'default';
-    if (seenQualities.has(qualityKey)) return;
-    seenQualities.add(qualityKey);
+    // Fallback: check span elements
+    if (!quality) {
+      let p = $(el);
+      for (let depth = 0; depth < 5; depth++) {
+        p = p.parent();
+        if (!p.length) break;
+        p.find('span').each((_j, span) => {
+          const t = $(span).text().trim();
+          if (t.match(/2160p|1080p|720p|480p|4K|HDR|UHD|IMAX|BluRay|REMUX|HEVC/i) && !quality && t.length < 50) {
+            quality = t;
+          }
+        });
+        if (quality) break;
+      }
+    }
 
-    // Deduplicate by quality — only keep first link per quality
+    if (!quality) quality = 'Download';
 
     links.push({ url: href, quality, size, text, host: text.replace('Download ', '') });
   });

@@ -29,6 +29,7 @@ import { Source } from './Source.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require_ = createRequire(import.meta.url);
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', '4khdhub_one.cjs');
+const HUB_EXTRACTOR_PATH = path.join(__dirname, '..', 'nuvio', 'hub_extractor.cjs');
 
 // Cache the scraper module
 let _scraperMod = null;
@@ -37,6 +38,15 @@ function getScraperModule() {
   try { _scraperMod = require_(PROVIDER_PATH); }
   catch (e) { console.error(`[4khdhubone] failed to load scraper: ${e?.message || e}`); }
   return _scraperMod;
+}
+
+// Cache the hub_extractor (CommonJS — resolves hubcloud → googleusercontent)
+let _hubExt = null;
+function getHubExtractor() {
+  if (_hubExt) return _hubExt;
+  try { _hubExt = require_(HUB_EXTRACTOR_PATH); }
+  catch (e) { console.error(`[4khdhubone] failed to load hub_extractor: ${e?.message || e}`); }
+  return _hubExt;
 }
 
 function parseHeight(q) {
@@ -96,14 +106,29 @@ export class FourKHDHubOne extends Source {
     const results = [];
     const seenUrls = new Set();
 
+    // Resolve hubcloud URLs to direct googleusercontent (10Gbps) URLs.
+    // This bypasses the ESM HubExtractor→HubCloud→StreamResolver pipeline
+    // which filters out pixel.hubcloud.cx / gpdl.hubcloud.cx (the 10Gbps
+    // CDN redirect URLs). hub_extractor.resolveHubcloudUrl() follows the
+    // full chain and returns the direct googleusercontent.com URL.
+    const hubExt = getHubExtractor();
+    if (!hubExt) return [];
+
     for (const s of streams) {
       if (!s || !s.url || typeof s.url !== 'string') continue;
       if (!s.url.startsWith('http')) continue;
       if (seenUrls.has(s.url)) continue;
+
+      // Resolve hubcloud → googleusercontent (the 10Gbps stream)
+      let gdriveUrl;
+      try {
+        gdriveUrl = await hubExt.resolveHubcloudUrl(s.url);
+      } catch { continue; }
+      if (!gdriveUrl) continue;
       seenUrls.add(s.url);
 
       let url;
-      try { url = new URL(s.url); } catch { continue; }
+      try { url = new URL(gdriveUrl); } catch { continue; }
 
       const height = parseHeight(s.quality);
       const fileSize = parseSize(s.size);
