@@ -1,0 +1,697 @@
+     1→/**
+     2→ * CineDoze HTTP Streams
+     3→ * Scrapes cinedoze.tv posts -> cinedoze links -> savelinks pages, preferring hubdrive/hubcloud
+     4→ * with gdflix as a pixeldrain-only fallback.
+     5→ */
+     6→
+     7→import axios from 'axios';
+     8→import * as cheerio from 'cheerio';
+     9→import { SocksProxyAgent } from 'socks-proxy-agent';
+    10→import { HttpsProxyAgent } from 'https-proxy-agent';
+    11→import Cinemeta from '../../../util/cinemeta.js';
+    12→import { renderLanguageFlags, detectLanguagesFromTitle } from '../../../util/language-mapping.js';
+    13→import { makeRequest } from '../../utils/http.js';
+    14→import {
+    15→    removeYear,
+    16→    generateAlternativeQueries,
+    17→    getSortedMatches
+    18→} from '../../utils/parsing.js';
+    19→import { getResolutionFromName } from '../../utils/parsing.js';
+    20→import { extractFileName } from '../../../common/torrent-utils.js';
+    21→import { encodeUrlForStreaming } from '../../utils/encoding.js';
+    22→import { processExtractorLinkWithAwait } from '../4khdhub/extraction.js';
+    23→import {
+    24→    parseSizeFromText,
+    25→    isLazyLoadEnabled,
+    26→    createPreviewStream,
+    27→    formatPreviewStreams
+    28→} from '../../utils/preview-mode.js';
+    29→import * as config from '../../../config.js';
+    30→
+    31→const BASE_URL = (process.env.CINEDOZE_BASE_URL || 'https://cinedoze.tv').replace(/\/+$/, '');
+    32→const PROVIDER = 'CineDoze';
+    33→const CINEDOZE_PROXY_URL = process.env.CINEDOZE_PROXY_URL
+    34→    || 'socks5h://100.109.163.45:1080';
+    35→const CINEDOZE_FLARESOLVERR_ENABLED = process.env.CINEDOZE_FLARESOLVERR_ENABLED === 'true';
+    36→
+    37→// FlareSolverr configuration
+    38→const FLARESOLVERR_URL = config.FLARESOLVERR_URL || process.env.FLARESOLVERR_URL || '';
+    39→const FLARESOLVERR_V2 = config.FLARESOLVERR_V2 || process.env.FLARESOLVERR_V2 === 'true';
+    40→const FLARESOLVERR_PROXY_URL = config.FLARESOLVERR_PROXY_URL || process.env.FLARESOLVERR_PROXY_URL || '';
+    41→const FLARESOLVERR_TIMEOUT = parseInt(process.env.CINEDOZE_FLARESOLVERR_TIMEOUT, 10) || 45000;
+    42→
+    43→function normalizeProxyUrl(url = '') {
+    44→    if (!url) return '';
+    45→    if (url.toLowerCase().startsWith('socks5://')) {
+    46→        return `socks5h://${url.slice('socks5://'.length)}`;
+    47→    }
+    48→    return url;
+    49→}
+    50→
+    51→function createProxyAgent(proxyUrl) {
+    52→    if (!proxyUrl) return null;
+    53→    try {
+    54→        const lower = proxyUrl.toLowerCase();
+    55→        if (lower.startsWith('socks4://') || lower.startsWith('socks5://') || lower.startsWith('socks5h://')) {
+    56→            return new SocksProxyAgent(proxyUrl);
+    57→        }
+    58→        if (lower.startsWith('http://') || lower.startsWith('https://')) {
+    59→            return new HttpsProxyAgent(proxyUrl);
+    60→        }
+    61→    } catch (error) {
+    62→        console.warn(`[${PROVIDER}] Failed to create proxy agent ${proxyUrl}: ${error.message}`);
+    63→    }
+    64→    return null;
+    65→}
+    66→
+    67→const CINEDOZE_PROXY_AGENT = createProxyAgent(normalizeProxyUrl(CINEDOZE_PROXY_URL));
+    68→
+    69→async function makeCineDozeRequest(url, options = {}) {
+    70→    const {
+    71→        parseHTML = false,
+    72→        timeout = 5000,
+    73→        headers = {},
+    74→        disableProxy = false
+    75→    } = options;
+    76→
+    77→    if (!CINEDOZE_PROXY_AGENT || disableProxy) {
+    78→        return makeRequest(url, options);
+    79→    }
+    80→
+    81→    const response = await axios.get(url, {
+    82→        timeout,
+    83→        headers: {
+    84→            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    85→            ...headers
+    86→        },
+    87→        maxRedirects: 5,
+    88→        validateStatus: () => true,
+    89→        responseType: 'text',
+    90→        transformResponse: [data => data],
+    91→        httpAgent: CINEDOZE_PROXY_AGENT,
+    92→        httpsAgent: CINEDOZE_PROXY_AGENT,
+    93→        proxy: false
+    94→    });
+    95→
+    96→    const body = typeof response.data === 'string' ? response.data : String(response.data ?? '');
+    97→    return {
+    98→        statusCode: response.status,
+    99→        headers: response.headers || {},
+   100→        body,
+   101→        document: parseHTML ? cheerio.load(body) : null,
+   102→        url: response.request?.res?.responseUrl || url
+   103→    };
+   104→}
+   105→
+   106→/**
+   107→ * Check if a response body contains a Cloudflare challenge
+   108→ */
+   109→function isCloudflareChallenge(body = '', statusCode = null) {
+   110→    const lower = (body || '').toLowerCase();
+   111→
+   112→    const strongSignals = [
+   113→        lower.includes('cf-mitigated'),
+   114→        lower.includes('just a moment'),
+   115→        lower.includes('checking your browser'),
+   116→        lower.includes('attention required! | cloudflare'),
+   117→        lower.includes('cf-turnstile'),
+   118→        lower.includes('verify_turnstile'),
+   119→        lower.includes('enable javascript and cookies to continue')
+   120→    ];
+   121→    if (strongSignals.some(Boolean)) {
+   122→        return true;
+   123→    }
+   124→
+   125→    // Soft markers can appear on real pages; require multiple markers (or 403/429) to classify as challenge.
+   126→    const softSignals = {
+   127→        cfChl: lower.includes('cf_chl'),
+   128→        challengePlatform: lower.includes('challenge-platform') || lower.includes('/cdn-cgi/challenge-platform'),
+   129→        cfBrowserVerification: lower.includes('cf-browser-verification'),
+   130→        securityCheck: lower.includes('security check') && lower.includes('cloudflare')
+   131→    };
+   132→    const softCount = Object.values(softSignals).filter(Boolean).length;
+   133→
+   134→    if (softCount >= 2) {
+   135→        return true;
+   136→    }
+   137→
+   138→    if ((statusCode === 403 || statusCode === 429) && softCount > 0) {
+   139→        return true;
+   140→    }
+   141→
+   142→    return false;
+   143→}
+   144→
+   145→function shouldUseFlareProxy(url) {
+   146→    if (!FLARESOLVERR_PROXY_URL || !url) return false;
+   147→    const lower = url.toLowerCase();
+   148→    if (lower.includes('hubcloud') || lower.includes('hubdrive') || lower.includes('hubcdn')) return false;
+   149→    return true;
+   150→}
+   151→
+   152→function getCloudflareMarkers(body = '') {
+   153→    const lower = (body || '').toLowerCase();
+   154→    const markers = [];
+   155→    if (lower.includes('cf-mitigated')) markers.push('cf-mitigated');
+   156→    if (lower.includes('just a moment')) markers.push('just-a-moment');
+   157→    if (lower.includes('cf_chl')) markers.push('cf_chl');
+   158→    if (lower.includes('challenge-platform')) markers.push('challenge-platform');
+   159→    if (lower.includes('cf-turnstile')) markers.push('cf-turnstile');
+   160→    if (lower.includes('verify_turnstile')) markers.push('verify_turnstile');
+   161→    if (lower.includes('security check')) markers.push('security-check');
+   162→    if (lower.includes('cloudflare')) markers.push('cloudflare');
+   163→    return markers;
+   164→}
+   165→
+   166→/**
+   167→ * Fetch a URL using FlareSolverr to bypass Cloudflare
+   168→ */
+   169→async function fetchWithFlareSolverr(url, headers = {}) {
+   170→    console.log(`[${PROVIDER}] fetchWithFlareSolverr called for ${url}`);
+   171→
+   172→    if (!CINEDOZE_FLARESOLVERR_ENABLED) {
+   173→        console.log(`[${PROVIDER}] FlareSolverr is disabled for this provider`);
+   174→        return null;
+   175→    }
+   176→
+   177→    if (!FLARESOLVERR_URL) {
+   178→        console.log(`[${PROVIDER}] FLARESOLVERR_URL not configured, returning null`);
+   179→        return null;
+   180→    }
+   181→
+   182→    console.log(`[${PROVIDER}] Using FlareSolverr to bypass Cloudflare for ${url}`);
+   183→    const flareTimeout = Math.max(FLARESOLVERR_TIMEOUT, 30000);
+   184→
+   185→    try {
+   186→        const requestBody = {
+   187→            cmd: 'request.get',
+   188→            url,
+   189→            maxTimeout: flareTimeout
+   190→        };
+   191→
+   192→        if (shouldUseFlareProxy(url)) {
+   193→            requestBody.proxy = { url: FLARESOLVERR_PROXY_URL };
+   194→        }
+   195→
+   196→        console.log(`[${PROVIDER}] FlareSolverr POST to ${FLARESOLVERR_URL}/v1 with timeout ${flareTimeout + 5000}ms, proxy: ${shouldUseFlareProxy(url) ? 'yes' : 'no'}`);
+   197→        let response;
+   198→        try {
+   199→            response = await axios.post(`${FLARESOLVERR_URL}/v1`, requestBody, {
+   200→                timeout: flareTimeout + 5000,
+   201→                headers: { 'Content-Type': 'application/json' }
+   202→            });
+   203→        } catch (axiosErr) {
+   204→            console.error(`[${PROVIDER}] Axios error: ${axiosErr.message}`);
+   205→            throw axiosErr;
+   206→        }
+   207→
+   208→        console.log(`[${PROVIDER}] FlareSolverr response status: ${response.status}`);
+   209→        const solution = response?.data?.solution;
+   210→        if (!solution) {
+   211→            console.log(`[${PROVIDER}] FlareSolverr returned no solution in response for ${url}`);
+   212→            return null;
+   213→        }
+   214→
+   215→        if (!solution?.response) {
+   216→            console.log(`[${PROVIDER}] FlareSolverr returned solution but no response body for ${url}`);
+   217→            return null;
+   218→        }
+   219→
+   220→        const body = solution.response;
+   221→        const lower = String(body).toLowerCase();
+   222→
+   223→        if (lower.includes('just a moment') || lower.includes('checking your browser') || lower.includes('cf-browser-verification')) {
+   224→            console.log(`[${PROVIDER}] FlareSolverr still blocked for ${url}`);
+   225→            return null;
+   226→        }
+   227→
+   228→        console.log(`[${PROVIDER}] FlareSolverr success for ${url}, got ${body.length} bytes`);
+   229→        return {
+   230→            document: cheerio.load(body),
+   231→            body,
+   232→            url: solution.url || url,
+   233→            statusCode: solution.status
+   234→        };
+   235→    } catch (error) {
+   236→        console.error(`[${PROVIDER}] FlareSolverr error for ${url}: ${error.message}`);
+   237→        if (error.response?.data) {
+   238→            console.error(`[${PROVIDER}] FlareSolverr response:`, JSON.stringify(error.response.data).substring(0, 200));
+   239→        }
+   240→        return null;
+   241→    }
+   242→}
+   243→
+   244→// Cache configuration
+   245→const SEARCH_CACHE_TTL = parseInt(process.env.CINEDOZE_SEARCH_CACHE_TTL, 10) || 30 * 60 * 1000; // 30 minutes
+   246→const PAGE_CACHE_TTL = parseInt(process.env.CINEDOZE_PAGE_CACHE_TTL, 10) || 10 * 60 * 1000; // 10 minutes
+   247→
+   248→// In-memory cache only
+   249→const searchCache = new Map();
+   250→const pageCache = new Map();
+   251→const expandCache = new Map();
+   252→
+   253→function cleanText(text = '') {
+   254→    return text.replace(/\s+/g, ' ').replace(/^\W+/, '').trim();
+   255→}
+   256→
+   257→function toAbsolute(href, base = BASE_URL) {
+   258→    if (!href) return null;
+   259→    try {
+   260→        return new URL(href, base).toString();
+   261→    } catch {
+   262→        return null;
+   263→    }
+   264→}
+   265→
+   266→async function searchCineDoze(query) {
+   267→    // CineDoze search breaks when query contains colons - strip them
+   268→    const cleanQuery = query.replace(/:/g, '').replace(/\s+/g, ' ').trim();
+   269→
+   270→    // Check in-memory cache first
+   271→    const cacheKey = cleanQuery.toLowerCase();
+   272→    const cached = searchCache.get(cacheKey);
+   273→    if (cached && Date.now() - cached.ts < SEARCH_CACHE_TTL) {
+   274→        console.log(`[${PROVIDER}] Search cache hit (memory) for "${query}"`);
+   275→        return cached.data;
+   276→    }
+   277→
+   278→    const url = `${BASE_URL}/search/${encodeURIComponent(cleanQuery)}/`;
+   279→    try {
+   280→        let response = await makeCineDozeRequest(url, { parseHTML: true, timeout: 8000 });
+   281→        let $ = response.document;
+   282→        let body = response.body || '';
+   283→
+   284→        // Check if we're blocked by Cloudflare
+   285→        if (!$ || isCloudflareChallenge(body, response.statusCode)) {
+   286→            console.log(`[${PROVIDER}] Cloudflare challenge detected for search "${query}", using FlareSolverr...`);
+   287→            const flareResponse = await fetchWithFlareSolverr(url);
+   288→
+   289→            if (flareResponse && flareResponse.document) {
+   290→                $ = flareResponse.document;
+   291→                body = flareResponse.body || '';
+   292→                console.log(`[${PROVIDER}] FlareSolverr bypass successful for search "${query}"`);
+   293→            } else {
+   294→                console.log(`[${PROVIDER}] FlareSolverr bypass failed for search "${query}"`);
+   295→                return [];
+   296→            }
+   297→        }
+   298→
+   299→        const results = [];
+   300→
+   301→        $('article').each((_, article) => {
+   302→            const link =
+   303→                $(article).find('a[href*="/movies/"], a[href*="/tvshows/"]').first().attr('href');
+   304→            const title =
+   305→                cleanText(
+   306→                    $(article).find('.title').text() ||
+   307→                    $(article).find('h3').text() ||
+   308→                    $(article).find('h2').text()
+   309→                );
+   310→            const absolute = toAbsolute(link, url);
+   311→            if (absolute && title) {
+   312→                results.push({ title, url: absolute });
+   313→            }
+   314→        });
+   315→
+   316→        // Fallback: regex for movie/tvshow links if DOM parsing failed
+   317→        if (results.length === 0) {
+   318→            const regex = /https?:\/\/cinedoze\.tv\/(?:movies|tvshows)\/[^\s"'<>]+/gi;
+   319→            const matches = [...(body || '').matchAll(regex)].map(m => m[0]);
+   320→            for (const href of matches) {
+   321→                const absolute = toAbsolute(href, url);
+   322→                if (!absolute) continue;
+   323→                // Derive title from slug
+   324→                const slug = absolute.split('/').filter(Boolean).pop() || '';
+   325→                const derived = cleanText(slug.replace(/[-_]+/g, ' '));
+   326→                if (derived) {
+   327→                    results.push({ title: derived, url: absolute });
+   328→                }
+   329→            }
+   330→        }
+   331→
+   332→        // Cache the results in memory
+   333→        searchCache.set(cacheKey, { data: results, ts: Date.now() });
+   334→
+   335→        return results;
+   336→    } catch (err) {
+   337→        console.log(`[${PROVIDER}] Search failed for "${query}": ${err.message}`);
+   338→        return [];
+   339→    }
+   340→}
+   341→
+   342→async function loadCineDozePage(detailUrl) {
+   343→    // Check in-memory cache first
+   344→    const cached = pageCache.get(detailUrl);
+   345→    if (cached && Date.now() - cached.ts < PAGE_CACHE_TTL) {
+   346→        console.log(`[${PROVIDER}] Page cache hit (memory) for ${detailUrl}`);
+   347→        return cached.data;
+   348→    }
+   349→
+   350→    try {
+   351→        let response = await makeCineDozeRequest(detailUrl, { parseHTML: true, timeout: 8000 });
+   352→        let $ = response.document;
+   353→        let body = response.body || '';
+   354→
+   355→        // Check if we're blocked by Cloudflare
+   356→        if (!$ || isCloudflareChallenge(body, response.statusCode)) {
+   357→            console.log(`[${PROVIDER}] Cloudflare challenge detected for detail page, using FlareSolverr...`);
+   358→            const flareResponse = await fetchWithFlareSolverr(detailUrl);
+   359→
+   360→            if (flareResponse && flareResponse.document) {
+   361→                $ = flareResponse.document;
+   362→                body = flareResponse.body || '';
+   363→                console.log(`[${PROVIDER}] FlareSolverr bypass successful for detail page`);
+   364→            } else {
+   365→                console.log(`[${PROVIDER}] FlareSolverr bypass failed for detail page`);
+   366→                return [];
+   367→            }
+   368→        }
+   369→
+   370→        const rows = $('#download table tbody tr');
+   371→        const entries = [];
+   372→
+   373→        rows.each((_, row) => {
+   374→            const link = $(row).find('a[href]').attr('href');
+   375→            const quality = cleanText($(row).find('.quality').text() || $(row).find('td').eq(1).text());
+   376→            const languageText = cleanText($(row).find('td').eq(2).text());
+   377→            const sizeText = cleanText($(row).find('td').eq(3).text());
+   378→
+   379→            const absolute = toAbsolute(link, detailUrl);
+   380→            if (!absolute) return;
+   381→
+   382→            entries.push({
+   383→                url: absolute,
+   384→                quality: quality || 'Download',
+   385→                languages: detectLanguagesFromTitle(languageText),
+   386→                size: sizeText || parseSizeFromText(quality)
+   387→            });
+   388→        });
+   389→
+   390→        // Cache the result in memory
+   391→        pageCache.set(detailUrl, { data: entries, ts: Date.now() });
+   392→
+   393→        return entries;
+   394→    } catch (err) {
+   395→        console.log(`[${PROVIDER}] Failed to load detail page ${detailUrl}: ${err.message}`);
+   396→        return [];
+   397→    }
+   398→}
+   399→
+   400→function extractHostLinks(html, baseUrl) {
+   401→    const hostLinks = [];
+   402→    const regex = /https?:\/\/[^\s"'<>]+/gi;
+   403→    const matches = [...(html || '').matchAll(regex)];
+   404→    const seen = new Set();
+   405→
+   406→    for (const m of matches) {
+   407→        const href = toAbsolute(m[0], baseUrl);
+   408→        if (!href || seen.has(href)) continue;
+   409→        const lower = href.toLowerCase();
+   410→        if (
+   411→            lower.includes('hubdrive') ||
+   412→            lower.includes('hubcloud') ||
+   413→            lower.includes('hubcdn') ||
+   414→            lower.includes('gdflix') ||
+   415→            lower.includes('filepress') ||
+   416→            lower.includes('pixeldrain') ||
+   417→            lower.includes('filesdl')
+   418→        ) {
+   419→            hostLinks.push(href);
+   420→            seen.add(href);
+   421→        }
+   422→    }
+   423→
+   424→    return hostLinks;
+   425→}
+   426→
+   427→async function expandCineDozeLink(linkUrl) {
+   428→    // Check in-memory cache first
+   429→    const cached = expandCache.get(linkUrl);
+   430→    if (cached && Date.now() - cached.ts < PAGE_CACHE_TTL) {
+   431→        return cached.data;
+   432→    }
+   433→
+   434→    try {
+   435→        const response = await makeCineDozeRequest(linkUrl, { parseHTML: false, timeout: 8000 });
+   436→        const finalUrl = response.url || linkUrl;
+   437→        const result = extractHostLinks(response.body, finalUrl);
+   438→        // Cache the result in memory
+   439→        expandCache.set(linkUrl, { data: result, ts: Date.now() });
+   440→        return result;
+   441→    } catch (err) {
+   442→        console.log(`[${PROVIDER}] Failed to expand cinedoze link ${linkUrl}: ${err.message}`);
+   443→        return [];
+   444→    }
+   445→}
+   446→
+   447→/**
+   448→ * Quick metadata fetch from HubCloud page - extracts filename from page title
+   449→ * The HubCloud page title contains the full filename like:
+   450→ * "CineDoze.TV-Wicked For Good (2025) MLSBD.Co-Dual Audio [Hindi ORG-English] Amazon 4K.mkv"
+   451→ * Used in lazy-load mode to get proper filenames for preview streams
+   452→ */
+   453→async function fetchHubCloudMetadata(hubcloudUrl) {
+   454→    try {
+   455→        let response = await makeRequest(hubcloudUrl, { parseHTML: true, timeout: 2000, disableProxy: true });
+   456→        let $ = response.document;
+   457→        let body = response.body || '';
+   458→
+   459→        // Check if we're blocked by Cloudflare
+   460→        if (!$ || isCloudflareChallenge(body, response.statusCode)) {
+   461→            const markers = getCloudflareMarkers(body);
+   462→            console.error(`[${PROVIDER}] Using FlareSolverr reason=challenge-detected status=${response.statusCode || 'n/a'} markers=${markers.join('|') || 'none'} url=${hubcloudUrl}`);
+   463→            const flareResponse = await fetchWithFlareSolverr(hubcloudUrl, {
+   464→                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+   465→            });
+   466→
+   467→            if (flareResponse && flareResponse.document) {
+   468→                $ = flareResponse.document;
+   469→                body = flareResponse.body || '';
+   470→                console.log(`[${PROVIDER}] FlareSolverr bypass successful for ${hubcloudUrl}`);
+   471→            } else {
+   472→                console.log(`[${PROVIDER}] FlareSolverr bypass failed for ${hubcloudUrl}`);
+   473→                return null;
+   474→            }
+   475→        }
+   476→
+   477→        if (!$) return null;
+   478→
+   479→        // The filename is in the page title on HubCloud pages
+   480→        const pageTitle = $('title').text().trim();
+   481→
+   482→        // Check if we still got a Cloudflare page
+   483→        if (pageTitle.toLowerCase().includes('just a moment')) {
+   484→            console.log(`[${PROVIDER}] Page still shows Cloudflare challenge for ${hubcloudUrl}`);
+   485→            return null;
+   486→        }
+   487→
+   488→        // Check if it looks like a video filename (ends with .mkv, .mp4, etc.)
+   489→        let filename = null;
+   490→        if (pageTitle && /\.(mkv|mp4|avi|webm|mov|m4v)$/i.test(pageTitle)) {
+   491→            filename = pageTitle;
+   492→            console.log(`[${PROVIDER}] Extracted filename from HubCloud title: ${filename}`);
+   493→        } else {
+   494→            // Fallback: look in body for filename patterns
+   495→            const fnMatch = body.match(/([A-Za-z0-9._\-\[\]()@ ]+\.(?:mkv|mp4|avi|webm))/i);
+   496→            if (fnMatch) {
+   497→                filename = fnMatch[1];
+   498→                console.log(`[${PROVIDER}] Extracted filename from body: ${filename}`);
+   499→            }
+   500→        }
+   501→
+   502→        // Extract quality from filename
+   503→        const quality = (filename || '').match(/(2160p|1080p|720p|480p|4K)/i)?.[1] || null;
+   504→
+   505→        return { filename, quality };
+   506→    } catch (err) {
+   507→        console.log(`[${PROVIDER}] Failed to fetch HubCloud metadata from ${hubcloudUrl}: ${err.message}`);
+   508→        return null;
+   509→    }
+   510→}
+   511→
+   512→function buildStream(result, context) {
+   513→    if (!result?.url) return null;
+   514→
+   515→    const labelBase = cleanText(result.title || result.name || context.quality || '');
+   516→    const size = result.size || context.size || parseSizeFromText(labelBase) || parseSizeFromText(context.quality) || null;
+   517→    const qualityLabel = getResolutionFromName(labelBase || result.name || context.quality || '') || 'HTTP';
+   518→    const resLabel = qualityLabel === '2160p' ? '4k' : qualityLabel;
+   519→    const languages = Array.from(
+   520→        new Set([
+   521→            ...(context.languages || []),
+   522→            ...detectLanguagesFromTitle(labelBase),
+   523→            ...detectLanguagesFromTitle(context.quality || ''),
+   524→            ...detectLanguagesFromTitle(result.title || '')
+   525→        ].filter(Boolean))
+   526→    );
+   527→    const languageFlags = renderLanguageFlags(languages);
+   528→    const sizeInfo = size ? `\n💾 ${size} | ${PROVIDER}` : `\n${PROVIDER}`;
+   529→    const title = `${labelBase || context.quality || 'Download'}${languageFlags}${sizeInfo}`;
+   530→    const fileName = extractFileName(result.title || result.name || '');
+   531→    const behaviorHints = {
+   532→        bingeGroup: 'cinedoze-http'
+   533→    };
+   534→    if (fileName) {
+   535→        behaviorHints.fileName = fileName;
+   536→    }
+   537→
+   538→    return {
+   539→        name: `[HS+] Sootio\n${resLabel}`,
+   540→        title,
+   541→        url: encodeUrlForStreaming(result.url),
+   542→        size,
+   543→        resolution: resLabel,
+   544→        languages,
+   545→        behaviorHints,
+   546→        httpProvider: PROVIDER
+   547→    };
+   548→}
+   549→
+   550→function filterPixeldrainOnly(results) {
+   551→    return (results || []).filter(r => r.url && r.url.toLowerCase().includes('pixel'));
+   552→}
+   553→
+   554→async function resolveHostLinks(hostLinks, context) {
+   555→    const hubLinks = hostLinks.filter(h => /hubdrive|hubcloud|hubcdn/.test(h));
+   556→    const gdflixLinks = hostLinks.filter(h => /gdflix/.test(h));
+   557→
+   558→    // 1) Try hubdrive/hubcloud first
+   559→    for (const link of hubLinks) {
+   560→        try {
+   561→            const extracted = await processExtractorLinkWithAwait(link, 1);
+   562→            if (extracted && extracted.length > 0) {
+   563→                const streams = extracted.map(r => buildStream(r, context)).filter(Boolean);
+   564→                if (streams.length > 0) return streams;
+   565→            }
+   566→        } catch (err) {
+   567→            console.log(`[${PROVIDER}] Hub link failed ${link}: ${err.message}`);
+   568→        }
+   569→    }
+   570→
+   571→    // 2) Fallback to gdflix -> only pixeldrain results
+   572→    for (const link of gdflixLinks) {
+   573→        try {
+   574→            const extracted = await processExtractorLinkWithAwait(link, 2);
+   575→            const pixelOnly = filterPixeldrainOnly(extracted);
+   576→            if (pixelOnly && pixelOnly.length > 0) {
+   577→                const streams = pixelOnly.map(r => buildStream(r, context)).filter(Boolean);
+   578→                if (streams.length > 0) return streams;
+   579→            }
+   580→        } catch (err) {
+   581→            console.log(`[${PROVIDER}] GDFlix fallback failed ${link}: ${err.message}`);
+   582→        }
+   583→    }
+   584→
+   585→    return [];
+   586→}
+   587→
+   588→export async function getCineDozeStreams(tmdbId, type, season = null, episode = null, config = {}, prefetchedMeta = null) {
+   589→    try {
+   590→        console.log(`[${PROVIDER}] Starting search for ${tmdbId} (${type}${season ? ` S${season}` : ''}${episode ? `E${episode}` : ''})`);
+   591→
+   592→        // Use pre-fetched metadata if available, otherwise fetch it (fallback for direct calls)
+   593→        let meta = prefetchedMeta;
+   594→        if (!meta) {
+   595→            console.log(`[${PROVIDER}] No pre-fetched metadata, fetching from Cinemeta...`);
+   596→            meta = await Cinemeta.getMeta(type, tmdbId);
+   597→        } else {
+   598→            console.log(`[${PROVIDER}] Using pre-fetched Cinemeta metadata: "${meta.name}"`);
+   599→        }
+   600→
+   601→        if (!meta?.name) {
+   602→            console.log(`[${PROVIDER}] Missing metadata for ${tmdbId}`);
+   603→            return [];
+   604→        }
+   605→
+   606→        const queries = Array.from(new Set([
+   607→            meta.name,
+   608→            removeYear(meta.name),
+   609→            ...(meta.alternativeTitles || []),
+   610→            ...generateAlternativeQueries(meta.name, meta.original_title)
+   611→        ].filter(Boolean)));
+   612→
+   613→        // Run searches in parallel for speed
+   614→        console.log(`[${PROVIDER}] Searching with ${queries.length} queries in parallel:`, queries);
+   615→        const searchPromises = queries.map(query => searchCineDoze(query).then(results => ({ query, results })));
+   616→        const searchResponses = await Promise.all(searchPromises);
+   617→
+   618→        const searchResults = [];
+   619→        for (const { query, results } of searchResponses) {
+   620→            console.log(`[${PROVIDER}] Query "${query}" returned ${results.length} results`);
+   621→            searchResults.push(...results);
+   622→        }
+   623→
+   624→        if (searchResults.length === 0) {
+   625→            console.log(`[${PROVIDER}] No search results for ${meta.name}`);
+   626→            return [];
+   627→        }
+   628→
+   629→        console.log(`[${PROVIDER}] Total ${searchResults.length} results before dedup/scoring`);
+   630→        const best = getSortedMatches(searchResults, meta.name)[0];
+   631→        if (!best?.url) {
+   632→            console.log(`[${PROVIDER}] No suitable match for ${meta.name}`);
+   633→            return [];
+   634→        }
+   635→
+   636→        console.log(`[${PROVIDER}] Selected match: ${best.title} -> ${best.url}`);
+   637→        const downloadEntries = await loadCineDozePage(best.url);
+   638→        if (downloadEntries.length === 0) {
+   639→            console.log(`[${PROVIDER}] No download entries found`);
+   640→            return [];
+   641→        }
+   642→
+   643→        // Check if lazy-load mode is enabled (default: true for faster initial response)
+   644→        const useLazyLoad = isLazyLoadEnabled();
+   645→
+   646→        if (useLazyLoad) {
+   647→            // Lazy-load mode: return preview streams without HubCloud extraction
+   648→            console.log(`[${PROVIDER}] Lazy-load: returning ${downloadEntries.length} preview streams without extraction`);
+   649→
+   650→            const movieName = meta.name || 'Unknown';
+   651→            const movieYear = meta.year || '';
+   652→
+   653→            const previewStreams = downloadEntries.map(entry => {
+   654→                const label = `${movieName}${movieYear ? ` (${movieYear})` : ''} - ${entry.quality || 'Download'}`;
+   655→                const languages = entry.languages?.length
+   656→                    ? entry.languages
+   657→                    : detectLanguagesFromTitle(entry.quality || '');
+   658→                return createPreviewStream({
+   659→                    url: entry.url,
+   660→                    label,
+   661→                    provider: PROVIDER,
+   662→                    size: entry.size,
+   663→                    languages
+   664→                });
+   665→            });
+   666→
+   667→            const streams = formatPreviewStreams(previewStreams, encodeUrlForStreaming, renderLanguageFlags);
+   668→            console.log(`[${PROVIDER}] Lazy-load: returning ${streams.length} preview streams`);
+   669→            return streams;
+   670→        }
+   671→
+   672→        // Full extraction mode (when lazy-load is disabled)
+   673→        const streamPromises = downloadEntries.map(async (entry) => {
+   674→            const hostLinks = await expandCineDozeLink(entry.url);
+   675→            if (!hostLinks.length) return [];
+   676→            return resolveHostLinks(hostLinks, entry);
+   677→        });
+   678→
+   679→        const resolved = (await Promise.all(streamPromises)).flat().filter(Boolean);
+   680→
+   681→        // Deduplicate by URL
+   682→        const seen = new Set();
+   683→        const streams = [];
+   684→        for (const stream of resolved) {
+   685→            if (!stream.url || seen.has(stream.url)) continue;
+   686→            seen.add(stream.url);
+   687→            streams.push(stream);
+   688→        }
+   689→
+   690→        console.log(`[${PROVIDER}] Returning ${streams.length} streams`);
+   691→        return streams;
+   692→    } catch (err) {
+   693→        console.error(`[${PROVIDER}] Unexpected error: ${err.message}`);
+   694→        return [];
+   695→    }
+   696→}
+   697→

@@ -1,0 +1,51 @@
+# .github/workflows/deploy.yml
+# ============================================
+# PhoeniX Addon - Auto-deploy to Render on push to main
+# ============================================
+#
+# This workflow triggers a Render deploy every time you push to main.
+# It uses Render's Deploy Hook API (a webhook URL that starts a build).
+#
+# SETUP (one-time):
+#   1. Go to your Render Web Service → Settings → "Deploy Hook"
+#   2. Create a deploy hook → copy the URL
+#   3. Go to GitHub repo → Settings → Secrets and variables → Actions
+#   4. Add a new secret:
+#        Name:  RENDER_DEPLOY_HOOK_URL
+#        Value: <paste the deploy hook URL>
+#   5. Push any commit to main → this workflow fires → Render auto-deploys
+
+name: Deploy to Render
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allows manual trigger from the Actions tab
+
+jobs:
+  deploy:
+    name: Trigger Render Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render Deploy Hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not set."
+            echo "::error::Go to repo Settings → Secrets → Actions → add RENDER_DEPLOY_HOOK_URL"
+            echo "::error::with the Deploy Hook URL from Render → your service → Settings → Deploy Hook"
+            exit 1
+          fi
+          echo "Triggering Render deploy hook..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$RENDER_DEPLOY_HOOK_URL")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          echo "Render response: HTTP $HTTP_CODE"
+          echo "Body: $BODY"
+          if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
+            echo "::notice::Render deploy triggered successfully!"
+          else
+            echo "::error::Render deploy failed with HTTP $HTTP_CODE"
+            exit 1
+          fi

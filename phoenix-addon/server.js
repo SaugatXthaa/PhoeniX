@@ -1,0 +1,336 @@
+// server.js
+// PhoeniX server — Express + Stremio SDK
+// Faithful adaptation of sootio-stremio-addon/server.js (simplified — no debrid, no usenet, no admin)
+//
+// Routes:
+//   GET  /                                      Landing page (HTML)
+//   GET  /manifest.json                         Stremio manifest
+//   GET  /:apiKey?/manifest.json                Manifest (API key prefix ignored)
+//   GET  /stream/:type/:id.json                 Stremio stream handler (via SDK getRouter)
+//   GET  /resolve/httpstreaming/:url(*)         Lazy URL resolver (302 redirect)
+//   GET  /health                                Health check
+
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import crypto from 'crypto';
+import axios from 'axios';
+import https from 'https';
+import { addonBuilder } from 'stremio-addon-sdk';
+import { getHttpStreamingStreams } from './lib/stream-provider/alternative-services/http-streams.js';
+import { encodeUrlForStreaming } from './lib/http-streams/utils/encoding.js';
+import { resolveHttpStreamUrl } from './lib/http-streams/resolvers/http-resolver.js';
+
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const HOST = process.env.HOST || '0.0.0.0';
+const ADDON_NAME = process.env.ADDON_NAME || 'PhoeniX';
+
+const httpsAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
+
+// ============== STREMIO ADDON BUILDER ==============
+const manifest = {
+    id: 'community.phoenix.addon',
+    version: '3.0.0',
+    name: ADDON_NAME,
+    description: 'PhoeniX — Nuvio/Stremio streaming addon with 22 sources: 111477, 4KHDHub, CineWave, HDHub4u, MKVCinemas, CineDoze, MoviesMod, MoviesLeech, Pahe, DDLBase, MkvBase, SkyMoviesHD, KMMovies, HDMoviesChannel, XDMovies, ZStream, VixSrc, AnimeFlix, AnimePahe, Anikura, Anikoto, Enma.',
+    logo: 'https://i.imgur.com/mDU8KgH.png',
+    resources: ['stream'],
+    types: ['movie', 'series'],
+    idPrefixes: ['tt'],
+    catalogs: [],
+    behaviorHints: {
+        configurable: false,
+        configurationRequired: false
+    }
+};
+
+const builder = new addonBuilder(manifest);
+
+function enrichCacheParams(hasResults = true) {
+    if (!hasResults) {
+        return { cacheMaxAge: 0, staleRevalidate: 0, staleError: 0 };
+    }
+    return {
+        cacheMaxAge: 60 * 60,
+        staleRevalidate: 4 * 60 * 60,
+        staleError: 7 * 24 * 60 * 60
+    };
+}
+
+builder.defineStreamHandler(args => {
+    return new Promise((resolve) => {
+        if (!args.id || !args.id.match(/tt\d+/i)) {
+            resolve({ streams: [], ...enrichCacheParams(false) });
+            return;
+        }
+        const config = args.config || {};
+        // Inject host URL (for /resolve/httpstreaming lazy resolver)
+        config.host = `${args.config?.host || ''}`.replace(/\/$/, '') ||
+            `http://${HOST}:${PORT}`;
+
+        const type = args.type;
+        const id = args.id;
+        if (type !== 'movie' && type !== 'series') {
+            resolve({ streams: [], ...enrichCacheParams(false) });
+            return;
+        }
+        const season = type === 'series' ? (String(id).split(':')[1] || null) : null;
+        const episode = type === 'series' ? (String(id).split(':')[2] || null) : null;
+
+        const startTime = Date.now();
+        getHttpStreamingStreams(config, type, id, { season, episode })
+            .then(streams => {
+                const duration = Date.now() - startTime;
+                const validStreams = (streams || []).filter(Boolean);
+                console.log(`[${ADDON_NAME}] ${type} ${id} → ${validStreams.length} streams in ${duration}ms`);
+                resolve({
+                    streams: validStreams,
+                    ...enrichCacheParams(validStreams.length > 0)
+                });
+            })
+            .catch(err => {
+                console.error(`[${ADDON_NAME}] Stream handler error for ${type} ${id}:`, err.message);
+                resolve({ streams: [], ...enrichCacheParams(false) });
+            });
+    });
+});
+
+// ============== EXPRESS APP ==============
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ============== ROUTES ==============
+
+// Landing page
+app.get('/', (req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(landingHtml());
+});
+
+// Health check
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        name: ADDON_NAME,
+        version: '3.0.0',
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        sources: ['111477', '4KHDHub', 'CineWave', 'HDHub4u', 'MKVCinemas', 'CineDoze',
+                  'MoviesMod', 'MoviesLeech', 'Pahe', 'DDLBase', 'MkvBase',
+                  'SkyMoviesHD', 'KMMovies', 'HDMoviesChannel', 'XDMovies', 'ZStream',
+                  'VixSrc', 'AnimeFlix', 'AnimePahe', 'Anikura', 'Anikoto', 'Enma']
+    });
+});
+
+// Manifest (with optional API key prefix)
+app.get('/:apiKey?/manifest.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.json(manifest);
+});
+
+// Stream handler — mounted at both /stream/:type/:id.json and /:apiKey/stream/:type/:id.json
+const streamHandler = async (req, res) => {
+    const { type, id } = req.params;
+    const apiKey = req.params.apiKey;
+    const host = `${req.protocol}://${req.headers.host}`;
+
+    if (type !== 'movie' && type !== 'series') {
+        return res.json({ streams: [] });
+    }
+
+    console.log(`[${ADDON_NAME}] stream ${type} ${id}`);
+
+    try {
+        const season = type === 'series' ? (String(id).split(':')[1] || null) : null;
+        const episode = type === 'series' ? (String(id).split(':')[2] || null) : null;
+
+        const config = { host };
+        const startTime = Date.now();
+        const streams = await getHttpStreamingStreams(config, type, id, { season, episode });
+        const validStreams = (streams || []).filter(Boolean);
+        const duration = Date.now() - startTime;
+        console.log(`[${ADDON_NAME}] ${type} ${id} → ${validStreams.length} streams in ${duration}ms`);
+
+        const cacheParams = enrichCacheParams(validStreams.length > 0);
+        res.setHeader('Cache-Control', `max-age=${cacheParams.cacheMaxAge}, stale-while-revalidate=${cacheParams.staleRevalidate}, stale-if-error=${cacheParams.staleError}, public`);
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.json({ streams: validStreams });
+    } catch (err) {
+        console.error(`[${ADDON_NAME}] Stream error for ${type} ${id}:`, err.message);
+        res.json({ streams: [] });
+    }
+};
+
+app.get('/stream/:type/:id.json', streamHandler);
+app.get('/:apiKey/stream/:type/:id.json', streamHandler);
+
+// ============== LAZY URL RESOLVER ==============
+// /resolve/httpstreaming/<encoded-url> → 302 redirect to actual stream URL
+const RESOLVE_CACHE_TTL_MS = parseInt(process.env.RESOLVE_CACHE_TTL_MS || '900000', 10); // 15 min
+const HTTP_RESOLVE_TIMEOUT = parseInt(process.env.HTTP_RESOLVE_TIMEOUT || '15000', 10);
+const resolvedUrlCache = new Map();
+const pendingResolves = new Map();
+
+app.get('/resolve/httpstreaming/:url(*)', async (req, res) => {
+    const encodedUrl = req.params.url;
+    let targetUrl;
+    try {
+        targetUrl = decodeURIComponent(encodedUrl);
+    } catch {
+        return res.status(400).send('Invalid URL');
+    }
+
+    const cacheKey = crypto.createHash('md5').update(targetUrl).digest('hex');
+
+    // Check cache
+    const cached = resolvedUrlCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < RESOLVE_CACHE_TTL_MS) {
+        const redirectUrl = encodeUrlForStreaming(cached.url);
+        return res.redirect(302, redirectUrl);
+    }
+
+    // In-flight dedup
+    if (pendingResolves.has(cacheKey)) {
+        try {
+            const finalUrl = await pendingResolves.get(cacheKey);
+            if (finalUrl) {
+                const redirectUrl = encodeUrlForStreaming(finalUrl);
+                return res.redirect(302, redirectUrl);
+            }
+        } catch (e) { /* fall through */ }
+    }
+
+    console.log(`[resolver] resolving ${targetUrl.substring(0, 80)}...`);
+
+    const resolvePromise = (async () => {
+        try {
+            // Use the REAL resolver — handles gadgetsweb.xyz, hubcloud, modpro.blog, etc.
+            const finalUrl = await resolveHttpStreamUrl(targetUrl);
+            if (finalUrl) {
+                return finalUrl;
+            }
+            // Fallback: return the original URL (Nuvio's player may still handle it)
+            console.log(`[resolver] resolveHttpStreamUrl returned null, falling back to original URL`);
+            return targetUrl;
+        } catch (e) {
+            console.error(`[resolver] error: ${e.message}`);
+            return targetUrl;
+        }
+    })();
+
+    pendingResolves.set(cacheKey, resolvePromise);
+    try {
+        const finalUrl = await resolvePromise;
+        if (finalUrl) {
+            resolvedUrlCache.set(cacheKey, { url: finalUrl, ts: Date.now() });
+            const redirectUrl = encodeUrlForStreaming(finalUrl);
+            return res.redirect(302, redirectUrl);
+        }
+    } catch (e) {
+        console.error(`[resolver] final error: ${e.message}`);
+    } finally {
+        pendingResolves.delete(cacheKey);
+    }
+
+    return res.redirect(302, targetUrl);
+});
+
+// ============== LANDING PAGE ==============
+function landingHtml() {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${ADDON_NAME} — Nuvio / Stremio Addon</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(135deg, #0a0e1a 0%, #1a1f3a 100%);
+    color: #e6e9f5; min-height: 100vh; padding: 2rem;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  .hero { text-align: center; padding: 3rem 0; }
+  .hero h1 {
+    font-size: 4rem; font-weight: 800;
+    background: linear-gradient(135deg, #ff5722 0%, #ffca28 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; margin-bottom: 1rem;
+  }
+  .hero p { color: #a0a8c0; font-size: 1.2rem; max-width: 700px; margin: 0 auto 2rem; }
+  .install-btn {
+    display: inline-block; padding: 1rem 2rem;
+    background: linear-gradient(135deg, #ff5722 0%, #ffca28 100%);
+    color: #0a0e1a; text-decoration: none; border-radius: 8px;
+    font-weight: 700; font-size: 1.1rem;
+    transition: transform 0.2s;
+  }
+  .install-btn:hover { transform: translateY(-2px); }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem; margin-top: 3rem;
+  }
+  .source-card {
+    background: rgba(255,255,255,0.05); padding: 1.2rem;
+    border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
+    text-align: center;
+  }
+  .source-card .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+  .source-card .name { font-weight: 700; font-size: 1rem; }
+  .source-card .tier { font-size: 0.8rem; color: #a0a8c0; margin-top: 0.25rem; }
+  .stats { display: flex; gap: 2rem; justify-content: center; margin: 3rem 0; flex-wrap: wrap; }
+  .stat { text-align: center; }
+  .stat .num { font-size: 2.5rem; font-weight: 800; color: #ffca28; }
+  .stat .lbl { color: #a0a8c0; font-size: 0.9rem; text-transform: uppercase; }
+  .footer { text-align: center; padding: 2rem 0; color: #6c7591; font-size: 0.85rem; }
+  code { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="hero">
+    <h1>${ADDON_NAME}</h1>
+    <p>Production-grade streaming addon — faithful port of sootio-stremio-addon's HTTPS sources. <strong>11 HTTP streaming providers</strong> running in parallel with per-source timeouts, Cinemeta metadata, FlareSolverr Cloudflare bypass, and lazy URL resolution.</p>
+    <a class="install-btn" href="/manifest.json">Install in Nuvio / Stremio</a>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="num">11</div><div class="lbl">HTTP Providers</div></div>
+    <div class="stat"><div class="num">4K</div><div class="lbl">Max Quality</div></div>
+    <div class="stat"><div class="num">∞</div><div class="lbl">Movies/Series</div></div>
+    <div class="stat"><div class="num">12s</div><div class="lbl">Per-Source Timeout</div></div>
+  </div>
+  <div class="grid">
+    <div class="source-card"><div class="icon">🔥</div><div class="name">111477</div><div class="tier">Direct CDN via p.111477.xyz/bulk</div></div>
+    <div class="source-card"><div class="icon">💎</div><div class="name">4KHDHub</div><div class="tier">DDL → HubCloud extraction</div></div>
+    <div class="source-card"><div class="icon">🎥</div><div class="name">HDHub4u</div><div class="tier">DDL → HubCloud extraction</div></div>
+    <div class="source-card"><div class="icon">🎬</div><div class="name">MKVCinemas</div><div class="tier">DDL → modpro.blog</div></div>
+    <div class="source-card"><div class="icon">📺</div><div class="name">SkyMoviesHD</div><div class="tier">Movies + KDramas</div></div>
+    <div class="source-card"><div class="icon">🎭</div><div class="name">CineDoze</div><div class="tier">Hindi DDL</div></div>
+    <div class="source-card"><div class="icon">📦</div><div class="name">MoviesMod</div><div class="tier">DDL → modpro.blog</div></div>
+    <div class="source-card"><div class="icon">🪝</div><div class="name">MoviesLeech</div><div class="tier">DDL → leechpro.blog</div></div>
+    <div class="source-card"><div class="icon">🌸</div><div class="name">AnimeFlix</div><div class="tier">Anime DDL</div></div>
+    <div class="source-card"><div class="icon">📡</div><div class="name">VixSrc</div><div class="tier">HLS playlists (TMDB)</div></div>
+    <div class="source-card"><div class="icon">⚡</div><div class="name">XDMovies</div><div class="tier">API worker</div></div>
+  </div>
+  <div class="footer">
+    <p>${ADDON_NAME} v3.0.0 — Faithful port of sootio-stremio-addon/lib/http-streams/</p>
+    <p>Manifest: <code>/manifest.json</code> · Streams: <code>/stream/movie/tt1234567.json</code></p>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
+// ============== START SERVER ==============
+app.listen(PORT, HOST, () => {
+    console.log(`[${ADDON_NAME}] listening on http://${HOST}:${PORT}`);
+    console.log(`[${ADDON_NAME}] manifest: http://${HOST}:${PORT}/manifest.json`);
+    console.log(`[${ADDON_NAME}] NODE_ENV=${process.env.NODE_ENV || 'development'}`);
+    console.log(`[${ADDON_NAME}] Sources: 22 providers (111477, 4KHDHub, CineWave, HDHub4u, MKVCinemas, CineDoze, MoviesMod, MoviesLeech, Pahe, DDLBase, MkvBase, SkyMoviesHD, KMMovies, HDMoviesChannel, XDMovies, ZStream, VixSrc, AnimeFlix, AnimePahe, Anikura, Anikoto, Enma)`);
+});
+
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));

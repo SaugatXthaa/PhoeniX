@@ -1,0 +1,702 @@
+   600→        // Handle errors during streaming
+   601→        response.data.on('error', (err) => {
+   602→            console.error(`[ERROR-VIDEO] Stream error: ${err.message}`);
+   603→            // CRITICAL: Destroy the stream on error to prevent memory leak
+   604→            if (response.data && typeof response.data.destroy === 'function') {
+   605→                response.data.destroy();
+   606→            }
+   607→            if (!res.headersSent) {
+   608→                res.status(500).end();
+   609→            }
+   610→        });
+   611→
+   612→        // CRITICAL: Clean up stream when client disconnects
+   613→        res.on('close', () => {
+   614→            if (response.data && typeof response.data.destroy === 'function') {
+   615→                response.data.destroy();
+   616→            }
+   617→        });
+   618→
+   619→    } catch (error) {
+   620→        console.error(`[ERROR-VIDEO] Failed to fetch error video: ${error.message}`);
+   621→        if (!res.headersSent) {
+   622→            res.status(500).send(`Error: ${errorText}`);
+   623→        }
+   624→    }
+   625→}
+   626→
+   627→// Note: Proxy requests removed - we now use direct 302 redirects to Python file server
+   628→// This eliminates proxy overhead and allows proper client disconnect detection
+   629→
+   630→// Store Usenet configs globally (so auto-clean works even without active streams)
+   631→const USENET_CONFIGS = new Map(); // fileServerUrl -> config
+   632→// Track pending Usenet submissions to prevent race conditions
+   633→const PENDING_USENET_SUBMISSIONS = new Map(); // title -> Promise
+   634→
+   635→// Cleanup interval for inactive streams (check every 2 minutes)
+   636→const STREAM_CLEANUP_INTERVAL = 2 * 60 * 1000;
+   637→// Delete downloads after 10 minutes of inactivity
+   638→// This is aggressive to save bandwidth and disk space
+   639→// If user was just paused/buffering, they can restart the stream
+   640→const STREAM_INACTIVE_TIMEOUT = 10 * 60 * 1000; // 10 minutes of inactivity
+   641→
+   642→
+   643→// Performance: Set up connection pooling and reuse
+   644→app.set('trust proxy', true); // Trust proxy headers if behind reverse proxy
+   645→app.set('etag', false); // Disable etag generation for static performance
+   646→
+   647→app.use(cors());
+   648→
+   649→// Event loop overload protection - prevents death spiral under heavy load
+   650→// Monitors event loop lag and returns 503 when the server is overwhelmed
+   651→const OVERLOAD_LAG_THRESHOLD_MS = parseInt(process.env.OVERLOAD_LAG_THRESHOLD || '2000', 10);
+   652→const OVERLOAD_CHECK_INTERVAL_MS = 500;
+   653→let eventLoopLag = 0;
+   654→let overloadCheckTimer = null;
+   655→
+   656→function startOverloadMonitor() {
+   657→    let lastCheck = process.hrtime.bigint();
+   658→    overloadCheckTimer = setInterval(() => {
+   659→        const now = process.hrtime.bigint();
+   660→        const elapsed = Number(now - lastCheck) / 1e6; // ms
+   661→        eventLoopLag = Math.max(0, elapsed - OVERLOAD_CHECK_INTERVAL_MS);
+   662→        lastCheck = now;
+   663→    }, OVERLOAD_CHECK_INTERVAL_MS);
+   664→    if (overloadCheckTimer.unref) overloadCheckTimer.unref();
+   665→}
+   666→startOverloadMonitor();
+   667→
+   668→const OVERLOAD_SKIP_PREFIXES = ['/configure', '/manifest.json', '/manifest-no-catalogs.json'];
+   669→
+   670→app.use((req, res, next) => {
+   671→    if (eventLoopLag > OVERLOAD_LAG_THRESHOLD_MS) {
+   672→        // Allow lightweight endpoints through even under load
+   673→        if (req.path === '/' || OVERLOAD_SKIP_PREFIXES.some(p => req.path === p || req.path.startsWith(p))) {
+   674→            return next();
+   675→        }
+   676→        console.error(`[OVERLOAD] Rejecting request (lag: ${Math.round(eventLoopLag)}ms): ${req.method} ${req.path.substring(0, 80)}`);
+   677→        res.status(503).json({ streams: [], err: 'Server overloaded, please retry shortly' });
+   678→        return;
+   679→    }
+   680→    next();
+   681→});
+   682→
+   683→// Anti-bot detection middleware
+   684→app.use(botDetectionMiddleware);
+   685→
+   686→const COMPRESSION_SKIP_PREFIXES = ['/resolve', '/usenet']; // Skip compression for streaming/redirect-heavy paths to save CPU
+   687→
+   688→// Performance: Add compression for API responses
+   689→app.use(compression({
+   690→    level: 6, // Balanced compression level
+   691→    threshold: 1024, // Only compress responses larger than 1KB
+   692→    filter: (req, res) => {
+   693→        if (COMPRESSION_SKIP_PREFIXES.some(prefix => req.path.startsWith(prefix))) {
+   694→            return false;
+   695→        }
+   696→        return compressionFilter(req, res);
+   697→    }
+   698→}));
+   699→
+   700→// Swagger stats middleware - disabled by default to save CPU under load
+   701→// Set SWAGGER_STATS_ENABLED=true in .env to re-enable
+   702→if (process.env.SWAGGER_STATS_ENABLED === 'true') {
+   703→    app.use(swStats.getMiddleware({
+   704→        name: addonInterface.manifest.name,
+   705→        version: addonInterface.manifest.version,
+   706→    }));
+   707→    console.log('[SERVER] swagger-stats enabled');
+   708→}
+   709→
+   710→// Global rate limiter - more permissive limits
+   711→const globalRateLimiter = rateLimit({
+   712→    windowMs: 15 * 60 * 1000, // 15 minutes
+   713→    limit: 400, // Increased from 200 to 400 requests per window
+   714→    standardHeaders: true,
+   715→    legacyHeaders: false,
+   716→    keyGenerator: (req) => req.clientIp || requestIp.getClientIp(req),
+   717→    message: {
+   718→        success: false,
+   719→        message: 'Too many requests from this IP, please try again later.'
+   720→    },
+   721→    skip: (req) => {
+   722→        // Skip rate limiting for health checks and internal endpoints
+   723→        const skipPaths = ['/configure', '/manifest-no-catalogs.json', '/'];
+   724→        return skipPaths.includes(req.path);
+   725→    }
+   726→});
+   727→
+   728→// Specific rate limiter for resolve endpoints (more permissive limits)
+   729→const resolveRateLimiter = rateLimit({
+   730→    windowMs: 10 * 60 * 1000, // 10 minutes
+   731→    limit: 80, // Increased from 40 to 80 resolve requests per window
+   732→    standardHeaders: true,
+   733→    legacyHeaders: false,
+   734→    keyGenerator: (req) => req.clientIp || requestIp.getClientIp(req),
+   735→    message: {
+   736→        success: false,
+   737→        message: 'Too many resolve requests from this IP, please try again later.'
+   738→    }
+   739→});
+   740→
+   741→// Graceful shutdown - properly close all connections
+   742→let isShuttingDown = false;
+   743→for (const sig of ["SIGINT","SIGTERM"]) {
+   744→    process.on(sig, async () => {
+   745→        if (isShuttingDown) return; // Prevent multiple shutdown attempts
+   746→        isShuttingDown = true;
+   747→
+   748→        console.log(`[SERVER] Received ${sig}. Shutting down gracefully...`);
+   749→
+   750→        // Clear all intervals and timeouts
+   751→        try {
+   752→            if (cleanupIntervalId) clearInterval(cleanupIntervalId);
+   753→            if (autoCleanIntervalId) clearInterval(autoCleanIntervalId);
+   754→            if (autoCleanTimeoutId) clearTimeout(autoCleanTimeoutId);
+   755→            if (monitorIntervalId) clearInterval(monitorIntervalId);
+   756→
+   757→
+   758→
+   759→            // MEMORY LEAK FIX: Clear all pending cache timers
+   760→            for (const timerId of CACHE_TIMERS.values()) {
+   761→                clearTimeout(timerId);
+   762→            }
+   763→            CACHE_TIMERS.clear();
+   764→            console.log('[SERVER] All intervals, timeouts, and cache timers cleared');
+   765→        } catch (error) {
+   766→            console.error(`[SERVER] Error clearing intervals: ${error.message}`);
+   767→        }
+   768→
+   769→        // Close SQLite connections
+   770→        try {
+   771→            await Promise.all([
+   772→                sqliteCache.closeSqlite(),
+   773→                sqliteHashCache.closeConnection()
+   774→            ]);
+   775→            console.log('[SERVER] All SQLite connections closed');
+   776→        } catch (error) {
+   777→            console.error(`[SERVER] Error closing SQLite connections: ${error.message}`);
+   778→        }
+   779→
+   780→        // MEMORY LEAK FIX: Shutdown additional modules with cleanup intervals
+   781→        try {
+   782→            searchCoordinator.shutdown();
+   783→            scraperPerformance.shutdown();
+   784→            Usenet.shutdown();
+   785→            console.log('[SERVER] All module cleanup intervals stopped');
+   786→        } catch (error) {
+   787→            console.error(`[SERVER] Error shutting down modules: ${error.message}`);
+   788→        }
+   789→
+   790→        // Close HTTP server
+   791→        server.close(() => {
+   792→            console.log('[SERVER] HTTP server closed');
+   793→            process.exit(0);
+   794→        });
+   795→
+   796→        // Force exit after 10 seconds if graceful shutdown fails
+   797→        setTimeout(() => {
+   798→            console.error('[SERVER] Forced shutdown after timeout');
+   799→            process.exit(1);
+   800→        }, 10000).unref();
+   801→    });
+   802→}
+   803→app.use(globalRateLimiter);
+   804→
+   805→// VVVV REVERTED: The resolver now performs a simple redirect VVVV
+   806→app.get('/resolve/:debridProvider/:debridApiKey/:url', resolveRateLimiter, async (req, res) => {
+   807→    const { debridProvider, debridApiKey, url } = req.params;
+   808→
+   809→    // Validate required parameters
+   810→    if (!url || url === 'undefined') {
+   811→        console.error('[RESOLVER] Missing or invalid URL parameter');
+   812→        return res.status(400).send('Missing or invalid URL parameter');
+   813→    }
+   814→
+   815→    const decodedUrl = decodeURIComponent(url);
+   816→    const clientIp = normalizeClientIp(req.clientIp || requestIp.getClientIp(req));
+   817→    req.clientIp = clientIp;
+   818→
+   819→    // Extract config from query if provided (for NZB resolution)
+   820→    const configParam = req.query.config;
+   821→    let config = {};
+   822→    if (configParam) {
+   823→        try {
+   824→            // Safe parsing with memory and size limits
+   825→            const decodedConfigParam = decodeURIComponent(configParam);
+   826→            // Check size before parsing to prevent memory issues
+   827→            if (decodedConfigParam.length > 100000) { // 100KB limit
+   828→                console.log('[RESOLVER] Config parameter too large, rejecting');
+   829→                return res.status(400).send('Config parameter too large');
+   830→            }
+   831→            config = JSON.parse(decodedConfigParam);
+   832→        } catch (e) {
+   833→            console.log('[RESOLVER] Failed to parse config from query', e.message);
+   834→        }
+   835→    }
+   836→    const cacheKey = typeof req.query.cacheKey === 'string' ? req.query.cacheKey : null;
+   837→    const cacheHash = typeof req.query.cacheHash === 'string' ? req.query.cacheHash : null;
+   838→    if (cacheKey && cacheKey.length < 512) {
+   839→        config.cacheKey = cacheKey;
+   840→    }
+   841→    if (cacheHash && cacheHash.length < 128) {
+   842→        config.cacheHash = cacheHash;
+   843→    }
+   844→
+   845→    // Scope resolver cache/in-flight dedupe by provider + URL + requester token + requester IP.
+   846→    // This prevents cross-user token/IP reuse when two users resolve the same source URL.
+   847→    const resolverCacheKey = buildResolverScopeKey(debridProvider, debridApiKey, decodedUrl, clientIp);
+   848→
+   849→    try {
+   850→        let finalUrl;
+   851→
+   852→        const cachedValue = await getCacheValue(resolverCacheKey);
+   853→        if (cachedValue) {
+   854→            // Handle case where cachedValue might be an object from UHDMovies resolver
+   855→            if (cachedValue && typeof cachedValue === 'object' && cachedValue.url) {
+   856→                finalUrl = cachedValue.url;
+   857→            } else {
+   858→                finalUrl = cachedValue;
+   859→            }
+   860→            console.log(`[CACHE] Using cached URL for key: ${resolverCacheKey.substring(0, 16)}...`);
+   861→        } else if (PENDING_RESOLVES.has(resolverCacheKey)) {
+   862→            console.log(`[RESOLVER] Joining in-flight resolve for key: ${resolverCacheKey.substring(0, 16)}...`);
+   863→            finalUrl = await PENDING_RESOLVES.get(resolverCacheKey);
+   864→            // Handle case where finalUrl might be an object from UHDMovies resolver
+   865→            if (finalUrl && typeof finalUrl === 'object' && finalUrl.url) {
+   866→                finalUrl = finalUrl.url;
+   867→            }
+   868→        } else {
+   869→            console.log(`[RESOLVER] Cache miss. Resolving URL for ${debridProvider}`);
+   870→            const resolvePromise = streamProvider.resolveUrl(debridProvider, debridApiKey, null, decodedUrl, clientIp, config);
+   871→
+   872→            // Set a configurable timeout for performance tuning - increase for NZB downloads
+   873→            const isNzb = decodedUrl.startsWith('nzb:');
+   874→            const timeoutMs = isNzb ? 600000 : parseInt(process.env.RESOLVE_TIMEOUT || '20000', 10); // 10 min for NZB, 20s otherwise
+   875→            const timedResolve = Promise.race([
+   876→                resolvePromise,
+   877→                new Promise((_, reject) =>
+   878→                    setTimeout(() => reject(new Error('Resolve timeout')), timeoutMs)
+   879→                )
+   880→            ]);
+   881→
+   882→            // MEMORY LEAK FIX: Limit pending requests to prevent unbounded growth
+   883→            if (PENDING_RESOLVES.size >= PENDING_RESOLVES_MAX_SIZE) {
+   884→                const oldestKey = PENDING_RESOLVES.keys().next().value;
+   885→                const oldestPromise = PENDING_RESOLVES.get(oldestKey);
+   886→                // Cancel the oldest pending request if possible
+   887→                PENDING_RESOLVES.delete(oldestKey);
+   888→                console.log(`[RESOLVER] Evicted oldest pending request (size: ${PENDING_RESOLVES.size})`);
+   889→            }
+   890→
+   891→            // Track the pending request
+   892→            const pendingRequest = timedResolve.catch(err => {
+   893→                console.error(`[RESOLVER] Pending resolve failed: ${err.message}`);
+   894→                return null;
+   895→            }).finally(() => {
+   896→                PENDING_RESOLVES.delete(resolverCacheKey);
+   897→            });
+   898→            PENDING_RESOLVES.set(resolverCacheKey, pendingRequest);
+   899→
+   900→            finalUrl = await pendingRequest;
+   901→
+   902→            if (finalUrl) {
+   903→                // Handle case where finalUrl might be an object from UHDMovies resolver that has .url property
+   904→                let cacheUrl;
+   905→                if (typeof finalUrl === 'object' && finalUrl.url) {
+   906→                    cacheUrl = finalUrl.url;
+   907→                } else {
+   908→                    cacheUrl = finalUrl;
+   909→                }
+   910→
+   911→                // MEMORY LEAK FIX: Use new cache function with proper timer tracking
+   912→                // Make cache TTL configurable for better performance tuning
+   913→                const cacheTtlMs = parseInt(process.env.RESOLVE_CACHE_TTL_MS || '900000', 10); // 15 min default (reduced from 2 hours)
+   914→                await setCacheWithTimer(resolverCacheKey, cacheUrl, cacheTtlMs);
+   915→            }
+   916→        }
+   917→
+   918→        if (finalUrl) {
+   919→            // Handle case where finalUrl might be an object (e.g., from UHDMovies resolver)
+   920→            let redirectUrl;
+   921→            if (finalUrl && typeof finalUrl === 'object' && finalUrl.url) {
+   922→                redirectUrl = finalUrl.url;
+   923→            } else {
+   924→                redirectUrl = finalUrl;
+   925→            }
+   926→
+   927→            // Sanitize finalUrl before logging - it may contain API keys or auth tokens
+   928→            const sanitizedUrl = obfuscateSensitive(redirectUrl, debridApiKey);
+   929→            console.log("[RESOLVER] Redirecting to final stream URL:", sanitizedUrl);
+   930→            // Encode URL to handle spaces and special characters, then issue a 302 redirect
+   931→            const encodedUrl = encodeUrlForStreaming(redirectUrl);
+   932→            res.redirect(302, encodedUrl);
+   933→        } else {
+   934→            res.status(404).send('Could not resolve link');
+   935→        }
+   936→    } catch (error) {
+   937→        console.error("[RESOLVER] A critical error occurred:", error.message);
+   938→        res.status(500).send("Error resolving stream.");
+   939→    }
+   940→});
+   941→
+   942→// HTTP Streaming resolver endpoint (for 4KHDHub, UHDMovies, etc.)
+   943→// This endpoint provides lazy resolution - decrypts URLs only when user selects a stream
+   944→app.get('/resolve/httpstreaming/:url', resolveRateLimiter, async (req, res) => {
+   945→    const { url } = req.params;
+   946→    const decodedUrl = decodeURIComponent(url);
+   947→    const isUHDMoviesUrl = decodedUrl.includes('driveleech') ||
+   948→        decodedUrl.includes('driveseed') ||
+   949→        decodedUrl.includes('tech.unblockedgames.world') ||
+   950→        decodedUrl.includes('tech.creativeexpressionsblog.com') ||
+   951→        decodedUrl.includes('tech.examzculture.in');
+   952→    const isShortlinkResolveUrl = decodedUrl.includes('ouo.io') ||
+   953→        decodedUrl.includes('ouo.press') ||
+   954→        decodedUrl.includes('oii.la') ||
+   955→        decodedUrl.includes('viewcrate.cc') ||
+   956→        decodedUrl.includes('filecrypt.cc') ||
+   957→        decodedUrl.includes('filecrypt.co');
+   958→    const isProviderArchiveResolveUrl = decodedUrl.includes('modpro.blog') ||
+   959→        decodedUrl.includes('leechpro.blog') ||
+   960→        decodedUrl.includes('episodes.animeflix.') ||
+   961→        decodedUrl.includes('/getlink/');
+   962→
+   963→    // Use hash of URL as cache key
+   964→    const cacheKeyHash = crypto.createHash('md5').update(decodedUrl).digest('hex');
+   965→    const cacheKey = `httpstreaming:${cacheKeyHash}`;
+   966→
+   967→    const looksLikeAsset = (value) => /\.(?:js|css|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|map|json)(?:$|[?#])/i.test(value || '');
+   968→
+   969→    try {
+   970→        let finalUrl;
+   971→
+   972→        const cachedValue = await getCacheValue(cacheKey);
+   973→        if (cachedValue) {
+   974→            // Handle case where cachedValue might be an object from UHDMovies resolver
+   975→            if (typeof cachedValue === 'object' && cachedValue.url) {
+   976→                finalUrl = cachedValue.url;
+   977→            } else {
+   978→                finalUrl = cachedValue;
+   979→            }
+   980→            if (looksLikeAsset(finalUrl)) {
+   981→                console.log(`[HTTP-RESOLVER] Cached URL looks like an asset, ignoring cache for key: httpstreaming:${cacheKeyHash.substring(0, 8)}...`);
+   982→                finalUrl = null;
+   983→            } else {
+   984→            console.log(`[CACHE] Using cached URL for key: httpstreaming:${cacheKeyHash.substring(0, 8)}...`);
+   985→            }
+   986→        } else if (PENDING_RESOLVES.has(cacheKey)) {
+   987→            console.log(`[HTTP-RESOLVER] Joining in-flight resolve for key: ${cacheKeyHash.substring(0, 8)}...`);
+   988→            finalUrl = await PENDING_RESOLVES.get(cacheKey);
+   989→            // Handle case where finalUrl might be an object from UHDMovies resolver
+   990→            if (finalUrl && typeof finalUrl === 'object' && finalUrl.url) {
+   991→                finalUrl = finalUrl.url;
+   992→            }
+   993→        } else {
+   994→            console.log(`[HTTP-RESOLVER] Resolving HTTP stream URL...`);
+   995→
+   996→            // Determine which resolver to use based on URL pattern
+   997→            let resolvePromise;
+   998→            if (isUHDMoviesUrl) {
+   999→                // UHDMovies SID/driveleech URL
+  1000→                console.log(`[HTTP-RESOLVER] Detected UHDMovies URL, using UHDMovies resolver`);
+  1001→                resolvePromise = resolveUHDMoviesUrl(decodedUrl);
+  1002→            } else if (isShortlinkResolveUrl && (
+  1003→                decodedUrl.includes('ouo.io') ||
+  1004→                decodedUrl.includes('ouo.press') ||
+  1005→                decodedUrl.includes('oii.la')
+  1006→            )) {
+  1007→                console.log(`[HTTP-RESOLVER] Detected OUO shortlink, using subprocess resolver`);
+  1008→                resolvePromise = resolveHttpStreamUrlInSubprocess(decodedUrl);
+  1009→            } else {
+  1010→                // 4KHDHub/other HTTP streaming URLs
+  1011→                console.log(`[HTTP-RESOLVER] Detected 4KHDHub URL, using HTTP stream resolver`);
+  1012→                resolvePromise = resolveHttpStreamUrl(decodedUrl);
+  1013→            }
+  1014→
+  1015→            // Set timeout for HTTP stream resolution
+  1016→            const baseTimeoutMs = parseInt(process.env.HTTP_RESOLVE_TIMEOUT || '15000', 10);
+  1017→            const uhdTimeoutMs = parseInt(process.env.UHDMOVIES_RESOLVE_TIMEOUT || '25000', 10);
+  1018→            const shortlinkTimeoutMs = parseInt(process.env.SHORTLINK_HTTP_RESOLVE_TIMEOUT || '210000', 10);
+  1019→            const providerArchiveTimeoutMs = parseInt(process.env.PROVIDER_ARCHIVE_HTTP_RESOLVE_TIMEOUT || '30000', 10);
+  1020→            const timeoutMs = isUHDMoviesUrl
+  1021→                ? Math.max(baseTimeoutMs, uhdTimeoutMs)
+  1022→                : ((isShortlinkResolveUrl || isProviderArchiveResolveUrl)
+  1023→                    ? Math.max(baseTimeoutMs, isProviderArchiveResolveUrl ? providerArchiveTimeoutMs : shortlinkTimeoutMs)
+  1024→                    : baseTimeoutMs);
+  1025→            const timedResolve = Promise.race([
+  1026→                resolvePromise,
+  1027→                new Promise((_, reject) =>
+  1028→                    setTimeout(() => reject(new Error('HTTP resolve timeout')), timeoutMs)
+  1029→                )
+  1030→            ]);
+  1031→
+  1032→            // MEMORY LEAK FIX: Limit pending requests to prevent unbounded growth
+  1033→            if (PENDING_RESOLVES.size >= PENDING_RESOLVES_MAX_SIZE) {
+  1034→                const oldestKey = PENDING_RESOLVES.keys().next().value;
+  1035→                const oldestPromise = PENDING_RESOLVES.get(oldestKey);
+  1036→                // Cancel the oldest pending request if possible
+  1037→                PENDING_RESOLVES.delete(oldestKey);
+  1038→                console.log(`[HTTP-RESOLVER] Evicted oldest pending request (size: ${PENDING_RESOLVES.size})`);
+  1039→            }
+  1040→
+  1041→            // Track the pending request
+  1042→            const pendingRequest = timedResolve.catch(err => {
+  1043→                console.error(`[HTTP-RESOLVER] Pending resolve failed: ${err.message}`);
+  1044→                return null;
+  1045→            }).finally(() => {
+  1046→                PENDING_RESOLVES.delete(cacheKey);
+  1047→            });
+  1048→            PENDING_RESOLVES.set(cacheKey, pendingRequest);
+  1049→
+  1050→            finalUrl = await pendingRequest;
+  1051→
+  1052→            if (finalUrl) {
+  1053→                // Handle case where finalUrl might be an object from UHDMovies resolver that has .url property
+  1054→                let cacheUrl;
+  1055→                if (finalUrl && typeof finalUrl === 'object' && finalUrl.url) {
+  1056→                    cacheUrl = finalUrl.url;
+  1057→                } else {
+  1058→                    cacheUrl = finalUrl;
+  1059→                }
+  1060→
+  1061→                // Use the same TTL as the main resolver for consistency
+  1062→                const cacheTtlMs = parseInt(process.env.RESOLVE_CACHE_TTL_MS || '900000', 10); // 15 min default
+  1063→                await setCacheWithTimer(cacheKey, cacheUrl, cacheTtlMs);
+  1064→            }
+  1065→        }
+  1066→
+  1067→        if (finalUrl) {
+  1068→            // Handle case where finalUrl might be an object (e.g., from UHDMovies resolver)
+  1069→            let redirectUrl;
+  1070→            if (typeof finalUrl === 'object' && finalUrl.url) {
+  1071→                redirectUrl = finalUrl.url;
+  1072→            } else {
+  1073→                redirectUrl = finalUrl;
+  1074→            }
+  1075→
+  1076→            // Encode URL to handle spaces and special characters in filenames
+  1077→            const encodedUrl = encodeUrlForStreaming(redirectUrl);
+  1078→            console.log("[HTTP-RESOLVER] Redirecting to final stream URL:",
+  1079→                typeof encodedUrl === 'string' ? encodedUrl.substring(0, 100) + '...' : encodedUrl);
+  1080→            res.redirect(302, encodedUrl);
+  1081→        } else {
+  1082→            res.status(404).send('Could not resolve HTTP stream link');
+  1083→        }
+  1084→    } catch (error) {
+  1085→        console.error("[HTTP-RESOLVER] Error occurred:", error.message);
+  1086→        res.status(500).send("Error resolving HTTP stream.");
+  1087→    }
+  1088→});
+  1089→
+  1090→// Middleware to check admin token
+  1091→function checkAdminAuth(req, res, next) {
+  1092→    const adminToken = process.env.ADMIN_TOKEN;
+  1093→    if (!adminToken) {
+  1094→        return res.status(503).json({
+  1095→            success: false,
+  1096→            message: 'Admin endpoints disabled. Set ADMIN_TOKEN environment variable to enable.'
+  1097→        });
+  1098→    }
+  1099→
+  1100→    const providedToken = req.headers['authorization']?.replace('Bearer ', '') || req.query.token;
+  1101→    if (providedToken !== adminToken) {
+  1102→        return res.status(401).json({
+  1103→            success: false,
+  1104→            message: 'Unauthorized. Invalid or missing admin token.'
+  1105→        });
+  1106→    }
+  1107→
+  1108→    next();
+  1109→}
+  1110→
+  1111→
+  1112→
+  1113→// Endpoint to verify MediaFlow proxy connectivity
+  1114→app.get('/verify-proxy', async (req, res) => {
+  1115→    const { url, password } = req.query;
+  1116→
+  1117→    if (!url) {
+  1118→        return res.json({ success: false, error: 'Proxy URL is required' });
+  1119→    }
+  1120→
+  1121→    try {
+  1122→        // Normalize URL - remove trailing slash
+  1123→        const baseUrl = url.replace(/\/+$/, '');
+  1124→        const verifyUrl = `${baseUrl}/proxy/ip` + (password ? `?api_password=${encodeURIComponent(password)}` : '');
+  1125→
+  1126→        const response = await fetch(verifyUrl, {
+  1127→            method: 'GET',
+  1128→            timeout: 10000,
+  1129→            headers: {
+  1130→                'Accept': 'application/json'
+  1131→            }
+  1132→        });
+  1133→
+  1134→        if (!response.ok) {
+  1135→            return res.json({
+  1136→                success: false,
+  1137→                error: `Proxy returned status ${response.status}: ${response.statusText}`
+  1138→            });
+  1139→        }
+  1140→
+  1141→        const data = await response.json().catch(() => ({}));
+  1142→        res.json({ success: true, ip: data.ip || data.origin || 'verified' });
+  1143→    } catch (error) {
+  1144→        console.error('[PROXY-VERIFY] Error verifying proxy:', error.message);
+  1145→        res.json({
+  1146→            success: false,
+  1147→            error: error.message || 'Failed to connect to proxy'
+  1148→        });
+  1149→    }
+  1150→});
+  1151→
+  1152→// Endpoint to clear SQLite search cache (stream results)
+  1153→app.get('/admin/clear-search-cache', checkAdminAuth, async (req, res) => {
+  1154→    const result = await sqliteCache.clearSearchCache();
+  1155→    res.json(result);
+  1156→});
+  1157→
+  1158→// Endpoint to clear SQLite torrent hash cache (optionally for specific service)
+  1159→app.get('/admin/clear-torrent-cache', checkAdminAuth, async (req, res) => {
+  1160→    const service = req.query.service; // Optional: ?service=realdebrid or ?service=alldebrid
+  1161→    const result = await sqliteCache.clearTorrentCache(service);
+  1162→    res.json(result);
+  1163→});
+  1164→
+  1165→// Endpoint to clear ALL SQLite cache (search results + torrent metadata)
+  1166→app.get('/admin/clear-all-cache', checkAdminAuth, async (req, res) => {
+  1167→    const result = await sqliteCache.clearAllCache();
+  1168→
+  1169→    res.json(result);
+  1170→});
+  1171→
+  1172→// Endpoint to clear all scraper penalties and reset consecutive failure counters
+  1173→// Useful when a proxy/network outage caused mass penalization of otherwise-healthy scrapers
+  1174→app.get('/admin/clear-scraper-penalties', checkAdminAuth, (req, res) => {
+  1175→    const tracker = scraperPerformance.default;
+  1176→    tracker.clearAllPenalties();
+  1177→    res.json({ success: true, message: 'All scraper penalties cleared and counters reset' });
+  1178→});
+  1179→
+  1180→
+  1181→
+  1182→// Endpoint to view active Usenet streams
+  1183→app.get('/admin/usenet-streams', checkAdminAuth, (req, res) => {
+  1184→    const streams = [];
+  1185→    const now = Date.now();
+  1186→
+  1187→    for (const [streamKey, streamInfo] of ACTIVE_USENET_STREAMS.entries()) {
+  1188→        const inactiveTime = Math.round((now - streamInfo.lastAccess) / 1000 / 60); // minutes
+  1189→        streams.push({
+  1190→            streamKey,
+  1191→            isPersonal: streamInfo.isPersonal || false,
+  1192→            activeConnections: streamInfo.activeConnections || 0,
+  1193→            completionPercentage: streamInfo.completionPercentage || 0,
+  1194→            totalRequests: streamInfo.streamCount,
+  1195→            lastAccessMinutesAgo: inactiveTime,
+  1196→            willCleanupIn: Math.max(0, Math.round((STREAM_INACTIVE_TIMEOUT - (now - streamInfo.lastAccess)) / 1000 / 60)),
+  1197→            deleteOnStop: streamInfo.usenetConfig?.deleteOnStreamStop || false
+  1198→        });
+  1199→    }
+  1200→
+  1201→    res.json({
+  1202→        success: true,
+  1203→        activeStreams: streams.length,
+  1204→        streams: streams,
+  1205→        cleanupInterval: `${STREAM_CLEANUP_INTERVAL / 1000 / 60} minutes`,
+  1206→        inactiveTimeout: `${STREAM_INACTIVE_TIMEOUT / 1000 / 60} minutes`
+  1207→    });
+  1208→});
+  1209→
+  1210→// Endpoint to manually trigger stream cleanup
+  1211→app.post('/admin/cleanup-streams', checkAdminAuth, async (req, res) => {
+  1212→    try {
+  1213→        await cleanupInactiveStreams();
+  1214→        res.json({
+  1215→            success: true,
+  1216→            message: 'Stream cleanup completed'
+  1217→        });
+  1218→    } catch (error) {
+  1219→        res.status(500).json({
+  1220→            success: false,
+  1221→            message: error.message
+  1222→        });
+  1223→    }
+  1224→});
+  1225→
+  1226→/**
+  1227→ * Delete file from file server
+  1228→ */
+  1229→async function deleteFileFromServer(fileServerUrl, filePath) {
+  1230→    try {
+  1231→        const axios = (await import('axios')).default;
+  1232→        const url = `${fileServerUrl.replace(/\/$/, '')}/${filePath}`;
+  1233→        await axios.delete(url, { timeout: 10000 });
+  1234→        console.log(`[USENET-CLEANUP] Deleted file from server: ${filePath}`);
+  1235→        return true;
+  1236→    } catch (error) {
+  1237→        console.error(`[USENET-CLEANUP] Failed to delete file from server: ${error.message}`);
+  1238→        return false;
+  1239→    }
+  1240→}
+  1241→
+  1242→/**
+  1243→ * Cleanup inactive Usenet streams
+  1244→ * Removes downloads from SABnzbd if no stream has accessed them recently
+  1245→ * Also deletes files from file server if deleteOnStreamStop is enabled
+  1246→ */
+  1247→async function cleanupInactiveStreams() {
+  1248→    const now = Date.now();
+  1249→    console.log('[USENET-CLEANUP] Checking for inactive streams...');
+  1250→
+  1251→    for (const [streamKey, streamInfo] of ACTIVE_USENET_STREAMS.entries()) {
+  1252→        const inactiveTime = now - streamInfo.lastAccess;
+  1253→
+  1254→        if (inactiveTime > STREAM_INACTIVE_TIMEOUT) {
+  1255→            const inactiveMinutes = Math.round(inactiveTime / 1000 / 60);
+  1256→            console.log(`[USENET-CLEANUP] Stream inactive for ${inactiveMinutes} minutes: ${streamKey}`);
+  1257→
+  1258→            // Check if we should delete the file from the file server
+  1259→            const shouldDeleteFile = streamInfo.usenetConfig?.deleteOnStreamStop;
+  1260→
+  1261→            // Handle personal files differently (they don't have NZO IDs)
+  1262→            if (streamInfo.isPersonal) {
+  1263→                console.log(`[USENET-CLEANUP] Personal file stream inactive: ${streamKey}`);
+  1264→
+  1265→                if (shouldDeleteFile && streamInfo.videoFilePath && streamInfo.usenetConfig?.fileServerUrl) {
+  1266→                    console.log(`[USENET-CLEANUP] deleteOnStreamStop enabled, deleting personal file from server`);
+  1267→                    await deleteFileFromServer(streamInfo.usenetConfig.fileServerUrl, streamInfo.videoFilePath);
+  1268→                }
+  1269→
+  1270→                ACTIVE_USENET_STREAMS.delete(streamKey);
+  1271→                continue;
+  1272→            }
+  1273→
+  1274→            // Handle regular Usenet downloads (with NZO IDs)
+  1275→            const nzoId = streamKey;
+  1276→            const status = await SABnzbd.getDownloadStatus(
+  1277→                streamInfo.config.sabnzbdUrl,
+  1278→                streamInfo.config.sabnzbdApiKey,
+  1279→                nzoId
+  1280→            );
+  1281→
+  1282→            // User stopped watching - delete the download if incomplete
+  1283→            if (status.status === 'downloading' || status.status === 'Downloading' || status.status === 'Paused') {
+  1284→                console.log(`[USENET-CLEANUP] User stopped streaming incomplete download: ${nzoId} (${status.percentComplete?.toFixed(1)}%)`);
+  1285→
+  1286→                // Only delete if deleteOnStreamStop is enabled
+  1287→                if (shouldDeleteFile) {
+  1288→                    console.log(`[USENET-CLEANUP] deleteOnStreamStop enabled, deleting incomplete download and files`);
+  1289→
+  1290→                    // Delete download from SABnzbd
+  1291→                    const deleted = await SABnzbd.deleteItem(
+  1292→                        streamInfo.config.sabnzbdUrl,
+  1293→                        streamInfo.config.sabnzbdApiKey,
+  1294→                        nzoId,
+  1295→                        true // Delete files
+  1296→                    );
+  1297→
+  1298→                    if (deleted) {
+  1299→                        console.log(`[USENET-CLEANUP] ✓ Deleted incomplete download and files: ${nzoId}`);
+
+[showing lines 600-1299 of 3641; use offset=1300 with limit to continue reading]
