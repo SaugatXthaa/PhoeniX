@@ -9,6 +9,7 @@ import { AniNeko } from './AniNeko.js';
 import { AcerMovies } from './AcerMovies.js';
 import { Einschalten } from './Einschalten.js';
 import { FrameX } from './FrameX.js';
+import { FlyStream } from './FlyStream.js';
 import { Eurostreaming } from './Eurostreaming.js';
 import { Fmovies } from './Fmovies.js';
 import { FourKHDHub } from './FourKHDHub.js';
@@ -227,5 +228,7 @@ export const createSources = (fetcher) => {
     new FourKHDHubOne(fetcher),
     // framextv.tech — movies/TV/anime (sub+dub) via FrameX API (up to 4K HLS)
     new FrameX(fetcher),
+    // flystream.net — movies/TV/anime (sub+dub) via FlyStream API (up to 4K HLS)
+    new FlyStream(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };

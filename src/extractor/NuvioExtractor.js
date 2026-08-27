@@ -42,7 +42,7 @@ const NUVIO_SOURCE_IDS = new Set([
   // moviesdrive — direct googleusercontent URLs (resolved via hub_extractor)
   // NOTE: hdhub4u is NOT here — its hubcdn/hubcloud URLs are handled by
   // HubExtractor/HubCloud downstream, not NuvioExtractor.
-  'zxcstream', 'cinejoy', 'animezey', 'uhdmovies', 'moviesdrive', 'framextv',
+  'zxcstream', 'cinejoy', 'animezey', 'uhdmovies', 'moviesdrive', 'framextv', 'flystream',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)
