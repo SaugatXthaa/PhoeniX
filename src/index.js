@@ -25,7 +25,7 @@ const fetcher = new Fetcher(logger);
 const sources = createSources(fetcher);
 const extractors = createExtractors(fetcher, logger);
 const extractorRegistry = new ExtractorRegistry(logger, extractors);
-const streamResolver = new StreamResolver(logger, extractorRegistry);
+const streamResolver = new StreamResolver(logger, extractorRegistry, fetcher);
 
 const app = express();
 app.use(cors());

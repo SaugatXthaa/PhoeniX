@@ -39,9 +39,9 @@ async function main() {
   const sources = createSources(fetcher);
   const extractors = createExtractors(fetcher, logger);
   const extractorRegistry = new ExtractorRegistry(logger, extractors);
-  const streamResolver = new StreamResolver(logger, extractorRegistry);
+  const streamResolver = new StreamResolver(logger, extractorRegistry, fetcher);
 
-  // Find the NikaStream source
+  // Find NikaStream source + movie source to test subtitles on both
   const nika = sources.find(s => s.id === 'nikastream');
   if (!nika) {
     console.error('FAIL: NikaStream source not registered');
@@ -49,6 +49,7 @@ async function main() {
   }
   console.log('OK: NikaStream registered (label:', nika.label + ')');
 
+  // Test 1: JJK S01E01 (anime, NikaStream already returns subtitles)
   // Build a TmdbId for JJK S01E01 (TMDB 95479)
   const { TmdbId } = await import(pathToFileURL(path.join(projectRoot, 'src', 'utils', 'id.js')).href);
   const tmdbId = TmdbId.fromString('95479:1:1');
@@ -60,7 +61,7 @@ async function main() {
   };
 
   // 1. Call source.handle() directly to inspect the raw results
-  console.log('\n=== Source.handle() ===');
+  console.log('\n=== Source.handle() — JJK S01E01 (anime) ===');
   const t0 = Date.now();
   let sourceResults;
   try {
@@ -75,21 +76,8 @@ async function main() {
   const dt = ((Date.now() - t0) / 1000).toFixed(1);
   console.log(`OK [${dt}s] — ${sourceResults.length} source result(s)`);
 
-  // Show first 5 results with meta details
-  for (const r of sourceResults.slice(0, 5)) {
-    const m = r.meta || {};
-    console.log(`  - url=${r.url.href.slice(0, 100)}`);
-    console.log(`    format=${r.format} | height=${m.height} | sourceType=${m.sourceType} | codec=${m.codec}`);
-    console.log(`    nuvioReferer=${m.nuvioReferer || ''} | subtitles=${(m.subtitles || []).length} track(s)`);
-    if (m.subtitles && m.subtitles.length > 0) {
-      for (const sub of m.subtitles.slice(0, 3)) {
-        console.log(`      - id=${sub.id} lang=${sub.lang} url=${sub.url.slice(0, 80)}`);
-      }
-    }
-  }
-
-  // 2. Run through the full StreamResolver (extractor + resolver)
-  console.log('\n=== StreamResolver.resolve() ===');
+  // 2. Run through the full StreamResolver (extractor + resolver + subtitles)
+  console.log('\n=== StreamResolver.resolve() — JJK S01E01 ===');
   const t1 = Date.now();
   let final;
   try {
@@ -101,22 +89,63 @@ async function main() {
   const dt2 = ((Date.now() - t1) / 1000).toFixed(1);
   console.log(`OK [${dt2}s] — ${final.streams.length} final stream(s)`);
   let streamsWSubs = 0;
-  for (const s of final.streams.slice(0, 8)) {
+  let totalSubs = 0;
+  for (const s of final.streams.slice(0, 5)) {
     console.log(`  - ${s.name}`);
     console.log(`    title=${s.title.split('\n')[0]}`);
-    console.log(`    url=${(s.url || s.externalUrl || '').slice(0, 100)}`);
+    console.log(`    url=${(s.url || s.externalUrl || '').slice(0, 80)}`);
     if (s.subtitles && s.subtitles.length > 0) {
       streamsWSubs++;
+      totalSubs += s.subtitles.length;
       console.log(`    subtitles (${s.subtitles.length}):`);
-      for (const sub of s.subtitles.slice(0, 3)) {
+      for (const sub of s.subtitles.slice(0, 5)) {
         console.log(`      - id=${sub.id} lang=${sub.lang}`);
       }
     }
   }
-  console.log(`\n=== Summary ===`);
-  console.log(`Source returned: ${sourceResults.length} results`);
-  console.log(`Final streams:   ${final.streams.length}`);
-  console.log(`Streams with subtitles: ${streamsWSubs}`);
+  console.log(`\n[Anime Summary] ${final.streams.length} streams, ${streamsWSubs} with subtitles (${totalSubs} total tracks)`);
+
+  // Test 2: Movies — pick a movie source (4KHDHub) and verify subtitles attach
+  console.log('\n=== StreamResolver.resolve() — Inception (movie) ===');
+  const movieTmdb = TmdbId.fromString('27205');
+  const movieCtx = {
+    type: 'movie',
+    id: movieTmdb,
+    hostUrl: new URL('https://example.com/'),
+    mediaType: 'movie',
+  };
+  const movieSource = sources.find(s => s.id === 'videasy') || sources.find(s => s.id === '4khdhub');
+  if (!movieSource) {
+    console.log('SKIP: no movie source available for test');
+    process.exit(0);
+  }
+  console.log('Using movie source:', movieSource.id);
+  const t2 = Date.now();
+  let movieResult;
+  try {
+    movieResult = await streamResolver.resolve(movieCtx, [movieSource], 'movie', movieTmdb);
+  } catch (e) {
+    console.error('FAIL: movie resolver error:', e.message);
+    process.exit(1);
+  }
+  const dt3 = ((Date.now() - t2) / 1000).toFixed(1);
+  console.log(`OK [${dt3}s] — ${movieResult.streams.length} movie stream(s)`);
+  let movieStreamsWithSubs = 0;
+  let movieTotalSubs = 0;
+  for (const s of movieResult.streams.slice(0, 5)) {
+    console.log(`  - ${s.name}`);
+    console.log(`    title=${s.title.split('\n')[0]}`);
+    console.log(`    url=${(s.url || s.externalUrl || '').slice(0, 80)}`);
+    if (s.subtitles && s.subtitles.length > 0) {
+      movieStreamsWithSubs++;
+      movieTotalSubs += s.subtitles.length;
+      console.log(`    subtitles (${s.subtitles.length}):`);
+      for (const sub of s.subtitles.slice(0, 5)) {
+        console.log(`      - id=${sub.id} lang=${sub.lang}`);
+      }
+    }
+  }
+  console.log(`\n[Movie Summary] ${movieResult.streams.length} streams, ${movieStreamsWithSubs} with subtitles (${movieTotalSubs} total tracks)`);
 }
 
 main().catch(e => {

@@ -4,6 +4,7 @@ import bytes from 'bytes';
 import { Format } from '../types.js';
 import { getClosestResolution } from './resolution.js';
 import { flagFromCountryCode, languageFromCountryCode } from './language.js';
+import { SubtitleFetcher } from './SubtitleFetcher.js';
 
 // Parse metadata from stream title and URL when the source doesn't provide it.
 // This enriches the display without modifying any source files or stream URLs.
@@ -267,9 +268,10 @@ function enrichMeta(urlResult) {
 }
 
 export class StreamResolver {
-  constructor(logger, extractorRegistry) {
+  constructor(logger, extractorRegistry, fetcher) {
     this.logger = logger;
     this.extractorRegistry = extractorRegistry;
+    this.fetcher = fetcher; // used by SubtitleFetcher for TMDB → IMDB lookup
     // Dedupe concurrent stream requests — Stremio sends 2-3 duplicate
     // requests for the same content in parallel. Without dedup, each
     // request runs all 85 sources simultaneously (3×85=255 concurrent
@@ -411,6 +413,48 @@ export class StreamResolver {
     // Enrich metadata for all results (parse from title/URL — no source changes)
     for (const r of urlResults) {
       if (!r.error) enrichMeta(r);
+    }
+
+    // ─── Universal Subtitle Injection ───────────────────────────────────
+    // For streams that DON'T have subtitles from their own source (most
+    // movie/TV sources — anime sources like NikaStream/AnimeSuge already
+    // return subtitles via meta.subtitles), fetch subtitles from
+    // OpenSubtitles by TMDB ID + season + episode.
+    //
+    // This is BEST-EFFORT — if OpenSubtitles fails (timeout, rate limit,
+    // no result), streams are returned WITHOUT subtitles. Never breaks
+    // stream playback.
+    //
+    // Fetch subtitles ONCE per (tmdbId, type, season, episode) tuple,
+    // then attach them to every stream that doesn't already have
+    // subtitles in its meta.
+    try {
+      const streamsNeedingSubs = urlResults.filter(r =>
+        !r.error && !r.meta?.subtitles && r.url && typeof r.url === 'object'
+      );
+      if (streamsNeedingSubs.length > 0) {
+        // Fetch subtitles in parallel with a 9s timeout — never block streams
+        const subs = await Promise.race([
+          SubtitleFetcher.fetchByTmdbId(
+            this.fetcher,
+            ctx,
+            typeof id === 'object' ? id.id : id,
+            type,
+            typeof id === 'object' ? id.season : undefined,
+            typeof id === 'object' ? id.episode : undefined,
+          ),
+          new Promise(resolve => setTimeout(() => resolve([]), 9000)),
+        ]);
+        if (Array.isArray(subs) && subs.length > 0) {
+          this.logger.info(`StreamResolver: attaching ${subs.length} OpenSubtitles tracks to ${streamsNeedingSubs.length} streams`);
+          for (const r of streamsNeedingSubs) {
+            r.meta = r.meta || {};
+            r.meta.subtitles = subs;
+          }
+        }
+      }
+    } catch (e) {
+      this.logger.warn(`StreamResolver: subtitle fetch failed — ${e?.message || e}`);
     }
 
     // Sort: errors first, then by height desc, then bytes desc, then priority

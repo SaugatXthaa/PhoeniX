@@ -205,6 +205,26 @@ export function buildStreamResults({ streams, title, sourceId, sourceLabel, coun
       // and requires a Referer — the proxy will do a HEAD check to determine
       // if the response is HLS or a video file
       ...(referer && !skipReferer && !hls && !videoFile && { nuvioForceHls: true }),
+      // Pass through subtitles from raw stream objects. Many nuvio scrapers
+      // (cineby, castle, 1embed, anikototv, animesalt, animesuge, animeworld,
+      // anineko, ctgmovies, cinejoy_v2, etc.) return subtitle URLs in their
+      // stream objects but this was previously dropped. StreamResolver reads
+      // meta.subtitles and attaches them to the final Stremio stream output.
+      // Format: [{ id, url, lang }] — Stremio standard.
+      ...((Array.isArray(s.subtitles) && s.subtitles.length > 0) && {
+        subtitles: s.subtitles
+          .map(sub => {
+            if (!sub || !sub.url) return null;
+            const subId = sub.id || sub.srclang || sub.language || sub.lang || 'en';
+            const subLang = sub.lang || sub.language || sub.srclang || sub.label || 'en';
+            return {
+              id: typeof subId === 'string' ? subId.slice(0, 8) : String(subId).slice(0, 8),
+              url: sub.url,
+              lang: typeof subLang === 'string' ? subLang : String(subLang),
+            };
+          })
+          .filter(Boolean),
+      }),
     };
 
     // Return original URL with format hint — NuvioExtractor handles routing
