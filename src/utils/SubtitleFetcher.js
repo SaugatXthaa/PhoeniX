@@ -39,6 +39,28 @@ const MAX_SUBTITLES = 8; // Per movie/episode
 const FETCH_TIMEOUT_MS = 9000;
 const TOKEN_TTL = 12 * 60 * 1000; // 12 min (server-side tokens last 15 min)
 
+// Concurrency limit for OpenSubtitles API calls.
+// OpenSubtitles anonymous rate limit: 5 req/s. We limit to 4 concurrent
+// calls to stay safely under the limit even when multiple stream requests
+// are in flight simultaneously.
+const MAX_CONCURRENT_API_CALLS = 4;
+let _activeApiCalls = 0;
+const _apiCallQueue = [];
+
+async function withRateLimit(fn) {
+  if (_activeApiCalls >= MAX_CONCURRENT_API_CALLS) {
+    await new Promise(resolve => _apiCallQueue.push(resolve));
+  }
+  _activeApiCalls++;
+  try {
+    return await fn();
+  } finally {
+    _activeApiCalls--;
+    const next = _apiCallQueue.shift();
+    if (next) next();
+  }
+}
+
 const subtitleCache = new Map();
 let _sessionToken = null;
 let _sessionTokenTs = 0;
@@ -117,32 +139,34 @@ function xmlRpcValue(v) {
 }
 
 async function xmlRpcCall(methodName, params) {
-  const body = buildXmlRpcCall(methodName, params);
-  // Use got-scraping (Chrome TLS fingerprint) — OpenSubtitles is behind
-  // Cloudflare and rejects native Node.js fetch with "Just a moment..."
-  // challenge page. got-scraping's TLS fingerprint bypasses this.
-  const { gotScraping } = await import('got-scraping');
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const res = await gotScraping.post(OPENSUBS_XMLRPC_URL, {
-      headers: {
-        'Content-Type': 'text/xml',
-        'User-Agent': USER_AGENT,
-        'Accept': 'text/xml',
-      },
-      body,
-      timeout: { request: FETCH_TIMEOUT_MS },
-      throwHttpErrors: false,
-      http2: false,
-    });
-    if (res.statusCode !== 200) {
-      throw new Error(`XML-RPC HTTP ${res.statusCode}`);
+  return withRateLimit(async () => {
+    const body = buildXmlRpcCall(methodName, params);
+    // Use got-scraping (Chrome TLS fingerprint) — OpenSubtitles is behind
+    // Cloudflare and rejects native Node.js fetch with "Just a moment..."
+    // challenge page. got-scraping's TLS fingerprint bypasses this.
+    const { gotScraping } = await import('got-scraping');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const res = await gotScraping.post(OPENSUBS_XMLRPC_URL, {
+        headers: {
+          'Content-Type': 'text/xml',
+          'User-Agent': USER_AGENT,
+          'Accept': 'text/xml',
+        },
+        body,
+        timeout: { request: FETCH_TIMEOUT_MS },
+        throwHttpErrors: false,
+        http2: false,
+      });
+      if (res.statusCode !== 200) {
+        throw new Error(`XML-RPC HTTP ${res.statusCode}`);
+      }
+      return parseXmlRpcResponse(res.body);
+    } finally {
+      clearTimeout(timer);
     }
-    return parseXmlRpcResponse(res.body);
-  } finally {
-    clearTimeout(timer);
-  }
+  });
 }
 
 // Minimal XML-RPC response parser — extracts the single return value
@@ -312,44 +336,200 @@ async function getSessionToken() {
   return token;
 }
 
-// Convert OpenSubtitles SearchSubtitles data items to Stremio subtitle format
+// ─── Release name sanitization ───────────────────────────────────────
+//
+// Extract a usable release name from a filename or URL.
+// Returns "" if the name doesn't look like a valid release (too short,
+// hash-like, generic names like "index.m3u8", etc.)
+//
+// Valid release names look like:
+//   "Inception.2010.1080p.BluRay.x264-SPARKS"
+//   "Dune.Part.Two.2024.1080p.AMZN.WEB-DL.DUAL.DDP5.1.ESubs"
+//   "Breaking.Bad.S01E01.1080p.BluRay.x264-REWARD"
+//
+// Invalid (returns ""): hash strings, "index.m3u8", "master.m3u8",
+//   "video.mp4", random 32-char alphanumeric strings, etc.
+function sanitizeReleaseName(rawName) {
+  if (!rawName || typeof rawName !== 'string') return '';
+
+  // Strip query string and hash fragment
+  let name = rawName.split('?')[0].split('#')[0];
+  // URL-decode
+  try { name = decodeURIComponent(name); } catch { /* keep as-is */ }
+  // Strip protocol/host if it's a URL — keep only the filename
+  name = name.split('/').pop() || name;
+  // Strip file extension (.mkv, .mp4, .m3u8, etc.)
+  name = name.replace(/\.(mkv|mp4|m4v|avi|mov|webm|m3u8|ts|m2ts|srt|vtt)$/i, '');
+  // Trim whitespace
+  name = name.trim();
+  // Replace spaces with dots (OpenSubtitles uses dots as separators)
+  // But only if the name contains dots already — otherwise keep spaces
+  // (some release names use spaces: "Inception 2010 1080p BluRay")
+
+  // Validate: must be at least 10 chars, at most 200 chars
+  if (name.length < 10 || name.length > 200) return '';
+
+  // Reject hash-like strings (all alphanumeric, no dots/spaces, >20 chars)
+  // e.g. "ADGPM2IzbD60Hu_XUAZoxoFP" → not a release name
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(name) && !name.includes('.') && !name.includes(' ')) return '';
+
+  // Reject generic names
+  const generic = /^(index|master|playlist|video|movie|stream|play|file|download|uc|content|watch|embed)$/i;
+  if (generic.test(name)) return '';
+
+  // Require either a year (19xx/20xx) or quality marker (1080p/720p/4K/2160p)
+  // to ensure this looks like a real release name and not random text
+  const hasYear = /(19|20)\d{2}/.test(name);
+  const hasQuality = /\b(4k|2160p|1440p|1080p|720p|480p|360p|webrip|web-dl|webdl|bluray|bdrip|brrip|dvdrip|hdrip|cam|tc|ts)\b/i.test(name);
+  const hasSeasonEp = /S\d{1,2}E\d{1,2}/i.test(name);
+  if (!hasYear && !hasQuality && !hasSeasonEp) return '';
+
+  // Limit length to 100 chars for the cache key and query
+  if (name.length > 100) name = name.slice(0, 100);
+
+  return name;
+}
+
+// ─── Quality scoring for subtitle sync ───────────────────────────────
+//
+// The #1 cause of out-of-sync subtitles is FPS MISMATCH. A 25fps subtitle
+// played against a 23.976fps video drifts ~4% — after 25 minutes it's a
+// full minute off. The #2 cause is wrong release (different studio logos,
+// intro length, extended cuts). The #3 cause is bad encoding (CP1252 chars
+// show as garbage in UTF-8 players).
+//
+// We score each subtitle and pick the best one per language:
+//   +100  MatchedBy = "moviehash"            (perfect file match)
+//   +80   MatchedBy = "moviereleasename"      (release name match)
+//   +50   MovieFPS = "23.976"                (NTSC film — most common)
+//   +30   MovieFPS = "24.000"                (digital cinema)
+//   +20   SubFromTrusted = "1"               (trusted uploader)
+//   +15   SubRating >= 7.0                   (high user rating)
+//   +10   SubEncoding = "UTF-8"              (no encoding issues)
+//   +5    SubHearingImpaired = "0"           (clean, no [SOUND] tags)
+//   +5    SubAutoTranslation = "0"           (human-translated)
+//   -200  SubBad = "1"                       (reported broken — auto-reject)
+//   -50   MovieFPS = "25.000"                (PAL — drifts on NTSC video)
+//   -50   MovieFPS = "29.970"                (NTSC interlaced — drifts)
+//   -30   SubAutoTranslation = "1"           (machine-translated)
+//   -20   SubHearingImpaired = "1"           (has [SOUND] tags)
+//   -10   SubForeignPartsOnly = "1"          (only foreign parts)
+//
+// Then sort by score DESC, then SubDownloadsCnt DESC (popularity tiebreak).
+function scoreSubtitle(item) {
+  if (!item) return -1000;
+
+  let score = 0;
+
+  // Auto-reject bad subtitles
+  if (String(item.SubBad || '0') === '1') return -1000;
+
+  // Match quality (most important for sync)
+  const matchedBy = String(item.MatchedBy || '').toLowerCase();
+  if (matchedBy === 'moviehash') score += 100;
+  else if (matchedBy === 'moviereleasename') score += 80;
+  else if (matchedBy === 'imdbid') score += 10;
+  else if (matchedBy === 'tag') score += 5;
+
+  // FPS matching — CRITICAL for sync
+  // 23.976 is the standard for modern movies/TV (NTSC film rate).
+  // 24.000 is digital cinema.
+  // 25.000 is PAL (European TV) — drifts ~4% on NTSC video.
+  // 29.970 is NTSC interlaced — drifts on progressive video.
+  const fps = String(item.MovieFPS || '').trim();
+  if (fps === '23.976' || fps === '23.98' || fps === '23.976024') score += 50;
+  else if (fps === '24.000' || fps === '24') score += 30;
+  else if (fps === '25.000' || fps === '25') score -= 50; // PAL drifts
+  else if (fps === '29.970' || fps === '30') score -= 50; // interlaced drifts
+  // Unknown FPS — neutral (don't penalize, might be fine)
+
+  // Trusted uploader
+  if (String(item.SubFromTrusted || '0') === '1') score += 20;
+
+  // User rating
+  const rating = parseFloat(item.SubRating || '0');
+  if (rating >= 7.0) score += 15;
+  else if (rating >= 5.0) score += 5;
+  else if (rating > 0 && rating < 3.0) score -= 10;
+
+  // Encoding — UTF-8 is preferred (Stremio expects UTF-8)
+  const encoding = String(item.SubEncoding || '').toUpperCase();
+  if (encoding === 'UTF-8' || encoding === 'UTF8') score += 10;
+  else if (encoding === 'ASCII') score += 5; // ASCII is UTF-8 safe
+  else if (encoding.includes('1252') || encoding.includes('CP1252')) score -= 5; // might show wrong chars
+  else if (encoding && encoding !== '') score -= 10; // unknown encoding
+
+  // Hearing impaired — prefer non-HI (cleaner, no [SOUND] tags)
+  if (String(item.SubHearingImpaired || '0') === '0') score += 5;
+  else score -= 20; // HI subtitles have distracting [SOUND] tags
+
+  // Auto-translation — prefer human-translated
+  if (String(item.SubAutoTranslation || '0') === '0') score += 5;
+  else score -= 30; // machine translation is often wrong
+
+  // Foreign parts only — usually not what users want
+  if (String(item.SubForeignPartsOnly || '0') === '1') score -= 10;
+
+  return score;
+}
+
+// Convert OpenSubtitles SearchSubtitles data items to Stremio subtitle format.
+// Picks the BEST subtitle per language using quality scoring (see scoreSubtitle).
+//
+// LANGUAGE PRIORITY: English is always included first (it's the most-requested
+// language for Stremio users). Then Spanish, French, German, etc. We pick the
+// top MAX_SUBTITLES languages by priority, and for each language, the
+// highest-scored subtitle. This ensures English is never accidentally cut
+// when other languages happen to have higher scores.
 function parseSubtitles(items) {
   if (!Array.isArray(items) || items.length === 0) return [];
 
-  // Group by language — keep only the highest-rated subtitle per language
-  // (sorted by download count above). This gives the user one track per
-  // language rather than 8 English tracks for a popular movie.
-  const byLanguage = new Map();
-  const sorted = items
+  // Step 1: Score every item
+  const scored = items
     .filter(item => item && item.SubLanguageID && item.SubDownloadLink)
-    .sort((a, b) => (parseInt(b.SubDownloadsCnt, 10) || 0) - (parseInt(a.SubDownloadsCnt, 10) || 0));
+    .map(item => ({ item, score: scoreSubtitle(item) }))
+    .filter(s => s.score > -500); // reject SubBad and very low-scored
 
-  for (const item of sorted) {
+  // Step 2: Group by language — for each language, keep only the BEST subtitle
+  const byLanguage = new Map();
+  for (const { item, score } of scored) {
     const lang3 = String(item.SubLanguageID).toLowerCase();
-    if (byLanguage.has(lang3)) continue; // already have one for this language
-    const lang2 = ISO_639_2B_TO_1[lang3] || lang3;
-    const langName = LANG_NAMES[lang3] || item.LanguageName || lang3;
-
-    byLanguage.set(lang3, {
-      id: lang2,
-      url: item.SubDownloadLink, // gzipped .srt URL — Stremio decodes
-      lang: langName,
-    });
-
-    if (byLanguage.size >= MAX_SUBTITLES) break;
+    const existing = byLanguage.get(lang3);
+    if (!existing || score > existing.score) {
+      byLanguage.set(lang3, { item, score });
+    }
   }
 
-  const parsed = [...byLanguage.values()];
-
-  // Sort by language priority (English first, etc.)
-  parsed.sort((a, b) => {
-    const aPriority = LANG_PRIORITY.indexOf(Object.keys(ISO_639_2B_TO_1).find(k => ISO_639_2B_TO_1[k] === a.id));
-    const bPriority = LANG_PRIORITY.indexOf(Object.keys(ISO_639_2B_TO_1).find(k => ISO_639_2B_TO_1[k] === b.id));
-    if (aPriority !== -1 && bPriority !== -1) return aPriority - bPriority;
-    if (aPriority !== -1) return -1;
-    if (bPriority !== -1) return 1;
-    return 0;
+  // Step 3: Convert to array and sort by LANGUAGE PRIORITY (English first,
+  // then Spanish, French, German, etc.). Within each language, the best-
+  // scored subtitle is already selected.
+  const langEntries = [...byLanguage.values()].map(({ item, score }) => {
+    const lang3 = String(item.SubLanguageID).toLowerCase();
+    const lang2 = ISO_639_2B_TO_1[lang3] || lang3;
+    const langName = LANG_NAMES[lang3] || item.LanguageName || lang3;
+    const priority = LANG_PRIORITY.indexOf(lang3);
+    return {
+      id: lang2,
+      url: item.SubDownloadLink,
+      lang: langName,
+      score,
+      priority: priority !== -1 ? priority : 999, // unknown languages sort last
+    };
   });
+
+  // Sort: priority languages first (English=0, Spanish=1, ...), then by
+  // score DESC as a tiebreaker, then alphabetically by language name
+  langEntries.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    if (b.score !== a.score) return b.score - a.score;
+    return a.lang.localeCompare(b.lang);
+  });
+
+  // Step 4: Limit to MAX_SUBTITLES — this preserves language priority
+  // (English is always included if available)
+  const parsed = langEntries.slice(0, MAX_SUBTITLES).map(({ id, url, lang }) => ({
+    id, url, lang,
+  }));
 
   return parsed;
 }
@@ -365,9 +545,13 @@ export const SubtitleFetcher = {
    * @param {string} type   - 'movie' or 'tv' / 'series'
    * @param {number} [season] - TV season (1-indexed)
    * @param {number} [episode] - TV episode (1-indexed)
+   * @param {string} [releaseName] - Optional release name for better sync matching
+   *                                  (e.g. "Inception.2010.1080p.BluRay.x264-SPARKS").
+   *                                  When provided, OpenSubtitles matches by
+   *                                  MovieReleaseName → perfect sync.
    * @returns {Promise<Array>} Array of { id, url, lang } — Stremio format
    */
-  async fetchByTmdbId(fetcher, ctx, tmdbIdOrObj, type, season, episode) {
+  async fetchByTmdbId(fetcher, ctx, tmdbIdOrObj, type, season, episode, releaseName) {
     if (!tmdbIdOrObj) return [];
     const mediaType = type === 'tv' || type === 'series' ? 'tv' : 'movie';
 
@@ -379,7 +563,11 @@ export const SubtitleFetcher = {
     const s = tmdbIdObj.season || season;
     const e = tmdbIdObj.episode || episode;
 
-    const cacheKey = `${tmdbIdNum}_${mediaType}_${s || 0}_${e || 0}`;
+    // Clean release name — strip file extension, query string, hashes
+    const cleanRelease = releaseName ? sanitizeReleaseName(releaseName) : '';
+
+    // Cache key includes release name so different releases get different subs
+    const cacheKey = `${tmdbIdNum}_${mediaType}_${s || 0}_${e || 0}${cleanRelease ? '_' + cleanRelease : ''}`;
 
     evictExpired();
     const cached = subtitleCache.get(cacheKey);
@@ -400,52 +588,74 @@ export const SubtitleFetcher = {
       // Step 2: Get session token (cached)
       const token = await getSessionToken();
 
-      // Step 3: SearchSubtitles by IMDB ID, one language at a time, in parallel.
-      // We can't pass all languages in one query because OpenSubtitles returns
-      // 50 most-popular subtitles sorted by download count — for popular movies
-      // these are all English, so other languages are never returned. By
-      // querying each language separately with limit=1, we guarantee one
-      // subtitle per language.
-      const langList = ALL_LANGUAGES.split(',');
-      const results = await Promise.all(langList.map(async (lang3) => {
+      // Step 3: Search OpenSubtitles
+      //
+      // Two strategies depending on whether we have a release name:
+      //
+      // A) WITH release name:
+      //    Single query: imdbid + sublanguageid(all) + moviereleasename
+      //    OpenSubtitles returns only subtitles matching the release name →
+      //    MatchedBy = "moviereleasename" → PERFECT SYNC.
+      //    One call instead of 8, because the release filter narrows results
+      //    enough that we don't need per-language queries.
+      //
+      // B) WITHOUT release name:
+      //    Per-language queries: imdbid + sublanguageid(single) + limit=1
+      //    8 parallel calls. This is the fallback — less accurate sync but
+      //    still works. Quality scoring (FPS, encoding, rating) picks the
+      //    best subtitle from the IMDB-matched pool.
+      let validItems = [];
+
+      if (cleanRelease) {
+        // Strategy A: release-name matching (BEST SYNC)
         try {
           const r = await xmlRpcCall('SearchSubtitles', [
             token,
-            [{ imdbid: imdbNum, sublanguageid: lang3 }],
-            { limit: 1 },
+            [{
+              imdbid: imdbNum,
+              sublanguageid: ALL_LANGUAGES,
+              moviereleasename: cleanRelease,
+            }],
+            { limit: 100 },
           ]);
           const data = r?.data;
-          if (Array.isArray(data) && data.length > 0 && data[0].SubDownloadLink) {
-            return { lang3, item: data[0] };
+          if (Array.isArray(data) && data.length > 0) {
+            validItems = data;
+            if (process.env.DEBUG_SUBTITLES) {
+              console.error(`[subtitles] release "${cleanRelease.slice(0, 40)}" matched ${data.length} items`);
+            }
           }
-        } catch { /* best-effort */ }
-        return null;
-      }));
+        } catch { /* fall through to IMDB-only */ }
+      }
 
-      const validItems = results.filter(r => r !== null).map(r => r.item);
-      if (process.env.DEBUG_SUBTITLES) {
-        console.error(`[subtitles] got ${validItems.length} items from ${langList.length} lang queries`);
-        if (validItems.length > 0) {
-          console.error(`[subtitles] langs: ${validItems.map(i => i.SubLanguageID).join(',')}`);
+      // If release-name matching returned nothing (or no release name was
+      // provided), fall back to per-language IMDB-only queries.
+      if (validItems.length === 0) {
+        const langList = ALL_LANGUAGES.split(',');
+        const results = await Promise.all(langList.map(async (lang3) => {
+          try {
+            const r = await xmlRpcCall('SearchSubtitles', [
+              token,
+              [{ imdbid: imdbNum, sublanguageid: lang3 }],
+              { limit: 5 },
+            ]);
+            const data = r?.data;
+            if (Array.isArray(data) && data.length > 0) {
+              return data; // return ALL items (not just data[0]) so we can score them
+            }
+          } catch { /* best-effort */ }
+          return [];
+        }));
+        validItems = results.flat();
+        if (process.env.DEBUG_SUBTITLES) {
+          console.error(`[subtitles] IMDB-only fallback got ${validItems.length} items from ${langList.length} lang queries`);
         }
       }
 
-      let subs_list = parseSubtitles(validItems);
-
-      // For TV episodes, we may want to filter by season/episode, but
-      // OpenSubtitles already matches by IMDB ID + season/episode when
-      // we pass the show's IMDB ID. The SeriesSeason/SeriesEpisode
-      // fields in the result confirm the match.
-      if (mediaType === 'tv' && s && e) {
-        subs_list = subs_list.filter(sub => {
-          // Keep all subs — OpenSubtitles already filtered by episode
-          return true;
-        });
-      }
-      subs = subs_list;
+      // Score and pick best per language
+      subs = parseSubtitles(validItems);
     } catch (e) {
       // Silent failure — subtitles are best-effort
-      // Invalidate token on auth error so next call re-logs in
       if (process.env.DEBUG_SUBTITLES) {
         console.error(`[subtitles] fetch error: ${e?.message || e}`);
       }

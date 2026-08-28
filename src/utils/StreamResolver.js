@@ -6,6 +6,65 @@ import { getClosestResolution } from './resolution.js';
 import { flagFromCountryCode, languageFromCountryCode } from './language.js';
 import { SubtitleFetcher } from './SubtitleFetcher.js';
 
+// Extract a release name from a stream's meta + URL for OpenSubtitles
+// release-name matching. Returns "" if no recognizable release name found.
+//
+// Checks (in order of reliability):
+//   1. meta.filename (set by 4KHDHub, MoviesDrive, HubCloud sources)
+//   2. URL pathname last segment (if it looks like a real filename)
+//   3. meta.title (sometimes contains release info)
+//
+// Delegates the actual validation/sanitization to SubtitleFetcher's
+// sanitizeReleaseName logic via a simple regex check here — the full
+// validation happens in SubtitleFetcher.fetchByTmdbId().
+function extractReleaseNameFromStream(urlResult) {
+  if (!urlResult || !urlResult.url) return '';
+  const meta = urlResult.meta || {};
+
+  // 1. Try meta.filename first (most reliable — set by download sources)
+  if (meta.filename && typeof meta.filename === 'string') {
+    const cleaned = meta.filename.split('?')[0].split('#')[0].split('/').pop() || meta.filename;
+    // Quick sanity check — must contain year or quality marker
+    if (/(19|20)\d{2}|\b(1080|720|480|2160|4k)p?\b|S\d{1,2}E\d{1,2}/i.test(cleaned)) {
+      return cleaned;
+    }
+  }
+
+  // 2. Try URL pathname
+  const url = urlResult.url;
+  const pathSegments = url.pathname.split('/').filter(Boolean);
+  if (pathSegments.length > 0) {
+    const lastSegment = pathSegments[pathSegments.length - 1];
+    // Check if it looks like a release name (has dots/spaces + year/quality)
+    if (/(19|20)\d{2}|\b(1080|720|480|2160|4k)p?\b|S\d{1,2}E\d{1,2}/i.test(lastSegment)) {
+      // Don't return .m3u8 segment files — they're playlist indices, not releases
+      if (!/^index-|^master\.|^playlist\./i.test(lastSegment)) {
+        return lastSegment;
+      }
+    }
+    // Try second-to-last segment too (some CDNs put the filename there)
+    if (pathSegments.length > 1) {
+      const secondLast = pathSegments[pathSegments.length - 2];
+      if (/(19|20)\d{2}|\b(1080|720|480|2160|4k)p?\b|S\d{1,2}E\d{1,2}/i.test(secondLast)) {
+        if (!/^index-|^master\.|^playlist\./i.test(secondLast)) {
+          return secondLast;
+        }
+      }
+    }
+  }
+
+  // 3. Try meta.title — some sources embed release info in the title
+  if (meta.title && typeof meta.title === 'string') {
+    // Look for a pattern like "Movie.Title.2024.1080p.WEB-DL" in the title
+    const titleMatch = meta.title.match(/([A-Za-z0-9][A-Za-z0-9._\-\s]+?\b(?:19|20)\d{2}\b[A-Za-z0-9._\-\s]*\b(?:1080|720|480|2160|4k)p?\b[A-Za-z0-9._\-\s]*)/i);
+    if (titleMatch && titleMatch[1].length > 10 && titleMatch[1].length < 200) {
+      return titleMatch[1].trim();
+    }
+  }
+
+  return '';
+}
+
 // Parse metadata from stream title and URL when the source doesn't provide it.
 // This enriches the display without modifying any source files or stream URLs.
 // Only fills in MISSING fields — never overwrites existing meta values.
@@ -421,36 +480,108 @@ export class StreamResolver {
     // return subtitles via meta.subtitles), fetch subtitles from
     // OpenSubtitles by TMDB ID + season + episode.
     //
+    // SYNC STRATEGY:
+    //   1. If a stream has a recognizable release name (from meta.filename
+    //      or the URL), query OpenSubtitles with `moviereleasename` →
+    //      subtitles match the EXACT release → perfect sync.
+    //   2. If no release name, fall back to IMDB-only search → subtitles
+    //      match the movie/show but may be for a different release →
+    //      quality scoring (FPS, encoding, rating) picks the best.
+    //   3. Source-provided subtitles (NikaStream, AnimeSuge, etc.) are
+    //      always preferred — they come from the same source as the video.
+    //
     // This is BEST-EFFORT — if OpenSubtitles fails (timeout, rate limit,
     // no result), streams are returned WITHOUT subtitles. Never breaks
     // stream playback.
-    //
-    // Fetch subtitles ONCE per (tmdbId, type, season, episode) tuple,
-    // then attach them to every stream that doesn't already have
-    // subtitles in its meta.
     try {
+      // Identify streams that need OpenSubtitles fallback
       const streamsNeedingSubs = urlResults.filter(r =>
         !r.error && !r.meta?.subtitles && r.url && typeof r.url === 'object'
       );
+
       if (streamsNeedingSubs.length > 0) {
-        // Fetch subtitles in parallel with a 9s timeout — never block streams
-        const subs = await Promise.race([
-          SubtitleFetcher.fetchByTmdbId(
-            this.fetcher,
-            ctx,
-            typeof id === 'object' ? id.id : id,
-            type,
-            typeof id === 'object' ? id.season : undefined,
-            typeof id === 'object' ? id.episode : undefined,
-          ),
-          new Promise(resolve => setTimeout(() => resolve([]), 9000)),
-        ]);
-        if (Array.isArray(subs) && subs.length > 0) {
-          this.logger.info(`StreamResolver: attaching ${subs.length} OpenSubtitles tracks to ${streamsNeedingSubs.length} streams`);
-          for (const r of streamsNeedingSubs) {
+        // Extract release names and group streams
+        // Key: releaseName (or "" for IMDB-only fallback)
+        // Value: array of urlResult objects
+        const groups = new Map();
+        for (const r of streamsNeedingSubs) {
+          const releaseName = extractReleaseNameFromStream(r);
+          const key = releaseName || '';
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(r);
+        }
+
+        // Cap the number of distinct release-name lookups to prevent
+        // OpenSubtitles API abuse. If there are more than 5 distinct
+        // release names, only the 5 most common are fetched; the rest
+        // fall back to IMDB-only (key="").
+        const MAX_RELEASE_LOOKUPS = 5;
+        const sortedGroups = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+        const releaseGroups = sortedGroups.filter(([k]) => k !== '').slice(0, MAX_RELEASE_LOOKUPS);
+        const imdbOnlyGroup = groups.get('') || [];
+
+        // If we exceeded the cap, move excess release groups to IMDB-only
+        if (sortedGroups.filter(([k]) => k !== '').length > MAX_RELEASE_LOOKUPS) {
+          for (const [k, rs] of sortedGroups.filter(([k]) => k !== '').slice(MAX_RELEASE_LOOKUPS)) {
+            imdbOnlyGroup.push(...rs);
+          }
+        }
+
+        // Fetch subtitles for each group IN PARALLEL with a 9s global timeout.
+        // Each SubtitleFetcher call is cached, so repeated release names
+        // across different movies don't re-fetch.
+        const fetchTasks = [];
+
+        // IMDB-only fallback (no release name)
+        if (imdbOnlyGroup.length > 0) {
+          fetchTasks.push(
+            Promise.race([
+              SubtitleFetcher.fetchByTmdbId(
+                this.fetcher, ctx,
+                typeof id === 'object' ? id.id : id,
+                type,
+                typeof id === 'object' ? id.season : undefined,
+                typeof id === 'object' ? id.episode : undefined,
+              ),
+              new Promise(resolve => setTimeout(() => resolve([]), 9000)),
+            ]).then(subs => ({ key: '', subs: Array.isArray(subs) ? subs : [] }))
+          );
+        }
+
+        // Per-release-name lookups
+        for (const [releaseName] of releaseGroups) {
+          fetchTasks.push(
+            Promise.race([
+              SubtitleFetcher.fetchByTmdbId(
+                this.fetcher, ctx,
+                typeof id === 'object' ? id.id : id,
+                type,
+                typeof id === 'object' ? id.season : undefined,
+                typeof id === 'object' ? id.episode : undefined,
+                releaseName,
+              ),
+              new Promise(resolve => setTimeout(() => resolve([]), 9000)),
+            ]).then(subs => ({ key: releaseName, subs: Array.isArray(subs) ? subs : [] }))
+          );
+        }
+
+        const results = await Promise.all(fetchTasks);
+
+        // Attach subtitles to each group
+        let totalAttached = 0;
+        for (const { key, subs } of results) {
+          if (subs.length === 0) continue;
+          const groupStreams = key === '' ? imdbOnlyGroup : (groups.get(key) || []);
+          for (const r of groupStreams) {
             r.meta = r.meta || {};
             r.meta.subtitles = subs;
+            totalAttached++;
           }
+          const label = key ? `release "${key.slice(0, 30)}"` : 'IMDB fallback';
+          this.logger.info(`StreamResolver: ${subs.length} subs for ${label} → ${groupStreams.length} streams`);
+        }
+        if (totalAttached > 0) {
+          this.logger.info(`StreamResolver: subtitles attached to ${totalAttached}/${streamsNeedingSubs.length} streams`);
         }
       }
     } catch (e) {
