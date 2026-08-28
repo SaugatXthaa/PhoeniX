@@ -509,6 +509,14 @@ export class StreamResolver {
           }),
           ...(urlResult.meta?.bytes && { videoSize: urlResult.meta.bytes }),
         },
+        // Subtitles pass-through — sources that return subtitle tracks
+        // (e.g. NikaStream, AniSuge) store them in meta.subtitles as
+        // Stremio-format objects: { id, url, lang }. Stremio reads this
+        // array directly from the stream object and shows subtitle tracks
+        // in the player UI.
+        ...(Array.isArray(urlResult.meta?.subtitles) && urlResult.meta.subtitles.length > 0 && {
+          subtitles: urlResult.meta.subtitles,
+        }),
       };
       streams.push(stream);
     }

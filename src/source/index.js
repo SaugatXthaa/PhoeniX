@@ -11,6 +11,8 @@ import { Einschalten } from './Einschalten.js';
 import { FrameX } from './FrameX.js';
 import { FlyStream } from './FlyStream.js';
 import { CineJoyAllInOne } from './CineJoyAllInOne.js';
+// nikastream.blog — anime sub+dub via Anivexa API (multi-language subtitles)
+import { NikaStream } from './NikaStream.js';
 import { Eurostreaming } from './Eurostreaming.js';
 import { Fmovies } from './Fmovies.js';
 import { FourKHDHub } from './FourKHDHub.js';
@@ -232,5 +234,7 @@ export const createSources = (fetcher) => {
     new FlyStream(fetcher),
     // cinejoy.to — movies/TV/anime via Noise protocol (7 servers, up to 4K)
     new CineJoyAllInOne(fetcher),
+    // nikastream.blog — anime sub+dub HLS via Anivexa API (multi-language subtitles)
+    new NikaStream(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };

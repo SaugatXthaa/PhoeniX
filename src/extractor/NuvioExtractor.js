@@ -43,6 +43,8 @@ const NUVIO_SOURCE_IDS = new Set([
   // NOTE: hdhub4u is NOT here — its hubcdn/hubcloud URLs are handled by
   // HubExtractor/HubCloud downstream, not NuvioExtractor.
   'zxcstream', 'cinejoy', 'animezey', 'uhdmovies', 'moviesdrive', 'framextv', 'flystream', 'cinejoyaio',
+  // nikastream — anime sub+dub HLS via Anivexa API (kryntal.top needs Referer)
+  'nikastream',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)
