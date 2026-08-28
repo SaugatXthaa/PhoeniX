@@ -10,6 +10,7 @@ import { AcerMovies } from './AcerMovies.js';
 import { Einschalten } from './Einschalten.js';
 import { FrameX } from './FrameX.js';
 import { FlyStream } from './FlyStream.js';
+import { CineJoyAllInOne } from './CineJoyAllInOne.js';
 import { Eurostreaming } from './Eurostreaming.js';
 import { Fmovies } from './Fmovies.js';
 import { FourKHDHub } from './FourKHDHub.js';
@@ -77,7 +78,6 @@ import { Movies4u } from './Movies4u.js';
 import { PlayImdb } from './PlayImdb.js';
 // Re-added sources (from uploaded Nuvio scrapers — each with dedicated source file)
 import { ZXCStream } from './ZXCStream.js';
-import { Cinejoy } from './Cinejoy.js';
 import { AnimeZeY } from './AnimeZeY.js';
 import { UHDMovies } from './UHDMovies.js';
 import { HDHub4u } from './HDHub4u.js';
@@ -194,7 +194,7 @@ export const createSources = (fetcher) => {
     // zxcstream — movies/series/anime via player.zxcstream.xyz embed URLs
     new ZXCStream(fetcher),
     // cinejoy — movies/series via HdHub addon resolve endpoint (HLS m3u8)
-    new Cinejoy(fetcher),
+    
     // animezey — anime-only sub+dub (workers.dev)
     new AnimeZeY(fetcher),
     // uhdmovies — movies-only (googleusercontent, 4K/1080p)
@@ -230,5 +230,7 @@ export const createSources = (fetcher) => {
     new FrameX(fetcher),
     // flystream.net — movies/TV/anime (sub+dub) via FlyStream API (up to 4K HLS)
     new FlyStream(fetcher),
+    // cinejoy.to — movies/TV/anime via Noise protocol (7 servers, up to 4K)
+    new CineJoyAllInOne(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
