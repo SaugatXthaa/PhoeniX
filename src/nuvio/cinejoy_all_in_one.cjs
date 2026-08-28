@@ -288,21 +288,19 @@ async function validateStreamUrl(url, headers) {
   }
 }
 
-// Pengu.uk proxy wrapper — wraps any URL with proper Referer/Origin headers
-// and returns a pengu.uk/hls/cinejoy/resource/<base64>/media.m3u8 URL
-// that works on ALL platforms (including Android/iOS native players)
-function wrapWithPenguProxy(originalUrl) {
-  if (!originalUrl || !originalUrl.startsWith('http')) return originalUrl;
-  // Only wrap movieboxnoob.cc and shegu.st URLs (cinejoy CDNs)
-  if (!originalUrl.includes('movieboxnoob.cc') && !originalUrl.includes('shegu.st')) {
-    return originalUrl;
-  }
-  var json = JSON.stringify({
-    url: originalUrl,
-    headers: { Referer: CINEJOY_ORIGIN + '/', Origin: CINEJOY_ORIGIN }
-  });
-  var b64 = Buffer.from(json).toString('base64url');
-  return 'https://pengu.uk/hls/cinejoy/resource/' + b64 + '/media.m3u8';
+// Build standard Stremio proxy-headers hint. CineJoy CDNs (movieboxnoob.cc,
+// shegu.st, cinejoy.to) REQUIRE Referer + Origin headers to be present on the
+// HTTP request, otherwise they 403. Stremio's runtime sends these headers on
+// the user's behalf when `behaviorHints.proxyHeaders.request` is set — this is
+// the native Stremio mechanism and replaces the old external pengu.uk proxy.
+function proxyHeaders() {
+  return {
+    request: {
+      'User-Agent': UA,
+      'Referer': CINEJOY_ORIGIN + '/',
+      'Origin': CINEJOY_ORIGIN,
+    },
+  };
 }
 
 // Parse a stream entry from the decrypted response.
@@ -334,11 +332,13 @@ function parseStreamEntry(entry, server, info) {
       streams.push({
         name: PROVIDER_NAME + ' - ' + server + (entry.id ? ' (' + entry.id + ')' : ''),
         title: info.title + ' [' + server + ' server]',
-        url: wrapWithPenguProxy(playlistUrl),
+        url: playlistUrl,
         quality: server === 'Lisbon' ? '2160p' : '1080p',
         type: 'application/vnd.apple.mpegurl',
-        headers: { 'User-Agent': UA, 'Referer': CINEJOY_ORIGIN + '/' },
-        behaviorHints: { bingeGroup: 'cinejoy-' + server.toLowerCase() },
+        behaviorHints: {
+          bingeGroup: 'cinejoy-' + server.toLowerCase(),
+          proxyHeaders: proxyHeaders(),
+        },
       });
     }
   } else if (entry.type === 'file' && entry.qualities) {
@@ -365,11 +365,13 @@ function parseStreamEntry(entry, server, info) {
         streams.push({
           name: PROVIDER_NAME + ' - ' + server + ' ' + q + ' (' + entry.id + ')',
           title: info.title + ' [' + server + ' ' + q + ']',
-          url: wrapWithPenguProxy(url),
+          url: url,
           quality: q === 'unknown' ? '720p' : q + 'p',
           type: qInfo.type === 'mp4' ? 'video/mp4' : 'application/vnd.apple.mpegurl',
-          headers: { 'User-Agent': UA, 'Referer': CINEJOY_ORIGIN + '/' },
-          behaviorHints: { bingeGroup: 'cinejoy-' + server.toLowerCase() + '-' + q },
+          behaviorHints: {
+            bingeGroup: 'cinejoy-' + server.toLowerCase() + '-' + q,
+            proxyHeaders: proxyHeaders(),
+          },
         });
       }
     }
@@ -510,10 +512,10 @@ async function getStreams(tmdbId, type, season, episode) {
       url: embedUrl,
       quality: '1080p',
       type: 'iframe',
-      headers: { 'User-Agent': UA },
       behaviorHints: {
         bingeGroup: 'cinejoy-website-' + tmdbId,
         notWebVideo: true,
+        proxyHeaders: proxyHeaders(),
       },
     });
     console.log('[CineJoy] Added cinejoy.to website fallback stream');
@@ -534,5 +536,5 @@ module.exports = {
   _loadWasm: loadWasm,
   _sealRequest: sealRequest,
   _decryptResponse: decryptResponse,
-  _wrapWithPenguProxy: wrapWithPenguProxy,
+
 };

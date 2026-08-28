@@ -201,6 +201,8 @@ async function getTMDBInfo(tmdbId, type) {
     const d = await res.json();
     return {
       title: type === 'tv' ? d.name : d.title,
+      tmdbId: tmdbId,
+      type: type,
       year: parseInt((d.first_air_date || d.release_date || '').slice(0, 4)) || null,
       imdbId: (d.external_ids && d.external_ids.imdb_id) || d.imdb_id || null,
     };
@@ -286,6 +288,21 @@ async function validateStreamUrl(url, headers) {
   }
 }
 
+// Build standard Stremio proxy-headers hint. CineJoy CDNs (movieboxnoob.cc,
+// shegu.st, cinejoy.to) REQUIRE Referer + Origin headers to be present on the
+// HTTP request, otherwise they 403. Stremio's runtime sends these headers on
+// the user's behalf when `behaviorHints.proxyHeaders.request` is set — this is
+// the native Stremio mechanism and replaces the old external pengu.uk proxy.
+function proxyHeaders() {
+  return {
+    request: {
+      'User-Agent': UA,
+      'Referer': CINEJOY_ORIGIN + '/',
+      'Origin': CINEJOY_ORIGIN,
+    },
+  };
+}
+
 // Parse a stream entry from the decrypted response.
 // Stream entry can be:
 //   { type: "hls", id, playlist, captions: [] }
@@ -295,15 +312,35 @@ function parseStreamEntry(entry, server, info) {
   if (!entry) return streams;
 
   if (entry.type === 'hls' && entry.playlist) {
-    streams.push({
-      name: PROVIDER_NAME + ' - ' + server + (entry.id ? ' (' + entry.id + ')' : ''),
-      title: info.title + ' [' + server + ' server]',
-      url: entry.playlist,
-      quality: server === 'Lisbon' ? '2160p' : '1080p',
-      type: 'application/vnd.apple.mpegurl',
-      headers: { 'User-Agent': UA, 'Referer': CINEJOY_ORIGIN + '/' },
-      behaviorHints: { bingeGroup: 'cinejoy-' + server.toLowerCase() },
-    });
+    // Check if the playlist URL is a relative path (like 'sub', 'dub', 'sventank-720p')
+    var playlistUrl = entry.playlist;
+    if (playlistUrl && !playlistUrl.startsWith('http')) {
+      // These are internal IDs that cinejoy.to resolves client-side.
+      // Return as an iframe URL pointing to the cinejoy.to embed page.
+      var embedUrl = CINEJOY_ORIGIN + '/e/' + (info.type === 'tv' ? 'tv' : 'movie') + '/' + (info.tmdbId || '') +
+        (info.type === 'tv' ? '/' + (info.season || 1) + '/' + (info.episode || 1) : '');
+      streams.push({
+        name: PROVIDER_NAME + ' - ' + server + (entry.id ? ' (' + entry.id + ')' : ''),
+        title: info.title + ' [' + server + ' ' + entry.id + ']',
+        url: embedUrl,
+        quality: '1080p',
+        type: 'iframe',
+        headers: { 'User-Agent': UA },
+        behaviorHints: { bingeGroup: 'cinejoy-' + server.toLowerCase() + '-' + (entry.id || '').toLowerCase(), notWebVideo: true },
+      });
+    } else {
+      streams.push({
+        name: PROVIDER_NAME + ' - ' + server + (entry.id ? ' (' + entry.id + ')' : ''),
+        title: info.title + ' [' + server + ' server]',
+        url: playlistUrl,
+        quality: server === 'Lisbon' ? '2160p' : '1080p',
+        type: 'application/vnd.apple.mpegurl',
+        behaviorHints: {
+          bingeGroup: 'cinejoy-' + server.toLowerCase(),
+          proxyHeaders: proxyHeaders(),
+        },
+      });
+    }
   } else if (entry.type === 'file' && entry.qualities) {
     for (var q of Object.keys(entry.qualities)) {
       var qInfo = entry.qualities[q];
@@ -311,17 +348,30 @@ function parseStreamEntry(entry, server, info) {
         // Resolve relative URLs like "redeflix-720p"
         var url = qInfo.url;
         if (!url.startsWith('http')) {
-          // These are internal IDs that need further resolution - skip for now
+          // Internal IDs (sventank-720p, urltech, etc.) — return as iframe
+          var fileEmbedUrl = CINEJOY_ORIGIN + '/e/' + (info.type === 'tv' ? 'tv' : 'movie') + '/' + (info.tmdbId || '') +
+            (info.type === 'tv' ? '/' + (info.season || 1) + '/' + (info.episode || 1) : '');
+          streams.push({
+            name: PROVIDER_NAME + ' - ' + server + ' ' + q + ' (' + entry.id + ')',
+            title: info.title + ' [' + server + ' ' + q + ' ' + entry.id + ']',
+            url: fileEmbedUrl,
+            quality: q === 'unknown' ? '720p' : q + 'p',
+            type: 'iframe',
+            headers: { 'User-Agent': UA },
+            behaviorHints: { bingeGroup: 'cinejoy-' + server.toLowerCase() + '-' + q, notWebVideo: true },
+          });
           continue;
         }
         streams.push({
           name: PROVIDER_NAME + ' - ' + server + ' ' + q + ' (' + entry.id + ')',
           title: info.title + ' [' + server + ' ' + q + ']',
           url: url,
-          quality: q + 'p',
+          quality: q === 'unknown' ? '720p' : q + 'p',
           type: qInfo.type === 'mp4' ? 'video/mp4' : 'application/vnd.apple.mpegurl',
-          headers: { 'User-Agent': UA, 'Referer': CINEJOY_ORIGIN + '/' },
-          behaviorHints: { bingeGroup: 'cinejoy-' + server.toLowerCase() + '-' + q },
+          behaviorHints: {
+            bingeGroup: 'cinejoy-' + server.toLowerCase() + '-' + q,
+            proxyHeaders: proxyHeaders(),
+          },
         });
       }
     }
@@ -404,7 +454,7 @@ async function getStreams(tmdbId, type, season, episode) {
     if (r.data && r.data.stream) {
       var parsedStreams = [];
       for (var entry of r.data.stream) {
-        var s = parseStreamEntry(entry, r.server, info);
+        var s = parseStreamEntry(entry, r.server, Object.assign({}, info, { season: season, episode: episode }));
         parsedStreams = parsedStreams.concat(s);
       }
       if (parsedStreams.length > 0) {
@@ -447,6 +497,30 @@ async function getStreams(tmdbId, type, season, episode) {
     }
   }
 
+  // Add cinejoy.to embed page as a fallback stream (iframe)
+  // This lets the user open the cinejoy.to player in their browser
+  // if all server streams fail. Stremio's browser player can handle it.
+  if (allStreams.length === 0) {
+    var embedUrl = CINEJOY_ORIGIN + '/e/' + (isMovie ? 'movie' : 'tv') + '/' + tmdbId;
+    if (!isMovie && season && episode) {
+      embedUrl += '/' + season + '/' + episode;
+    }
+    allStreams.push({
+      name: PROVIDER_NAME + ' - Website Player',
+      title: info.title + ' [cinejoy.to Player]',
+      description: 'Open on cinejoy.to to access all 7 servers manually',
+      url: embedUrl,
+      quality: '1080p',
+      type: 'iframe',
+      behaviorHints: {
+        bingeGroup: 'cinejoy-website-' + tmdbId,
+        notWebVideo: true,
+        proxyHeaders: proxyHeaders(),
+      },
+    });
+    console.log('[CineJoy] Added cinejoy.to website fallback stream');
+  }
+
   console.log('[CineJoy] ' + allStreams.length + ' streams from ' + servers.length + ' servers');
   serverStatus.forEach(function (s) { console.log('  ' + s); });
 
@@ -462,4 +536,5 @@ module.exports = {
   _loadWasm: loadWasm,
   _sealRequest: sealRequest,
   _decryptResponse: decryptResponse,
+
 };
