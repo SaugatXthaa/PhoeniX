@@ -84,22 +84,32 @@ const ALL_SERVERS = [
 const EMBED_PREFIX_SERVERS = new Set(['cinesrc', 'vidsrc']);
 
 // ---------------------------------------------------------------------------
-// TMDB metadata fetcher
+// TMDB metadata fetcher (uses got-scraping for Cloudflare bypass)
 // ---------------------------------------------------------------------------
 async function getTMDBInfo(tmdbId, type) {
   const url = `https://api.themoviedb.org/3/${type === 'tv' ? 'tv' : 'movie'}/${tmdbId}` +
     `?api_key=${TMDB_API_KEY}&language=en-US`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': UA, Accept: 'application/json' },
-    signal: AbortSignal.timeout(10000),
+  const { gotScraping } = await import('got-scraping');
+  const res = await gotScraping.get(url, {
+    headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+    timeout: { request: 10000 },
+    throwHttpErrors: false,
+    http2: true,
   });
-  if (!res.ok) throw new Error(`TMDB HTTP ${res.status}`);
-  const j = await res.json();
+  if (res.statusCode !== 200) throw new Error(`TMDB HTTP ${res.statusCode}`);
+  const j = JSON.parse(res.body);
+  // Normalize: TMDB uses `name` for TV and `title` for movies — expose both
+  // as `info.title` for caller compatibility.
   return {
     title: j.name || j.title || 'Unknown',
     year: (j.first_air_date || j.release_date || '').slice(0, 4),
     type,
     tmdbId: String(tmdbId),
+    // Also expose the raw fields for callers that need them
+    name: j.name,
+    movie_title: j.title,
+    original_language: j.original_language,
+    genres: j.genres || [],
   };
 }
 
@@ -142,24 +152,33 @@ async function fetchVidRockStreams(tmdbId, type, season, episode, info) {
     params.set('episode', String(episode));
   }
   const scrapePath = `/scrape/VidRock/${mediaType}/${tmdbId}?${params.toString()}`;
-  const apiUrl = `${CINEBY_ORIGIN.replace('cineby.rocks', 'vidbolt.xyz')}/api/proxy?path=${encodeURIComponent(scrapePath)}`;
-  
-  // Actually, the API is on vidbolt.xyz directly
   const vidboltApiUrl = `https://vidbolt.xyz/api/proxy?path=${encodeURIComponent(scrapePath)}`;
-  
+
   try {
-    const res = await fetch(vidboltApiUrl, {
+    // Use got-scraping for Cloudflare bypass — vidbolt.xyz is behind CF
+    // and may challenge native fetch. Also sends browser-like headers.
+    const { gotScraping } = await import('got-scraping');
+    const res = await gotScraping.get(vidboltApiUrl, {
       headers: {
         'User-Agent': UA,
         'Accept': 'application/json',
+        'Referer': 'https://cineby.rocks/',
+        'Origin': 'https://cineby.rocks',
       },
-      signal: AbortSignal.timeout(15000),
+      timeout: { request: 15000 },
+      throwHttpErrors: false,
+      followRedirect: true,
+      http2: true,
     });
-    if (!res.ok) {
-      console.log('[Cineby] VidRock API HTTP ' + res.status);
+    if (res.statusCode !== 200) {
+      console.log('[Cineby] VidRock API HTTP ' + res.statusCode);
       return [];
     }
-    const j = await res.json();
+    let j;
+    try { j = JSON.parse(res.body); } catch (e) {
+      console.log('[Cineby] VidRock API: invalid JSON');
+      return [];
+    }
     if (!j.sources || !Array.isArray(j.sources)) {
       console.log('[Cineby] VidRock API: no sources');
       return [];
@@ -186,17 +205,25 @@ function mapResolutionToQuality(w, h) {
 }
 
 // ---------------------------------------------------------------------------
-// Probe a stream's actual video resolution using ffprobe
+// Probe a stream's actual video resolution using m3u8 parsing (preferred)
+// and ffprobe as fallback for media playlists without RESOLUTION tags.
+// Uses got-scraping (Chrome TLS fingerprint) for Cloudflare-protected CDNs.
 // ---------------------------------------------------------------------------
 async function probeStreamResolution(streamUrl, headers) {
   try {
+    const { gotScraping } = await import('got-scraping');
+    const reqHeaders = headers || { 'User-Agent': UA };
+
     // 1. Fetch the m3u8 playlist
-    const m3u8Res = await fetch(streamUrl, {
-      headers: headers || { 'User-Agent': UA },
-      signal: AbortSignal.timeout(8000),
+    const m3u8Res = await gotScraping.get(streamUrl, {
+      headers: { ...reqHeaders, Accept: '*/*' },
+      timeout: { request: 8000 },
+      throwHttpErrors: false,
+      followRedirect: true,
+      http2: true,
     });
-    if (!m3u8Res.ok) return null;
-    const m3u8Text = await m3u8Res.text();
+    if (m3u8Res.statusCode !== 200 && m3u8Res.statusCode !== 206) return null;
+    const m3u8Text = m3u8Res.body;
 
     // If master playlist, find highest-resolution variant
     if (m3u8Text.includes('#EXT-X-STREAM-INF')) {
@@ -244,12 +271,17 @@ async function probeStreamResolution(streamUrl, headers) {
       ? segMatch[0]
       : new URL(segMatch[0], streamUrl).href;
 
-    const segRes = await fetch(segUrl, {
-      headers: headers || { 'User-Agent': UA },
-      signal: AbortSignal.timeout(12000),
+    // Use got-scraping for the segment fetch too (some CDNs CF-protect segments)
+    const segRes = await gotScraping.get(segUrl, {
+      headers: { ...reqHeaders, Range: 'bytes=0-50000', Accept: '*/*' },
+      timeout: { request: 12000 },
+      throwHttpErrors: false,
+      followRedirect: true,
+      http2: true,
+      responseType: 'buffer',
     });
-    if (!segRes.ok && segRes.status !== 206) return null;
-    const buf = Buffer.from(await segRes.arrayBuffer());
+    if (segRes.statusCode !== 200 && segRes.statusCode !== 206) return null;
+    const buf = Buffer.from(segRes.body);
     if (buf.length < 10000) return null;
 
     const { writeFileSync, unlinkSync } = require('fs');
@@ -289,28 +321,42 @@ async function probeStreamResolution(streamUrl, headers) {
 // Validate a stream URL is reachable.
 // For HLS (m3u8): GET and check body starts with #EXTM3U
 // For MP4: HEAD only (don't download the huge file body)
+//
+// Uses got-scraping (Chrome TLS fingerprint) — native fetch() gets
+// Cloudflare-blocked on some VidRock CDNs (gigle432ski.com returns 302
+// → 404 with native fetch but works with got-scraping).
+// Also always uses the headers from the API response (User-Agent,
+// Referer, Origin) — these are required by VidRock CDNs.
 // ---------------------------------------------------------------------------
 async function validateStreamUrl(url, headers, isMp4) {
   try {
+    const { gotScraping } = await import('got-scraping');
+    const reqHeaders = { ...(headers || { 'User-Agent': UA }) };
     if (isMp4) {
       // MP4 files can be huge — use GET with Range to fetch only first 4 bytes
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: { ...(headers || { 'User-Agent': UA }), Range: 'bytes=0-3' },
-        signal: AbortSignal.timeout(8000),
+      const res = await gotScraping.get(url, {
+        headers: { ...reqHeaders, Range: 'bytes=0-3', Accept: '*/*' },
+        timeout: { request: 8000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+        http2: true,
       });
       // 200, 206, or 416 (Range not satisfiable) all mean the file exists
-      return res.ok || res.status === 206 || res.status === 416;
+      // 4xx (403/404) means broken — reject
+      return res.statusCode === 200 || res.statusCode === 206 || res.statusCode === 416;
     }
     // HLS — GET the playlist (small text file)
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: headers || { 'User-Agent': UA },
-      signal: AbortSignal.timeout(8000),
+    const res = await gotScraping.get(url, {
+      headers: { ...reqHeaders, Accept: '*/*' },
+      timeout: { request: 8000 },
+      throwHttpErrors: false,
+      followRedirect: true,
+      http2: true,
     });
-    if (!res.ok && res.status !== 206) return false;
-    const text = await res.text();
-    return text.includes('#EXTM3U') || text.length > 0;
+    if (res.statusCode !== 200 && res.statusCode !== 206) return false;
+    // Must actually be HLS — check for #EXTM3U marker
+    // (Don't accept HTML error pages just because they have content)
+    return typeof res.body === 'string' && res.body.includes('#EXTM3U');
   } catch (e) {
     return false;
   }
@@ -351,6 +397,14 @@ function buildStream(opts) {
 
 // ---------------------------------------------------------------------------
 // Convert a VidRock source into Stremio stream objects (one per quality)
+//
+// IMPORTANT: We DON'T validate the stream URL here because:
+//   1. VidRock API returns time-limited URLs (tokens expire in ~3 hours)
+//      that may be stale when we validate but work later when Stremio plays
+//      them through /proxy (which re-fetches from Render's IP).
+//   2. Each validation call adds ~1-2s latency — for 6 streams that's 6-12s.
+//   3. If a stream is genuinely broken, Stremio will skip it gracefully.
+// We DO probe the resolution though — but only if it's fast (< 3s).
 // ---------------------------------------------------------------------------
 async function convertVidRockSource(source, info, serverLabel) {
   if (!source || !source.url) return [];
@@ -364,14 +418,18 @@ async function convertVidRockSource(source, info, serverLabel) {
 
   const isMp4 = source.type === 'mp4' || source.url.includes('.mp4');
 
-  // Validate the stream is reachable (HEAD for mp4, GET for m3u8)
-  const ok = await validateStreamUrl(source.url, headers, isMp4);
-  if (!ok) return [];
-
   // Probe resolution (only for HLS — mp4 would require downloading the whole file)
+  // Wrap in try/catch + 3s timeout — never let probing block stream creation
   let probe = null;
   if (!isMp4) {
-    probe = await probeStreamResolution(source.url, headers);
+    try {
+      probe = await Promise.race([
+        probeStreamResolution(source.url, headers),
+        new Promise(r => setTimeout(() => r(null), 3000)),
+      ]);
+    } catch (e) {
+      probe = null;
+    }
   }
   const quality = probe ? probe.quality :
                   (source.quality === '4K' ? '2160p' :
