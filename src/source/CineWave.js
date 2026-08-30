@@ -104,6 +104,39 @@ export class CineWave extends Source {
           const url = stream.url || stream.externalUrl;
           if (!url) continue;
 
+          // Skip expired Cloudflare R2 pre-signed URLs.
+          // R2 URLs have X-Amz-Date + X-Amz-Expires query params — these are
+          // AWS S3-style signatures that expire. The HdHub API sometimes
+          // returns stale URLs (signed hours ago) that have already expired.
+          // When Stremio's ffmpeg tries to play them, R2 returns 403 Forbidden.
+          // We parse the signature date and skip expired URLs so users only
+          // see playable streams.
+          if (url.includes('r2.cloudflarestorage.com') || url.includes('.r2.dev')) {
+            try {
+              const r2Url = new URL(url);
+              const amzDate = r2Url.searchParams.get('X-Amz-Date');
+              const amzExpires = parseInt(r2Url.searchParams.get('X-Amz-Expires') || '0', 10);
+              if (amzDate && amzExpires > 0) {
+                // Parse AWS date format: 20260830T115733Z → 2026-08-30T11:57:33Z
+                const signedDate = new Date(
+                  amzDate.substring(0, 4) + '-' +
+                  amzDate.substring(4, 6) + '-' +
+                  amzDate.substring(6, 8) + 'T' +
+                  amzDate.substring(9, 11) + ':' +
+                  amzDate.substring(11, 13) + ':' +
+                  amzDate.substring(13, 15) + 'Z'
+                );
+                const expiryDate = new Date(signedDate.getTime() + amzExpires * 1000);
+                if (Date.now() > expiryDate.getTime()) {
+                  // URL has expired — skip this stream
+                  continue;
+                }
+              }
+            } catch {
+              // If we can't parse the URL, let it through (best effort)
+            }
+          }
+
           const nameTitle = `${stream.name || ''} ${stream.description || ''}`;
 
           // Filter out streams that clearly belong to a different movie.
