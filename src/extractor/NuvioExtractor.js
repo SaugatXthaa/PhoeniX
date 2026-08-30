@@ -45,6 +45,8 @@ const NUVIO_SOURCE_IDS = new Set([
   'zxcstream', 'cinejoy', 'animezey', 'uhdmovies', 'moviesdrive', 'framextv', 'flystream', 'cinejoyaio',
   // nikastream — anime sub+dub HLS via Anivexa API (kryntal.top needs Referer)
   'nikastream',
+  // cinebyrocks — movies/TV/anime via VidRock API (multi-CDN direct m3u8/mp4)
+  'cinebyrocks',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

@@ -13,6 +13,8 @@ import { FlyStream } from './FlyStream.js';
 import { CineJoyAllInOne } from './CineJoyAllInOne.js';
 // nikastream.blog — anime sub+dub via Anivexa API (multi-language subtitles)
 import { NikaStream } from './NikaStream.js';
+// cineby.rocks — movies/TV/anime via VidRock API (8 servers, up to 4K)
+import { CinebyRocks } from './CinebyRocks.js';
 import { Eurostreaming } from './Eurostreaming.js';
 import { Fmovies } from './Fmovies.js';
 import { FourKHDHub } from './FourKHDHub.js';
@@ -236,5 +238,7 @@ export const createSources = (fetcher) => {
     new CineJoyAllInOne(fetcher),
     // nikastream.blog — anime sub+dub HLS via Anivexa API (multi-language subtitles)
     new NikaStream(fetcher),
+    // cineby.rocks — movies/TV/anime via VidRock API (8 servers, direct m3u8/mp4, up to 4K)
+    new CinebyRocks(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
