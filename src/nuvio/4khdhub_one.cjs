@@ -92,15 +92,87 @@ async function search(title) {
 }
 
 // Find best match by title + year
-function findBestMatch(results, tmdbTitle, tmdbYear, isMovie) {
+//
+// YEAR MATCHING (critical for movies with same title across years):
+//   The slug itself (e.g. "moana-movie-234") doesn't include the year,
+//   but the post page <title> or <h1> does (e.g. "Moana (2016)").
+//   So we fetch the page title for each candidate and parse the year.
+//
+//   When TMDB provides a year (info.year is set), we HARD-FILTER:
+//   reject candidates whose page year differs by more than 1 from TMDB.
+//   This prevents "Moana 2026" from matching the 2016 Moana page.
+//
+//   When TMDB has no year, we fall back to title-score-only matching.
+async function findBestMatch(results, tmdbTitle, tmdbYear, isMovie) {
   if (!results.length) return null;
   const nameNorm = normalize(tmdbTitle);
+  const yearNum = tmdbYear ? parseInt(String(tmdbYear), 10) : null;
   const yearStr = tmdbYear ? String(tmdbYear) : '';
 
   // Filter by type (movie vs series)
   const filtered = results.filter(r => r.isMovie === isMovie);
   if (filtered.length === 0) return null;
 
+  // For movies with a known year, pre-fetch each candidate's page title
+  // to extract the year. This lets us hard-filter by year.
+  // TV shows don't typically have year conflicts (slugs include season info).
+  if (isMovie && yearNum) {
+    const withPageYear = await Promise.all(filtered.map(async (r) => {
+      try {
+        const html = await fetchText(r.url, { timeout: 8000 });
+        // Extract year from <title> or <h1>
+        //   "Moana (2016) - 4K-HDHub" → 2016
+        //   "Moana 2 (2024) - 4K-HDHub" → 2024
+        const titleMatch = html.match(/<title>[^<]*\((\d{4})\)[^<]*<\/title>/i);
+        const h1Match = html.match(/<h1[^>]*>[^<]*\((\d{4})\)[^<]*<\/h1>/i);
+        const pageYearStr = (titleMatch?.[1] || h1Match?.[1] || '');
+        const pageYear = pageYearStr ? parseInt(pageYearStr, 10) : null;
+        return { ...r, pageYear, _html: html }; // cache HTML for reuse in getStreams
+      } catch {
+        return { ...r, pageYear: null, _html: null };
+      }
+    }));
+
+    // Hard-filter by year (allow ±1 year tolerance for delayed releases)
+    const yearMatched = withPageYear.filter(r => {
+      if (r.pageYear == null) return true; // couldn't parse → keep, score-based fallback
+      const diff = Math.abs(r.pageYear - yearNum);
+      return diff <= 1;
+    });
+
+    if (yearMatched.length === 0) {
+      console.log('[4KHDHubOne] No matches with year=' + yearNum + ' (all ' + withPageYear.length + ' candidates had different years)');
+      return null;
+    }
+
+    // Among year-matched candidates, pick by title score
+    let best = null;
+    let bestScore = 0;
+    for (const r of yearMatched) {
+      const slugNorm = normalize(r.slug.replace(/-(?:movie|series)-\d+$/, '').replace(/-/g, ' '));
+      let score = 0;
+      if (slugNorm === nameNorm) score = 100;
+      else if (slugNorm.includes(nameNorm) || nameNorm.includes(slugNorm)) score = 80;
+      else {
+        const words = nameNorm.split(' ').filter(w => w.length > 2);
+        const matched = words.filter(w => slugNorm.includes(w)).length;
+        score = (matched / Math.max(words.length, 1)) * 60;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = r;
+      }
+    }
+
+    if (best && bestScore >= 60) {
+      console.log('[4KHDHubOne] Matched: ' + best.slug + ' (year=' + (best.pageYear || '?') + ', score=' + bestScore + ')');
+      return best;
+    }
+    console.log('[4KHDHubOne] No good match found (best score=' + bestScore + ', need >= 60)');
+    return null;
+  }
+
+  // Original logic for TV shows or when year is unknown
   let best = null;
   let bestScore = 0;
 
@@ -115,7 +187,7 @@ function findBestMatch(results, tmdbTitle, tmdbYear, isMovie) {
       score = (matched / Math.max(words.length, 1)) * 60;
     }
 
-    // Year matching for movies
+    // Year matching for movies (bonus only — original behavior)
     if (yearStr && isMovie && r.slug.includes(yearStr)) score += 20;
 
     if (score > bestScore) {
@@ -273,12 +345,19 @@ async function getStreams(tmdbId, type, season, episode) {
   const results = await search(info.title);
   if (!results.length) return [];
 
-  const match = findBestMatch(results, info.title, info.year, isMovie);
+  const match = await findBestMatch(results, info.title, info.year, isMovie);
   if (!match) return [];
 
-  // Fetch post page
-  const html = await fetchText(match.url);
-  console.log('[4KHDHubOne] Post page: ' + match.url + ' (' + html.length + ' chars)');
+  // If findBestMatch already fetched the page HTML (for year matching),
+  // reuse it to avoid an extra HTTP roundtrip.
+  let html;
+  if (match._html) {
+    html = match._html;
+    console.log('[4KHDHubOne] Reusing cached post page (' + html.length + ' chars)');
+  } else {
+    html = await fetchText(match.url);
+    console.log('[4KHDHubOne] Post page: ' + match.url + ' (' + html.length + ' chars)');
+  }
 
   let links;
   if (isMovie) {
