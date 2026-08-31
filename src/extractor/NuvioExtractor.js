@@ -47,6 +47,8 @@ const NUVIO_SOURCE_IDS = new Set([
   'nikastream',
   // cinebyrocks — movies/TV/anime via VidRock API (multi-CDN direct m3u8/mp4)
   'cinebyrocks',
+  // stellar — movies/TV/anime via PoW + AES-GCM (direct HLS, no Referer needed)
+  'stellar',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

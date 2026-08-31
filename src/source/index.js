@@ -15,6 +15,8 @@ import { CineJoyAllInOne } from './CineJoyAllInOne.js';
 import { NikaStream } from './NikaStream.js';
 // cineby.rocks — movies/TV/anime via VidRock API (8 servers, up to 4K)
 import { CinebyRocks } from './CinebyRocks.js';
+// stellar.gdn — movies/TV/anime via PoW + AES-GCM API (direct HLS, up to 4K)
+import { Stellar } from './Stellar.js';
 import { Eurostreaming } from './Eurostreaming.js';
 import { Fmovies } from './Fmovies.js';
 import { FourKHDHub } from './FourKHDHub.js';
@@ -240,5 +242,7 @@ export const createSources = (fetcher) => {
     new NikaStream(fetcher),
     // cineby.rocks — movies/TV/anime via VidRock API (8 servers, direct m3u8/mp4, up to 4K)
     new CinebyRocks(fetcher),
+    // stellar.gdn — movies/TV/anime via PoW + AES-GCM (direct HLS, up to 4K)
+    new Stellar(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
