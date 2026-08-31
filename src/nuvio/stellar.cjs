@@ -181,6 +181,81 @@ async function resolveStreamUrl(mediaType, id, season, episode, source) {
 }
 
 // ---------------------------------------------------------------------------
+// Fetch download files via /api/download endpoint
+// Returns: { files: [{ source, label, file_name, resolution, size, url, urls }] }
+// These are DIRECT .mkv/.mp4 download URLs (up to 4K 2160p BluRay REMUX)
+//
+// NOTE: stellar.gdn only accepts type "movie" or "tv". Anime and kdrama are
+// served as "tv" type with their TMDB IDs. The API returns season-pack
+// downloads for TV shows (not per-episode).
+// ---------------------------------------------------------------------------
+async function fetchDownloadFiles(mediaType, id, season, episode) {
+  try {
+    const challengeResp = await getChallenge();
+    const nonce = solvePoW(challengeResp.challenge, challengeResp.difficulty);
+
+    // /api/download uses "type" instead of "mediaType"
+    // Anime and kdrama are mapped to "tv" — stellar only supports movie/tv
+    const apiType = mediaType === 'movie' ? 'movie' : 'tv';
+
+    const payload = {
+      type: apiType,
+      id: Number(id),
+      challenge: challengeResp.challenge,
+      nonce: nonce,
+    };
+    if (season != null) payload.season = Number(season);
+    if (episode != null) payload.episode = Number(episode);
+
+    const enc = encryptPayload(payload);
+
+    const res = await fetch(BACKEND_URL + '/api/download', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': UA,
+        'Origin': STELLAR_ORIGIN,
+        'Referer': STELLAR_ORIGIN + '/',
+      },
+      body: JSON.stringify(enc),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) {
+      console.log('[Stellar] Download API HTTP ' + res.status);
+      return [];
+    }
+
+    const data = await res.json();
+    if (!data.files || !Array.isArray(data.files)) return [];
+    return data.files;
+  } catch (e) {
+    console.log('[Stellar] Download API error: ' + e.message);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Quick-check a download URL — returns HTTP status (not full validation)
+// Used to sort streams: playable ones first, quota-limited ones last
+// Returns: { playable: boolean, status: number }
+// ---------------------------------------------------------------------------
+async function quickCheckUrl(url) {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': UA, Range: 'bytes=0-3' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok || res.status === 206) {
+      return { playable: true, status: res.status };
+    }
+    return { playable: false, status: res.status };
+  } catch (e) {
+    return { playable: false, status: 0 };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Fetch the master playlist and extract resolution info
 // Returns: { maxResolution, maxQuality, variantCount, has4K }
 // ---------------------------------------------------------------------------
@@ -400,7 +475,64 @@ async function getStreams(tmdbId, type, season, episode) {
     }
   }
 
-  // 6. Add iframe fallback (embed page on stellar.rip)
+  // 6. Fetch download files (4K BluRay REMUX, 1080p BluRay, etc.)
+  // These are DIRECT .mkv/.mp4 file URLs — up to 4K (2160p) with HDR/DV
+  // ALL files are included (even quota-limited ones — they reset daily)
+  console.log('[Stellar] Fetching download files via /api/download...');
+  const downloadFiles = await fetchDownloadFiles(mediaType, tmdbId, season, episode);
+  console.log('[Stellar] Download files: ' + downloadFiles.length);
+
+  // Quick-check all URLs in parallel to determine which are currently playable
+  const checkedFiles = await Promise.all(
+    downloadFiles.map(async (file) => {
+      const url = file.url || (file.urls && file.urls[0]);
+      if (!url) return { file, url: null, playable: false, status: 0 };
+      const check = await quickCheckUrl(url);
+      return { file, url, playable: check.playable, status: check.status };
+    })
+  );
+
+  // Sort: playable first (by resolution descending), then quota-limited (by resolution descending)
+  const resolutionOrder = { '2160p': 0, '1440p': 1, '1080p': 2, '720p': 3, '576p': 4, '480p': 5 };
+  checkedFiles.sort((a, b) => {
+    if (a.playable !== b.playable) return a.playable ? -1 : 1; // playable first
+    const ra = resolutionOrder[a.file.resolution] || 99;
+    const rb = resolutionOrder[b.file.resolution] || 99;
+    return ra - rb; // higher resolution first
+  });
+
+  // Add ALL download files as streams
+  for (const { file, url, playable, status } of checkedFiles) {
+    if (!url) continue;
+
+    const fileQuality = file.resolution || '1080p';
+    const is4K = fileQuality === '2160p';
+
+    // Build a descriptive title with format info
+    const formatInfo = file.label || file.file_name || '';
+    const hdrInfo = formatInfo.includes('HDR') ? ' HDR' : '';
+    const dvInfo = formatInfo.includes('DV') ? ' DV' : '';
+    const releaseInfo = file.release ? ' ' + file.release : '';
+    const sizeInfo = file.size ? ' (' + file.size + ')' : '';
+    const playStatus = playable ? '' : ' [quota-limited, try later]';
+
+    allStreams.push({
+      name: PROVIDER_NAME + ' - DL ' + fileQuality + (hdrInfo || dvInfo) + (playable ? '' : ' ⚠'),
+      title: `${info.title} [Stellar DL ${fileQuality}${releaseInfo}${hdrInfo}${dvInfo}]${sizeInfo}${playStatus}`,
+      url: url,
+      quality: fileQuality,
+      type: 'video/x-matroska', // MKV — Stremio plays directly
+      behaviorHints: {
+        bingeGroup: `stellar-download-${fileQuality.toLowerCase()}-${tmdbId}`,
+        filename: file.file_name || `${info.title} ${fileQuality}.mkv`,
+      },
+    });
+    console.log('[Stellar] + DL ' + fileQuality + (is4K ? ' [4K]' : '') + (hdrInfo || dvInfo) + ': ' + (file.size || '?') +
+      ' — ' + (playable ? '✓ playable' : '✗ quota-limited (HTTP ' + status + ')') +
+      ' | ' + (file.label || '').slice(0, 50));
+  }
+
+  // 7. Add iframe fallback (embed page on stellar.rip)
   const embedUrl = isMovie
     ? `${STELLAR_RIP_ORIGIN}/en/watch/embed/movie/${tmdbId}`
     : `${STELLAR_RIP_ORIGIN}/en/watch/embed/tv/${tmdbId}-${season}-${episode}`;
@@ -466,6 +598,8 @@ module.exports = {
   solvePoW: solvePoW,
   encryptPayload: encryptPayload,
   resolveStreamUrl: resolveStreamUrl,
+  fetchDownloadFiles: fetchDownloadFiles,
+  quickCheckUrl: quickCheckUrl,
   probeMasterPlaylist: probeMasterPlaylist,
   mapResolutionToQuality: mapResolutionToQuality,
   getIframeFallbacks: getIframeFallbacks,

@@ -25,6 +25,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
+import bytes from 'bytes';
 import { CountryCode } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
@@ -132,41 +133,95 @@ export class Stellar extends Source {
     }
 
     // Enrich stream titles with metadata markers.
-    // The scraper returns titles like:
-    //   "Inception (2010) [Stellar Orbit 1920x1080]"
-    //   "Oppenheimer (2023) [Stellar Orbit 3840x2160 4K]"
+    // The scraper returns two types of streams:
+    //
+    //   HLS streams (Orbit/Valenox):
+    //     name: "Stellar - Orbit"
+    //     quality: "1080p" or "2160p"
+    //     type: "application/vnd.apple.mpegurl"
+    //     subtitles: [...]
+    //
+    //   Download files (DL — direct MKV/MP4 URLs):
+    //     name: "Stellar - DL 1080p HDR" or "Stellar - DL 2160p ⚠"
+    //     quality: "1080p" or "2160p"
+    //     type: "video/x-matroska"
+    //     behaviorHints: { filename: "Movie.2010.1080p.BluRay.REMUX.mkv" }
+    //     title: "Movie (2010) [Stellar DL 1080p REMUX HDR] (65.95 GB)"
     //
     // We build a STREAM title (without the movie title — buildStreamResults
-    // prepends it automatically) containing:
-    //   "[Stellar {server}] {quality} WEB-DL {codec} {audio}"
-    // enrichMeta parses: quality, sourceType (WebDL from URL), codec.
+    // prepends it automatically). enrichMeta parses quality, sourceType,
+    // codec, HDR, audio from the title.
     const enrichedStreams = directStreams.map(s => {
       const serverName = (s.name || '').replace(/^Stellar\s*-\s*/, '').trim();
       const height = parseHeight(s.quality) || 1080;
-      const codec = height >= 2160 ? 'HEVC' : 'x264';
-      const audioLabel = isAnime ? 'Japanese' : 'English';
-
-      // Stremio-standard stream object — buildStreamResults will pick up:
-      //   - url (direct m3u8)
-      //   - quality (2160p, 1080p, 720p)
-      //   - title (enriched for meta parsing — WITHOUT movie title)
-      //   - name (display name)
-      //   - subtitles (passed through to meta.subtitles)
+      const isDownload = s.type === 'video/x-matroska' || s.type === 'video/mp4' || (s.name || '').includes('DL ');
       const subtitles = Array.isArray(s.subtitles) ? s.subtitles.map(sub => ({
         id: sub.id || sub.lang || sub.language || 'en',
         url: sub.url,
         lang: sub.lang || sub.language || sub.label || 'English',
       })) : [];
 
+      // Detect codec + source type from stream name/title
+      // Download files have labels like "Inception (1080p BluRay DV HDR H265)"
+      // HLS streams are typically WebDL
+      const labelText = ((s.name || '') + ' ' + (s.title || '')).toLowerCase();
+      let codec = 'x264';
+      let sourceType = 'WebDL';
+
+      if (labelText.includes('h265') || labelText.includes('hevc') || labelText.includes('x265')) {
+        codec = 'HEVC';
+      } else if (labelText.includes('remux')) {
+        codec = 'AVC'; // REMUX is typically AVC/H264
+      }
+
+      if (labelText.includes('bluray') || labelText.includes('remux') || labelText.includes('bdrip')) {
+        sourceType = labelText.includes('remux') ? 'BluRay Remux' : 'BluRay';
+      } else if (labelText.includes('web-dl') || labelText.includes('webdl') || labelText.includes('webrip')) {
+        sourceType = 'WebDL';
+      }
+
+      // Detect HDR/DV
+      let hdrInfo = '';
+      if (labelText.includes('dolby vision') || labelText.includes(' dv ')) {
+        hdrInfo = ' DolbyVision';
+      } else if (labelText.includes('hdr10+')) {
+        hdrInfo = ' HDR10+';
+      } else if (labelText.includes('hdr')) {
+        hdrInfo = ' HDR';
+      }
+
+      // Parse file size from title (e.g. "(65.95 GB)")
+      let fileSize = undefined;
+      const sizeMatch = (s.title || '').match(/([\d.]+)\s*(GB|MB|TB)/i);
+      if (sizeMatch) {
+        const val = parseFloat(sizeMatch[1]);
+        const unit = sizeMatch[2].toUpperCase();
+        if (unit === 'GB') fileSize = Math.round(val * 1024 * 1024 * 1024);
+        else if (unit === 'MB') fileSize = Math.round(val * 1024 * 1024);
+        else if (unit === 'TB') fileSize = Math.round(val * 1024 * 1024 * 1024 * 1024);
+      }
+
+      const audioLabel = isAnime ? 'Japanese' : 'English';
+      const streamType = isDownload ? sourceType : 'WEB-DL';
+
+      // Build enriched STREAM title (WITHOUT movie title — buildStreamResults
+      // prepends it). Format: "[Stellar {server}] {quality} {type} {codec} {hdr} {audio}"
+      const enrichedTitle = `[Stellar ${serverName}] ${height}p ${streamType} ${codec}${hdrInfo} ${audioLabel}`;
+
       return {
         url: s.url,
         quality: s.quality || (height + 'p'),
-        title: `[Stellar ${serverName}] ${height}p WEB-DL ${codec} ${audioLabel}`,
+        title: enrichedTitle,
         name: 'Stellar - ' + serverName,
+        size: fileSize ? bytes(fileSize) : undefined,
         subtitles: subtitles.length > 0 ? subtitles : undefined,
         // Internal flags — used to inject per-stream meta into buildStreamResults
         _countryCodes: baseCountryCodes,
         _serverName: serverName,
+        _isDownload: isDownload,
+        _fileSize: fileSize,
+        _sourceType: sourceType,
+        _codec: codec,
       };
     });
 
@@ -188,6 +243,7 @@ export class Stellar extends Source {
     // — set serverName so StreamResolver shows "Stellar · Orbit" instead of
     //   "Stellar · Nuvio" (the NuvioExtractor's label)
     // — set countryCodes for anime detection
+    // — set sourceType/codec/bytes for download files (BluRay REMUX, HDR, etc.)
     for (const r of results) {
       const matchedStream = enrichedStreams.find(s => s.url === r.url.href);
       if (matchedStream) {
@@ -196,6 +252,14 @@ export class Stellar extends Source {
         }
         if (matchedStream._serverName) {
           r.meta.serverName = matchedStream._serverName;
+        }
+        // Override sourceType + codec for download files (buildStreamResults
+        // would otherwise detect WebDL from the URL, but download files are
+        // actually BluRay REMUX rips)
+        if (matchedStream._isDownload) {
+          if (matchedStream._sourceType) r.meta.sourceType = matchedStream._sourceType;
+          if (matchedStream._codec) r.meta.codec = matchedStream._codec;
+          if (matchedStream._fileSize) r.meta.bytes = matchedStream._fileSize;
         }
       }
     }
