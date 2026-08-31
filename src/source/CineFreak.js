@@ -106,12 +106,15 @@ export class CineFreak extends Source {
       let bestScore = 0;
       const nameWords = new Set(nameNorm.split(' ').filter(w => w.length > 2));
 
-      $('a.movie-card').each((_, el) => {
+      $('a').each((_, el) => {
         const href = $(el).attr('href');
-        if (!href) return;
-        const cardTitle = ($(el).attr('aria-label') || $(el).find('.movie-card-title').text() || '').trim();
+        if (!href || !href.includes('cinefreak.net/') || href.includes('?s=') || href.includes('/page/')) return;
+        // Skip category/navigation links
+        if (href.match(/\/(web-series|animation|bangla|chinese|dual|english|hindi|japanese|k-drama|korean|kannada|telugu|tamil|malayalam|indonesian|others|spanish|category|horror|action|comedy|romance|thriller|drama|sci-fi|adventure|crime|mystery|fantasy|family|war|history|music|sport|western|musical|documentary)\/?$/)) return;
+
+        const cardTitle = ($(el).attr('aria-label') || $(el).find('.movie-card-title, .entry-title, h2, h3').text() || $(el).text() || '').trim().replace(/\s+/g, ' ');
         const tNorm = normalize(cardTitle);
-        if (!tNorm) return;
+        if (!tNorm || tNorm.length < 3) return;
 
         let score = 0;
         if (tNorm === nameNorm) score = 100;
@@ -119,14 +122,13 @@ export class CineFreak extends Source {
           score = Math.min(tNorm.length, nameNorm.length) / Math.max(tNorm.length, nameNorm.length) * 90;
         }
 
-        // Word-overlap scoring — handles long titles with extra quality/language info
-        // Use nameWords coverage (what % of search words appear in the title)
+        // Word-overlap scoring
         if (score < 30 && nameWords.size >= 2) {
           const titleWords = new Set(tNorm.split(' ').filter(w => w.length > 2));
           const common = [...nameWords].filter(w => titleWords.has(w));
-          const coverage = common.length / nameWords.size; // % of name words found in title
+          const coverage = common.length / nameWords.size;
           if (coverage >= 0.6) {
-            score = coverage * 80; // 60% coverage → 48, 100% → 80
+            score = coverage * 80;
           }
         }
 
@@ -140,6 +142,24 @@ export class CineFreak extends Source {
       });
 
       if (bestMatch && bestScore >= 30) return bestMatch;
+    }
+
+    // Fallback: try direct URL pattern
+    // cinefreak.net uses slug format: /title-year-full-movie-download/
+    // or /title-year-full-movie-download-season-s/
+    if (year) {
+      const slug = name.toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+      const movieSlug = `${slug}-${year}-full-movie-download`;
+      const directUrl = `${BASE_URL}/${movieSlug}/`;
+      const html = await fetchPage(directUrl);
+      if (html && html.includes('generate.php')) {
+        console.log(`[CineFreak] Direct URL hit: ${directUrl}`);
+        return directUrl;
+      }
     }
 
     return null;
