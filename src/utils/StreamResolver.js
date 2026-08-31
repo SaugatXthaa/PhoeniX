@@ -722,7 +722,10 @@ export class StreamResolver {
     if (meta.sourceLabel) {
       // Use extractor label (e.g. "HubCloud (FSL)", "HubCloud (FSLv2)",
       // "HubCloud (10Gbps)", "HubCloud (Download)") as subSource if available
-      const subSource = meta.extractorLabel || meta.serverName || meta.provider || meta.subSource;
+      // Prefer serverName (set by the source — e.g. "Orbit", "Valenox") over
+      // extractorLabel (set by the extractor — e.g. "Nuvio"). The source knows
+      // the specific server, while the extractor only knows the routing type.
+      const subSource = meta.serverName || meta.extractorLabel || meta.provider || meta.subSource;
       if (subSource && subSource !== meta.sourceLabel) {
         parts.push(`${meta.sourceLabel} · ${subSource}`);
       } else {

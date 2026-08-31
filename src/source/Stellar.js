@@ -164,8 +164,9 @@ export class Stellar extends Source {
         title: `[Stellar ${serverName}] ${height}p WEB-DL ${codec} ${audioLabel}`,
         name: 'Stellar - ' + serverName,
         subtitles: subtitles.length > 0 ? subtitles : undefined,
-        // Internal flag — used to inject countryCodes into buildStreamResults
+        // Internal flags — used to inject per-stream meta into buildStreamResults
         _countryCodes: baseCountryCodes,
+        _serverName: serverName,
       };
     });
 
@@ -183,11 +184,19 @@ export class Stellar extends Source {
       ctx,
     });
 
-    // Override countryCodes per-stream (buildStreamResults uses source-level)
+    // Override per-stream meta (buildStreamResults uses source-level defaults)
+    // — set serverName so StreamResolver shows "Stellar · Orbit" instead of
+    //   "Stellar · Nuvio" (the NuvioExtractor's label)
+    // — set countryCodes for anime detection
     for (const r of results) {
       const matchedStream = enrichedStreams.find(s => s.url === r.url.href);
-      if (matchedStream?._countryCodes) {
-        r.meta.countryCodes = matchedStream._countryCodes;
+      if (matchedStream) {
+        if (matchedStream._countryCodes) {
+          r.meta.countryCodes = matchedStream._countryCodes;
+        }
+        if (matchedStream._serverName) {
+          r.meta.serverName = matchedStream._serverName;
+        }
       }
     }
 

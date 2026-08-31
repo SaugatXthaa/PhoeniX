@@ -84,6 +84,11 @@ export function cleanFilenameForDisplay(filename) {
   // Remove query string if present
   const f = filename.split('?')[0].split('#')[0];
 
+  // If it's too short to be a real filename (< 3 chars) → empty
+  // This filters out URL path segments like "p" (from /playlist/p/),
+  // "v" (from /v/), "e" (from /e/), etc.
+  if (f.length < 3) return '';
+
   // If it's a hash-like string (no dots, all alphanumeric, >20 chars) → empty
   // e.g. "ADGPM2IzbD60Hu_XUAZoxoFP..."
   if (/^[a-zA-Z0-9_-]{20,}$/.test(f)) return '';
@@ -96,8 +101,12 @@ export function cleanFilenameForDisplay(filename) {
   // (the quality info is already parsed by enrichMeta and shown on Line 2)
   if (/^index-s\d+p-/i.test(f)) return '';
 
-  // If it's a "master.m3u8" or similar generic playlist name → empty
-  if (/^(master|playlist|index)\.(m3u8|mp4|mkv)$/i.test(f)) return '';
+  // If it's a "master.m3u8" or similar generic playlist/stream name → empty
+  if (/^(master|playlist|index|hls|stream|video|play|watch|embed|api|proxy|content|uc|file|download)\.(m3u8|mp4|mkv|ts)$/i.test(f)) return '';
+
+  // If it's a bare path segment like "hls", "playlist", "stream" without extension
+  // → empty (these are URL path segments, not filenames)
+  if (/^(hls|playlist|stream|video|play|watch|embed|api|proxy|content|uc|file|download|p|v|e)$/i.test(f)) return '';
 
   // If it's a download.aspx or api endpoint → empty
   if (/\.aspx$|\.php$/i.test(f)) return '';
