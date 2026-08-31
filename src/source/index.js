@@ -18,6 +18,12 @@ import { CinebyRocks } from './CinebyRocks.js';
 import { Stellar } from './Stellar.js';
 // stellar.rip — movies/TV/anime via 19-server PoW API (direct HLS, up to 4K)
 import { StellarRip } from './StellarRip.js';
+// HDHub4u v2 — movies/TV via new5.hdhub4u.cl sitemap search (up to 4K)
+import { HDHub4uV2 } from './HDHub4uV2.js';
+// MoviesHunt v2 — movies/TV via movieshunt.casa (up to 4K)
+import { MoviesHuntV2 } from './MoviesHuntV2.js';
+// MoviesDrive v2 — movies/TV via new3.moviesdrive.christmas WP API (up to 4K)
+import { MoviesDriveV2 } from './MoviesDriveV2.js';
 import { Eurostreaming } from './Eurostreaming.js';
 import { FourKHDHub } from './FourKHDHub.js';
 import { MeineCloud } from './MeineCloud.js';
@@ -191,5 +197,11 @@ export const createSources = (fetcher) => {
     new Stellar(fetcher),
     // stellar.rip — movies/TV/anime via 19-server PoW API (direct HLS, up to 4K)
     new StellarRip(fetcher),
+    // HDHub4u v2 — movies/TV via new5.hdhub4u.cl sitemap search (up to 4K)
+    new HDHub4uV2(fetcher),
+    // MoviesHunt v2 — movies/TV via movieshunt.casa (up to 4K)
+    new MoviesHuntV2(fetcher),
+    // MoviesDrive v2 — movies/TV via new3.moviesdrive.christmas WP API (up to 4K)
+    new MoviesDriveV2(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };

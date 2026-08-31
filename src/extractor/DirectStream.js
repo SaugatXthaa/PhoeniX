@@ -57,6 +57,9 @@ const DIRECT_CDN_HOSTS = [
   'nhdapi.com',
   // AnimeSuge/NikaStream — direct HLS from cdn.kryntal.top (needs Referer via proxyHeaders)
   'cdn.kryntal.top',
+  // GDrive — direct MKV/MP4 from lh3.googleusercontent.com and video-downloads.googleusercontent.com
+  'lh3.googleusercontent.com',
+  'video-downloads.googleusercontent.com',
   // AniPriv8 — handled by dedicated AniPriv8 extractor (needs proxy for m3u8 rewriting)
 ];
 
