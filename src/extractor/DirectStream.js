@@ -51,6 +51,8 @@ const DIRECT_CDN_HOSTS = [
   'co.animeheaven.me',  // AniVault API returns co.animeheaven.me for some sources
   // Cinejoy — direct HLS from info.movieboxnoob.cc (no Referer needed)
   'info.movieboxnoob.cc',
+  // Stellar.rip — direct HLS from proxy2.heistotron.uk (needs browser UA via proxyHeaders)
+  'proxy2.heistotron.uk',
   // AniPriv8 — handled by dedicated AniPriv8 extractor (needs proxy for m3u8 rewriting)
 ];
 
