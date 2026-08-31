@@ -59,7 +59,6 @@ import { BollyFlix } from './BollyFlix.js';
 import { FourKHDHubOne } from './FourKHDHubOne.js';
 // Nuvio provider sources (additive — each has its own dedicated source file)
 import { Cineby } from './Cineby.js';
-import { DesiFlix } from './DesiFlix.js';
 import { MovieBlast } from './MovieBlast.js';
 import { PlayImdb } from './PlayImdb.js';
 // Re-added sources (from uploaded Nuvio scrapers — each with dedicated source file)
@@ -147,8 +146,6 @@ export const createSources = (fetcher) => {
     // Routing: HLS+Referer → /proxy, MP4+Referer → requestHeaders, direct → direct
     // cineby.at — movies/TV HLS (4K, speedracelight API + XOR encryption)
     new Cineby(fetcher),
-    // desiflix — movies/TV/anime HLS (multi-audio, manifest.desitvhub.eu.org)
-    new DesiFlix(fetcher),
     // hindmoviez — movies/TV MKV (hshare.ink → workers.dev, 4K/1080p)
     // movieblast — movies/TV HLS (mblinkmove.mycdn-mb.xyz, 1080p)
     new MovieBlast(fetcher),

@@ -22,7 +22,7 @@ import { Extractor } from './Extractor.js';
 
 // Nuvio source IDs handled by this extractor
 const NUVIO_SOURCE_IDS = new Set([
-  'cineby', 'desiflix', 'hindmoviez', 'movieblast',
+  'cineby', 'hindmoviez', 'movieblast',
   'movies4u', 'playimdb',
   // Batch 2: videasy, anikototv, animesalt,
   // animeworldindia, animesdigital
