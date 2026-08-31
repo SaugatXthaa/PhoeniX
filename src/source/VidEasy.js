@@ -110,7 +110,7 @@ export class VidEasy extends Source {
     try {
       streams = await Promise.race([
         mod.getStreams(tmdbId.id, mediaType, tmdbId.season || null, tmdbId.episode || null),
-        new Promise(r => setTimeout(() => r(null), 35000)),
+        new Promise(r => setTimeout(() => r(null), 45000)),
       ]);
     } catch (e) {
       console.error(`[videasy] getStreams error: ${e?.message || e}`);

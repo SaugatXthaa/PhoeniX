@@ -53,6 +53,8 @@ const DIRECT_CDN_HOSTS = [
   'info.movieboxnoob.cc',
   // Stellar.rip — direct HLS from proxy2.heistotron.uk (needs browser UA via proxyHeaders)
   'proxy2.heistotron.uk',
+  // NowHDTime — direct HLS API (nhdapi.com/api/hls?t=...)
+  'nhdapi.com',
   // AniPriv8 — handled by dedicated AniPriv8 extractor (needs proxy for m3u8 rewriting)
 ];
 

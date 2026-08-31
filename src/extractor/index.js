@@ -30,6 +30,7 @@ import { Fshare } from './Fshare.js';
 import { AcerMovies } from './AcerMovies.js';
 // DirectStream — passthrough for direct playable CDN URLs (CineWave HdHub, Fmovies)
 import { DirectStream } from './DirectStream.js';
+import { EmbedResolver } from './EmbedResolver.js';
 // HDHub4uNew and Cinejoy extractors removed — sources no longer exist
 // Netlio — passthrough for direct HLS URLs from netlio.vercel.app
 import { Netlio } from './Netlio.js';
@@ -132,6 +133,8 @@ export const createExtractors = (fetcher, logger) => {
     new AcerMovies(fetcher, logger),
     // DirectStream — passthrough for direct playable CDN URLs
     new DirectStream(fetcher, logger),
+    // EmbedResolver — generic fallback for embed pages (vidsrc.to, vidzee, voe, etc.)
+    new EmbedResolver(fetcher, logger),
 
     // Fallback — must come last
     new ExternalUrl(fetcher, logger),

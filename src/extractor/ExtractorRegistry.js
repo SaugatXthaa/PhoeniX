@@ -12,14 +12,18 @@ export class ExtractorRegistry {
   }
 
   async handle(ctx, url, meta = {}, allowLazy = false) {
-    let extractor = this.extractors.find(e => e.supports(ctx, url, meta));
+    // Find ALL matching extractors (not just the first one) — if the first
+    // extractor returns 0 results, we fall through to the next one.
+    // This lets the EmbedResolver (generic fallback) handle URLs that
+    // dedicated extractors (Voe, Mixdrop, VidSrc) fail to resolve.
+    const matchingExtractors = this.extractors.filter(e => e.supports(ctx, url, meta));
+    let extractor = matchingExtractors[0];
 
     // Fallback: if no URL-matched extractor but meta.vidking is present
-    // (with a TMDB ID), route to the VidKing extractor. This lets sources
-    // whose embed URLs have no dedicated extractor still produce playable
-    // streams via speedracelight's TMDB-based API.
+    // (with a TMDB ID), route to the VidKing extractor.
     if (!extractor && meta?.vidking?.tmdbId) {
       extractor = this.extractors.find(e => e.id === 'vidking');
+      matchingExtractors.push(extractor);
     }
 
     if (!extractor) return [];
@@ -50,10 +54,33 @@ export class ExtractorRegistry {
     if (existing) return existing;
 
     const extractionPromise = (async () => {
+      // Try the first matching extractor
       this.logger.info(`Extract ${url.href} using ${extractor.id}`);
-      const results = await extractor.extract(ctx, normalizedUrl, { extractorId: extractor.id, ...meta });
+      let results = await extractor.extract(ctx, normalizedUrl, { extractorId: extractor.id, ...meta });
+      let successResults = results.filter(r => !r.error);
 
-      const successResults = results.filter(r => !r.error);
+      // If the first extractor returned 0 results, try the next matching
+      // extractors (EmbedResolver fallback). This handles cases where the
+      // dedicated extractor (Voe, Mixdrop, VidSrc) can't resolve the URL
+      // because the page structure has changed.
+      if (successResults.length === 0 && matchingExtractors.length > 1) {
+        for (let i = 1; i < matchingExtractors.length; i++) {
+          const nextExt = matchingExtractors[i];
+          this.logger.info(`Fallback: trying ${nextExt.id} for ${url.href}`);
+          try {
+            const nextResults = await nextExt.extract(ctx, normalizedUrl, { extractorId: nextExt.id, ...meta });
+            const nextSuccess = nextResults.filter(r => !r.error);
+            if (nextSuccess.length > 0) {
+              results = nextResults;
+              successResults = nextSuccess;
+              break;
+            }
+          } catch (e) {
+            // Continue to next extractor
+          }
+        }
+      }
+
       if (successResults.length > 0) {
         const minTtl = Math.min(...successResults.map(r => r.ttl));
         this.urlResultCache.set(cacheKey, { results: successResults, ts: Date.now(), ttl: minTtl });
