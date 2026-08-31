@@ -372,7 +372,7 @@ export class StreamResolver {
     // Helps identify which sources are slow or failing under load.
     const sourceTimings = [];
 
-    const SOURCE_TIMEOUT_MS = 30_000;
+    const SOURCE_TIMEOUT_MS = 35_000;
     // Limit concurrency to prevent CPU starvation on Render's free tier.
     // Without this, all 85+ sources fire simultaneously, causing CPU-intensive
     // sources (Cinejoy's lumen-gate-v1 crypto, ZinkMovies, etc.) to take 30s+
@@ -398,6 +398,10 @@ export class StreamResolver {
       'cinejoy', 'zinkmovies', '4khdhub', 'playimdb',
       // Stellar sources — PoW + AES-GCM takes 5-10s; must start early
       'stellar', 'stellarrip',
+      // VidEasy — speedracelight API takes 15-25s; must start early
+      'videasy',
+      // NikaStream — Anivexa API takes 20-30s; must start early
+      'nikastream',
     ]);
     const sortedSources = [...sources].sort((a, b) => {
       const aPriority = PRIORITY_SOURCE_IDS.has(a.id) ? 0 : 1;
@@ -468,7 +472,7 @@ export class StreamResolver {
     // This prevents OOM on Render's 512MB free tier — without it, all 74
     // sources run simultaneously, each holding response data in memory.
     // The global cutoff ensures we collect results and free memory quickly.
-    const GLOBAL_TIMEOUT_MS = 33_000;
+    const GLOBAL_TIMEOUT_MS = 40_000;
     await Promise.race([
       Promise.all(sortedSources.map(s => handleSource(s))),
       new Promise(resolve => setTimeout(resolve, GLOBAL_TIMEOUT_MS)),

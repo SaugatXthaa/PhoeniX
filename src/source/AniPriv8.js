@@ -32,7 +32,7 @@ async function apiGet(path) {
   try {
     const res = await gotScraping.get(`${API_BASE}${path}`, {
       headers: { 'User-Agent': UA, 'Accept': 'application/json' },
-      timeout: { request: 20000 },
+      timeout: { request: 30000 },
       throwHttpErrors: false,
       followRedirect: true,
     });

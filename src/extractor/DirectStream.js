@@ -55,6 +55,8 @@ const DIRECT_CDN_HOSTS = [
   'proxy2.heistotron.uk',
   // NowHDTime — direct HLS API (nhdapi.com/api/hls?t=...)
   'nhdapi.com',
+  // AnimeSuge/NikaStream — direct HLS from cdn.kryntal.top (needs Referer via proxyHeaders)
+  'cdn.kryntal.top',
   // AniPriv8 — handled by dedicated AniPriv8 extractor (needs proxy for m3u8 rewriting)
 ];
 

@@ -97,6 +97,8 @@ export class AnimeSuge extends Source {
       results.push({
         url,
         format: Format.hls,
+        // Route through /proxy with Referer — kryntal.top needs Referer: https://megaplay.buzz/
+        requestHeaders: { Referer: 'https://megaplay.buzz/' },
         meta: {
           countryCodes,
           title: `${title} (AnimeSuge ${audioLabel})`,
