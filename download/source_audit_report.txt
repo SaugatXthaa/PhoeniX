@@ -1,92 +1,74 @@
-PhoeniX Source Audit Report — 2026-08-31T05:39:52.072Z
+PhoeniX Source Audit Report — 2026-08-31T17:05:59.680Z
 Test: Inception (TMDB 27205, movie)
-Total sources: 78
-Audited so far: 78
+Total sources: 60
+Audited so far: 60
 
 Source ID                Label                      SrcRes   Final  Status          Duration
 ------------------------------------------------------------------------------------------
-4khdhub                  4KHDHub                        14       4  WORKING          6.6s
-vidsrc                   VidSrc                          1       0  EXTRACTOR_FAIL   1.2s
-vidzee                   VidZee                          2       0  EXTRACTOR_FAIL   0.8s
-moviebox                 MovieBox                        0       0  NO_STREAMS       1.8s
-movie4kto                Movie4kTo                       3       0  EXTRACTOR_FAIL   1.1s
-fmovies                  Fmovies                         0       0  NO_STREAMS       2.6s
-cinewave                 CineWave                       44      10  WORKING          2.8s
-moviesdrive              MoviesDrive                     0       0  NO_STREAMS       2.4s
-movieshunt               MoviesHunt                     10       0  EXTRACTOR_FAIL   7.5s
-zinkmovies               ZinkMovies                      0       0  NO_STREAMS       28.7s
-watchseries              WatchSeries                    11       5  WORKING          1.6s
-necro                    Necro                           5       5  WORKING          1.8s
-vidsrcsbs                VidSrcSbs                       3       5  WORKING          0.3s
-vidlink2                 VidLink                         3       3  WORKING          2.4s
-vidsrcto2                VidSrcTo                        1       0  EXTRACTOR_FAIL   1s
-vidking                  VidKing                         1       5  WORKING          0.3s
-vidfast                  VidFast                         1       5  WORKING          0.3s
-vegamovies               VegaMovies                      1       5  WORKING          0.3s
-primeshows               PrimeShows                      1       5  WORKING          2.1s
-netlio                   Netlio                          0       0  NO_STREAMS       0.7s
-fshare                   FshareTV                        0       0  NO_STREAMS       1s
-9anime                   9Anime                          0       0  NO_STREAMS       0.3s
+4khdhub                  4KHDHub                        14       5  WORKING          7.1s
+moviebox                 MovieBox                        0       0  NO_STREAMS       1.6s
+cinewave                 CineWave                       46      10  WORKING          5.3s
+watchseries              WatchSeries                    11       5  WORKING          1.8s
+necro                    Necro                           5       0  EXTRACTOR_FAIL   1.4s
+vidsrcsbs                VidSrcSbs                       3       5  WORKING          0.2s
+vidlink2                 VidLink                         3       3  WORKING          2.3s
+vidking                  VidKing                         1       5  WORKING          0.2s
+vidfast                  VidFast                         1       5  WORKING          0.2s
+vegamovies               VegaMovies                      1       5  WORKING          0.2s
+primeshows               PrimeShows                      6       5  WORKING          2.4s
+netlio                   Netlio                          0       0  NO_STREAMS       0.5s
+9anime                   9Anime                          0       0  NO_STREAMS       0.2s
 animeworld               AnimeWorld                      0       0  NO_STREAMS       1.4s
 animeflix                AnimeFlix                       0       0  NO_STREAMS       1.6s
-anidb                    AniDB                           0       0  NO_STREAMS       0.8s
-anineko                  AniNeko                         0       0  NO_STREAMS       0.5s
-verhdlink                VerHdLink                       4       2  WORKING          2.4s
-einschalten              Einschalten                     1       0  EXTRACTOR_FAIL   2.7s
-megakino                 MegaKino                        1       0  EXTRACTOR_FAIL   3.2s
-meinecloud               MeineCloud                      3       2  WORKING          1.7s
-frenchcloud              FrenchCloud                     4       0  EXTRACTOR_FAIL   2.1s
-movix                    Movix                           7       5  WORKING          1s
-acermovies               AcerMovies                      2       2  WORKING          6.4s
-streamduck               StreamDuck                      2       0  EXTRACTOR_FAIL   1.8s
-streamxtv                StreamXTV                       4       5  WORKING          1.6s
-anikoto                  Anikoto                         0       0  NO_STREAMS       0.6s
-anikage                  AniKage                         0       0  NO_STREAMS       1.1s
-anibd                    AniBD                           0       0  NO_STREAMS       1s
-2dhive                   2Dhive                          0       0  NO_STREAMS       1.6s
-anidoor                  AniDoor                         0       0  NO_STREAMS       0.5s
-nowhdtime                NowHDTime                       1       0  EXTRACTOR_FAIL   3.7s
-cinefreak                CineFreak                       0       0  NO_STREAMS       2.2s
-anivault                 AniVault                        0       0  NO_STREAMS       0.6s
-anipriv8                 AniPriv8                        0       0  NO_STREAMS       0.5s
-hdghartv                 HDGharTV                        0       0  NO_STREAMS       0.4s
-pantyflix                Pantyflix                       7       7  WORKING          12.4s
-animegg                  AnimeGG                         0       0  NO_STREAMS       0.5s
+anidb                    AniDB                           0       0  NO_STREAMS       0.7s
+anineko                  AniNeko                         0       0  NO_STREAMS       0.3s
+verhdlink                VerHdLink                       4       2  WORKING          2.1s
+meinecloud               MeineCloud                      3       2  WORKING          1.4s
+acermovies               AcerMovies                      2       2  WORKING          6.1s
+streamxtv                StreamXTV                       4       5  WORKING          3.6s
+anikoto                  Anikoto                         0       0  NO_STREAMS       0.4s
+anikage                  AniKage                         0       0  NO_STREAMS       1s
+anibd                    AniBD                           0       0  NO_STREAMS       1.9s
+2dhive                   2Dhive                          0       0  NO_STREAMS       1.2s
+anidoor                  AniDoor                         0       0  NO_STREAMS       1.9s
+nowhdtime                NowHDTime                       1       1  WORKING          3.8s
+cinefreak                CineFreak                       0       0  NO_STREAMS       3s
+anivault                 AniVault                        0       0  NO_STREAMS       2.1s
+hdghartv                 HDGharTV                        0       0  NO_STREAMS       0.3s
+pantyflix                Pantyflix                       9       9  WORKING          12.8s
+animegg                  AnimeGG                         0       0  NO_STREAMS       2.1s
 peckle                   2Peckle                         0       0  NO_STREAMS       0s
 hianime                  HiAnime                         0       0  NO_STREAMS       1.1s
-animekai                 AnimeKai                        0       0  NO_STREAMS       1.6s
-cineby                   Cineby                          4       4  WORKING          2.5s
-desiflix                 DesiFlix                        0       0  NO_STREAMS       13s
-movieblast               MovieBlast                      4       4  WORKING          1.8s
-movies4u                 Movies4u                        0       0  NO_STREAMS       1.1s
-playimdb                 PlayIMDb                        3       3  WORKING          0.9s
+animekai                 AnimeKai                        0       0  NO_STREAMS       1.5s
+cineby                   Cineby                          4       4  WORKING          2.6s
+movieblast               MovieBlast                      4       4  WORKING          2.1s
+playimdb                 PlayIMDb                        3       3  WORKING          1s
 zxcstream                ZXCStream                       1       1  WORKING          0.6s
-animezey                 AnimeZeY                        0       0  NO_STREAMS       0.1s
-uhdmovies                UHDMovies                       1       1  WORKING          4.4s
-hdhub4u                  HDHub4u                         0       0  NO_STREAMS       3.7s
-videasy                  VidEasy                         0       0  ERROR          SOURCE_TIMEOUT_30s  30s
-anikototv                AnikotoTV                       0       0  NO_STREAMS       0.5s
+animezey                 AnimeZeY                        0       0  NO_STREAMS       0.2s
+uhdmovies                UHDMovies                       1       1  WORKING          3.6s
+videasy                  VidEasy                         5       5  WORKING          12.2s
+anikototv                AnikotoTV                       0       0  NO_STREAMS       0.4s
 animesalt                AnimeSalt                       0       0  NO_STREAMS       0.1s
 animeworldindia          AnimeWorld IN                   0       0  NO_STREAMS       0.1s
 animesdigital            AnimesDigital                   0       0  NO_STREAMS       0.1s
-anichan                  AniChan                         0       0  NO_STREAMS       0.4s
-animesuge                AnimeSuge                       0       0  NO_STREAMS       1.6s
-oneembed                 1Embed                          0       0  NO_STREAMS       2s
-bollyflix                BollyFlix                       5       5  WORKING          3.4s
-oneshows                 1Shows                          0       0  NO_STREAMS       6s
-onedesiremovies          1DesireMovies                   0       0  NO_STREAMS       3.6s
-fourkhdhubone            4KHDHub.one                     6       4  WORKING          1.6s
-framextv                 FrameX                          5       5  WORKING          20.1s
-flystream                FlyStream                       1       1  WORKING          4.7s
-cinejoyaio               CineJoy                         2       2  WORKING          2.2s
-nikastream               NikaStream                      0       0  NO_STREAMS       1.1s
-cinebyrocks              CinebyRocks                     6       6  WORKING          4s
-stellar                  Stellar                         6       6  WORKING          7.7s
-stellarrip               StellarRip                      1       1  WORKING          5s
+anichan                  AniChan                         0       0  NO_STREAMS       1s
+animesuge                AnimeSuge                       0       0  NO_STREAMS       20.2s
+bollyflix                BollyFlix                       5       5  WORKING          5.8s
+fourkhdhubone            4KHDHub.one                     6       5  WORKING          2.9s
+framextv                 FrameX                          0       0  NO_STREAMS       20.2s
+flystream                FlyStream                       1       1  WORKING          5.2s
+cinejoyaio               CineJoy                         2       2  WORKING          5.8s
+nikastream               NikaStream                      0       0  NO_STREAMS       9.6s
+cinebyrocks              CinebyRocks                     2       2  WORKING          2.6s
+stellar                  Stellar                         7       7  WORKING          6.8s
+stellarrip               StellarRip                      1       1  WORKING          14.1s
+hdhub4uv2                HDHub4u                         2       1  WORKING          5s
+movieshuntv2             MoviesHunt                      4       4  WORKING          3.6s
+moviesdrivev2            MoviesDrive                     6       1  WORKING          5s
 
 ==========================================================================================
 SUMMARY:
-  WORKING:        29 sources
-  NO_STREAMS:     38 sources
-  EXTRACTOR_FAIL: 10 sources
-  ERROR:          1 sources
+  WORKING:        31 sources
+  NO_STREAMS:     28 sources
+  EXTRACTOR_FAIL: 1 sources
+  ERROR:          0 sources
