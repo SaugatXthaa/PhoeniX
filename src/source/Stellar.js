@@ -106,7 +106,7 @@ export class Stellar extends Source {
     try {
       streams = await Promise.race([
         mod.getStreams(String(tmdbId.id), mediaType, tmdbId.season || null, tmdbId.episode || null),
-        new Promise(r => setTimeout(() => r(null), 30000)),
+        new Promise(r => setTimeout(() => r(null), 25000)),
       ]);
     } catch (e) {
       console.error(`[stellar] getStreams error: ${e?.message || e}`);

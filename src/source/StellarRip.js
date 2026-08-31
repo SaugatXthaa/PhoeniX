@@ -151,8 +151,25 @@ export class StellarRip extends Source {
           type: stellarType,
           tmdbId: tmdbId.id,
           ...(tmdbId.season ? { season: tmdbId.season, episode: tmdbId.episode } : {}),
-        }, { verbose: false }),
-        new Promise(r => setTimeout(() => r(null), 45000)),
+        }, {
+          verbose: false,
+          // Limit to top 8 servers (4K-capable first) to cut latency from ~20s
+          // to ~8s. The full 19-server list includes many slow/dead servers that
+          // waste time without adding value. Top 8 covers all 4K-capable servers
+          // (Rigel, Vega, Capella, Betelgeuse, Canopus, Sirius) + 2 fallbacks.
+          servers: [
+            { id: 's2',  name: 'Rigel',      capabilities: { fourKAvailability: 'confirmed', multiAudio: true } },
+            { id: 's25', name: 'Vega',       capabilities: { fourKAvailability: 'confirmed' } },
+            { id: 's26', name: 'Capella',    capabilities: { fourKAvailability: 'confirmed' } },
+            { id: 's19', name: 'Betelgeuse', capabilities: { fourKAvailability: 'confirmed', multiAudio: true } },
+            { id: 's27', name: 'Canopus',    capabilities: { fourKAvailability: 'confirmed' } },
+            { id: 's0',  name: 'Sirius',     capabilities: { fourKAvailability: 'confirmed' } },
+            { id: 's13', name: 'Arcturus',   capabilities: { fourKAvailability: 'possible' } },
+            { id: 's4',  name: 'Procyon' },
+          ],
+          concurrency: 8, // all 8 in parallel
+        }),
+        new Promise(r => setTimeout(() => r(null), 25000)),
       ]);
     } catch (e) {
       console.error(`[stellarrip] resolveStreams error: ${e?.message || e}`);

@@ -389,7 +389,16 @@ export class StreamResolver {
     // don't get stuck waiting in the queue behind 85+ other sources. Without this,
     // Cinejoy (which needs ~6s of CPU) would wait 10-15s in the queue, leaving
     // only 15-20s for execution — tight enough that it sometimes times out.
-    const PRIORITY_SOURCE_IDS = new Set(['cinejoy', 'zinkmovies', '4khdhub', 'playimdb']);
+    // Priority sources — these are started FIRST, before other sources, so they
+    // don't get stuck waiting in the queue behind 75+ other sources. Without this,
+    // slow sources (Cinejoy's lumen-gate-v1 crypto, StellarRip's PoW + 19-server
+    // probing) would wait 10-15s in the queue, leaving only 15-20s before the
+    // GLOBAL_TIMEOUT_MS = 33s cutoff.
+    const PRIORITY_SOURCE_IDS = new Set([
+      'cinejoy', 'zinkmovies', '4khdhub', 'playimdb',
+      // Stellar sources — PoW + AES-GCM takes 5-10s; must start early
+      'stellar', 'stellarrip',
+    ]);
     const sortedSources = [...sources].sort((a, b) => {
       const aPriority = PRIORITY_SOURCE_IDS.has(a.id) ? 0 : 1;
       const bPriority = PRIORITY_SOURCE_IDS.has(b.id) ? 0 : 1;
