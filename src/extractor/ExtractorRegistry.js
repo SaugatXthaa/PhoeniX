@@ -26,6 +26,15 @@ export class ExtractorRegistry {
       matchingExtractors.push(extractor);
     }
 
+    // Also add VidKing as a fallback when meta.vidking IS present and
+    // the matching extractors don't include it. This handles cases where
+    // EmbedResolver matches but returns 0 (JS-rendered pages) — VidKing
+    // uses the speedracelight API (TMDB-based) which doesn't need JS.
+    if (meta?.vidking?.tmdbId && !matchingExtractors.some(e => e.id === 'vidking')) {
+      const vidkingExt = this.extractors.find(e => e.id === 'vidking');
+      if (vidkingExt) matchingExtractors.push(vidkingExt);
+    }
+
     if (!extractor) return [];
 
     const normalizedUrl = extractor.normalize(url);
