@@ -229,9 +229,9 @@ export class StellarRip extends Source {
         }
       }
 
-      // Format: "{movie} — [StellarRip {server}] {height}p WEB-DL {codec} {audio}"
-      // (no movie title — StreamResolver prepends it via meta.title)
-      const displayTitle = `[StellarRip ${serverName}] ${height}p WEB-DL ${codec}${isMultiAudio ? ' MultiAudio' : ''} ${audioLabel}`;
+      // Format: "{movie title} — [StellarRip {server}] {height}p WEB-DL {codec} {audio}"
+      // Include the movie title so StreamResolver can display it on Line 1.
+      const displayTitle = `${title} — [StellarRip ${serverName}] ${height}p WEB-DL ${codec}${isMultiAudio ? ' MultiAudio' : ''} ${audioLabel}`;
 
       // Get the User-Agent from the scraper (CDN requires browser UA)
       const userAgent = s.requestHeaders?.['User-Agent'] ||
