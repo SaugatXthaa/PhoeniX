@@ -153,6 +153,25 @@ export class CineWave extends Source {
             continue;
           }
 
+          // YEAR MATCHING — critical for movies with same title across years.
+          // If the stream text contains a year (e.g. "Eye.for.an.Eye.2026")
+          // that differs from the TMDB year by more than 1, reject it.
+          // This prevents "Eye for an Eye 2025" from matching "Eye for an Eye 2026"
+          // (which is actually "Eye for an Eye 2", a different movie).
+          if (year) {
+            const yearNum = parseInt(String(year), 10);
+            // Find all 4-digit years (19xx or 20xx) in the stream text
+            const streamYears = streamText.match(/\b(19\d{2}|20\d{2})\b/g) || [];
+            for (const sy of streamYears) {
+              const syNum = parseInt(sy, 10);
+              if (Math.abs(syNum - yearNum) > 1) {
+                // Stream has a year that differs by more than 1 from TMDB year
+                // → it's likely a different movie with the same title
+                continue; // skip this stream
+              }
+            }
+          }
+
           const heightMatch = nameTitle.match(/(\d{3,})p/i);
           const height = heightMatch ? parseInt(heightMatch[1]) : undefined;
 
