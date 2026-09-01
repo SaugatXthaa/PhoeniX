@@ -109,6 +109,8 @@ export class DirectStream extends Extractor {
       format: inferFormat(url),
       label: this.label,
       meta: { ...meta },
+      // Pass through requestHeaders from source → StreamResolver sets proxyHeaders
+      ...(meta?.requestHeaders && { requestHeaders: meta.requestHeaders }),
     }];
   }
 }

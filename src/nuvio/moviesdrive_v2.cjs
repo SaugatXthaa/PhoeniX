@@ -76,28 +76,43 @@ function parseDownloadLinks(html) {
 }
 
 // ---------------------------------------------------------------------------
-// Call HubCloud search API → get file list
+// Call HubCloud search API → get file list (uses got-scraping for CF bypass)
 // ---------------------------------------------------------------------------
 async function resolveHubcloudSearch(fromAc, qB64) {
   try {
     const query = Buffer.from(qB64 + '==', 'base64').toString('utf8');
     const apiUrl = 'https://hubcloud.cx/drive/search-recover.php?api=search&q=' + encodeURIComponent(query) + '&page=1&from_ac=' + fromAc;
-    const res = await fetch(apiUrl, { headers: { 'User-Agent': UA, 'Accept': 'application/json' }, signal: AbortSignal.timeout(10000) });
-    if (!res.ok) return [];
-    const data = await res.json();
+    const { gotScraping } = await import('got-scraping');
+    const res = await gotScraping.get(apiUrl, {
+      headers: { 'User-Agent': UA, 'Accept': 'application/json', 'Referer': 'https://hubcloud.cx/' },
+      timeout: { request: 10000 }, throwHttpErrors: false, http2: true,
+    });
+    if (res.statusCode !== 200) return [];
+    const data = JSON.parse(res.body);
     return (data.hits || []).map(h => ({ fileName: h.file_name, size: h.size, url: h.url, fileId: h.url.split('/').pop() }));
   } catch (e) { return []; }
 }
 
 // ---------------------------------------------------------------------------
-// Resolve hubcloud.cx/drive/{id} → gamerxyt → GDrive URL
+// Resolve hubcloud.cx/drive/{id} → gamerxyt → GDrive URL (uses got-scraping)
 // ---------------------------------------------------------------------------
 async function resolveHubcloudDrive(driveUrl) {
   try {
-    const html = await fetchText(driveUrl, 'https://hubcloud.cx/');
+    const { gotScraping } = await import('got-scraping');
+    const driveRes = await gotScraping.get(driveUrl, {
+      headers: { 'User-Agent': UA, 'Accept': 'text/html', 'Referer': 'https://hubcloud.cx/' },
+      timeout: { request: 10000 }, throwHttpErrors: false, http2: true,
+    });
+    if (driveRes.statusCode !== 200) return null;
+    const html = driveRes.body;
     const gxMatch = html.match(/https:\/\/gamerxyt\.com\/hubcloud\.php\?[^"'\s]+/);
     if (!gxMatch) return null;
-    const gxHtml = await fetchText(gxMatch[0], driveUrl);
+    const gxRes = await gotScraping.get(gxMatch[0], {
+      headers: { 'User-Agent': UA, 'Accept': 'text/html', 'Referer': driveUrl },
+      timeout: { request: 10000 }, throwHttpErrors: false, http2: true,
+    });
+    if (gxRes.statusCode !== 200) return null;
+    const gxHtml = gxRes.body;
     const gdMatch = gxHtml.match(/https:\/\/lh3\.googleusercontent\.com\/[^\s"'<>]+/);
     if (gdMatch) {
       let url = gdMatch[0].split('#')[0].split('=m')[0];
@@ -141,17 +156,40 @@ async function getStreams(tmdbId, type, season, episode) {
   const results = await searchSite(info.title);
   if (results.length === 0) { console.log('[MoviesDrive] No results'); return []; }
 
-  // Pick best match — prefer exact title in slug
+  // Pick best match — prefer exact title in slug + year match
   let best = null;
   const titleLower = info.title.toLowerCase();
   const titleWords = titleLower.split(' ').filter(w => w.length > 2);
+  const yearStr = info.year ? String(info.year) : '';
+  
+  // First pass: exact word match + year in slug
   for (const r of results) {
     const slugLower = (r.slug || '').toLowerCase();
-    // Check if ALL significant words from the title are in the slug
     const allWordsMatch = titleWords.every(w => slugLower.includes(w));
-    if (allWordsMatch) { best = r; break; }
+    if (allWordsMatch && yearStr && slugLower.includes(yearStr)) { best = r; break; }
   }
-  // Fallback: first word match
+  // Second pass: exact word match without year (but prefer slugs WITH the year)
+  if (!best) {
+    let bestWithYear = null;
+    let bestWithoutYear = null;
+    for (const r of results) {
+      const slugLower = (r.slug || '').toLowerCase();
+      const allWordsMatch = titleWords.every(w => slugLower.includes(w));
+      if (allWordsMatch) {
+        if (yearStr && slugLower.includes(yearStr)) { bestWithYear = r; break; }
+        if (!bestWithoutYear) bestWithoutYear = r;
+      }
+    }
+    best = bestWithYear || bestWithoutYear;
+  }
+  // Fallback: first word match + year
+  if (!best) {
+    for (const r of results) {
+      const slugLower = (r.slug || '').toLowerCase();
+      if (slugLower.includes(titleLower.split(' ')[0]) && yearStr && slugLower.includes(yearStr)) { best = r; break; }
+    }
+  }
+  // Last fallback: first word match
   if (!best) {
     for (const r of results) {
       if ((r.slug || '').toLowerCase().includes(titleLower.split(' ')[0])) { best = r; break; }
