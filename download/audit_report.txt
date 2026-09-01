@@ -1,0 +1,132 @@
+PhoeniX Source Audit — 2026-09-01T17:08:13.192Z
+Tests: Inception (movie) + JJK S01E01 (anime)
+
+Source ID             Label                Movie   Anime  Status
+----------------------------------------------------------------------
+4khdhub               4KHDHub                  5       4  WORKING
+moviebox              MovieBox                 0       4  WORKING
+cinewave              CineWave                10       7  WORKING
+watchseries           WatchSeries              5       4  WORKING
+necro                 Necro                    5       0  WORKING
+vidsrcsbs             VidSrcSbs                5       0  WORKING
+vidlink2              VidLink                  3       4  WORKING
+vidking               VidKing                  5       4  WORKING
+vidfast               VidFast                  5       0  WORKING
+vegamovies            VegaMovies               5       0  WORKING
+primeshows            PrimeShows               5       0  WORKING
+netlio                Netlio                   0       1  WORKING
+9anime                9Anime                   0       0  BROKEN
+animeworld            AnimeWorld               0       0  BROKEN
+animeflix             AnimeFlix                0       1  WORKING
+anidb                 AniDB                    0       2  WORKING
+anineko               AniNeko                  0     ERR  BROKEN
+verhdlink             VerHdLink                7       0  WORKING
+meinecloud            MeineCloud               7       0  WORKING
+acermovies            AcerMovies               2       0  WORKING
+streamxtv             StreamXTV                5       6  WORKING
+anikoto               Anikoto                  0       2  WORKING
+anikage               AniKage                  0     ERR  BROKEN
+anibd                 AniBD                    0       8  WORKING
+2dhive                2Dhive                   0       2  WORKING
+anidoor               AniDoor                  0       2  WORKING
+nowhdtime             NowHDTime                1       1  WORKING
+cinefreak             CineFreak                0       0  BROKEN
+anivault              AniVault                 0       0  BROKEN
+hdghartv              HDGharTV                 0       0  BROKEN
+pantyflix             Pantyflix               11       0  WORKING
+animegg               AnimeGG                  0       4  WORKING
+peckle                2Peckle                  0       0  BROKEN
+hianime               HiAnime                  0       2  WORKING
+animekai              AnimeKai                 0       2  WORKING
+cineby                Cineby                   4       4  WORKING
+movieblast            MovieBlast               4       0  WORKING
+playimdb              PlayIMDb                 3       3  WORKING
+zxcstream             ZXCStream                1       1  WORKING
+animezey              AnimeZeY                 0       2  WORKING
+uhdmovies             UHDMovies                1       0  WORKING
+videasy               VidEasy                ERR       4  WORKING
+anikototv             AnikotoTV                0       2  WORKING
+animesalt             AnimeSalt                0       0  BROKEN
+animeworldindia       AnimeWorld IN            0       0  BROKEN
+animesdigital         AnimesDigital            0       2  WORKING
+anichan               AniChan                  0       3  WORKING
+animesuge             AnimeSuge                0       1  WORKING
+bollyflix             BollyFlix                5       3  WORKING
+fourkhdhubone         4KHDHub.one              5       0  WORKING
+framextv              FrameX                   5       5  WORKING
+flystream             FlyStream                0       0  BROKEN
+cinejoyaio            CineJoy                  2       2  WORKING
+nikastream            NikaStream               0     ERR  BROKEN
+cinebyrocks           CinebyRocks              0       0  BROKEN
+stellar               Stellar                  0       0  BROKEN
+stellarrip            StellarRip               0       0  BROKEN
+hdhub4uv2             HDHub4u                ERR       0  BROKEN
+movieshuntv2          MoviesHunt             ERR     ERR  BROKEN
+moviesdrivev2         MoviesDrive            ERR       0  BROKEN
+
+======================================================================
+SUMMARY: 42 WORKING, 18 BROKEN (out of 60)
+
+BROKEN SOURCES:
+  9anime (9Anime) — movie=0, anime=0
+  animeworld (AnimeWorld) — movie=0, anime=0
+  anineko (AniNeko) — movie=0, anime=ERR
+  anikage (AniKage) — movie=0, anime=ERR
+  cinefreak (CineFreak) — movie=0, anime=0
+  anivault (AniVault) — movie=0, anime=0
+  hdghartv (HDGharTV) — movie=0, anime=0
+  peckle (2Peckle) — movie=0, anime=0
+  animesalt (AnimeSalt) — movie=0, anime=0
+  animeworldindia (AnimeWorld IN) — movie=0, anime=0
+  flystream (FlyStream) — movie=0, anime=0
+  nikastream (NikaStream) — movie=0, anime=ERR
+  cinebyrocks (CinebyRocks) — movie=0, anime=0
+  stellar (Stellar) — movie=0, anime=0
+  stellarrip (StellarRip) — movie=0, anime=0
+  hdhub4uv2 (HDHub4u) — movie=ERR, anime=0
+  movieshuntv2 (MoviesHunt) — movie=ERR, anime=ERR
+  moviesdrivev2 (MoviesDrive) — movie=ERR, anime=0
+
+WORKING SOURCES:
+  4khdhub (4KHDHub) — movie=5, anime=4
+  moviebox (MovieBox) — movie=0, anime=4
+  cinewave (CineWave) — movie=10, anime=7
+  watchseries (WatchSeries) — movie=5, anime=4
+  necro (Necro) — movie=5, anime=0
+  vidsrcsbs (VidSrcSbs) — movie=5, anime=0
+  vidlink2 (VidLink) — movie=3, anime=4
+  vidking (VidKing) — movie=5, anime=4
+  vidfast (VidFast) — movie=5, anime=0
+  vegamovies (VegaMovies) — movie=5, anime=0
+  primeshows (PrimeShows) — movie=5, anime=0
+  netlio (Netlio) — movie=0, anime=1
+  animeflix (AnimeFlix) — movie=0, anime=1
+  anidb (AniDB) — movie=0, anime=2
+  verhdlink (VerHdLink) — movie=7, anime=0
+  meinecloud (MeineCloud) — movie=7, anime=0
+  acermovies (AcerMovies) — movie=2, anime=0
+  streamxtv (StreamXTV) — movie=5, anime=6
+  anikoto (Anikoto) — movie=0, anime=2
+  anibd (AniBD) — movie=0, anime=8
+  2dhive (2Dhive) — movie=0, anime=2
+  anidoor (AniDoor) — movie=0, anime=2
+  nowhdtime (NowHDTime) — movie=1, anime=1
+  pantyflix (Pantyflix) — movie=11, anime=0
+  animegg (AnimeGG) — movie=0, anime=4
+  hianime (HiAnime) — movie=0, anime=2
+  animekai (AnimeKai) — movie=0, anime=2
+  cineby (Cineby) — movie=4, anime=4
+  movieblast (MovieBlast) — movie=4, anime=0
+  playimdb (PlayIMDb) — movie=3, anime=3
+  zxcstream (ZXCStream) — movie=1, anime=1
+  animezey (AnimeZeY) — movie=0, anime=2
+  uhdmovies (UHDMovies) — movie=1, anime=0
+  videasy (VidEasy) — movie=-1, anime=4
+  anikototv (AnikotoTV) — movie=0, anime=2
+  animesdigital (AnimesDigital) — movie=0, anime=2
+  anichan (AniChan) — movie=0, anime=3
+  animesuge (AnimeSuge) — movie=0, anime=1
+  bollyflix (BollyFlix) — movie=5, anime=3
+  fourkhdhubone (4KHDHub.one) — movie=5, anime=0
+  framextv (FrameX) — movie=5, anime=5
+  cinejoyaio (CineJoy) — movie=2, anime=2
