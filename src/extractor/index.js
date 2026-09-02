@@ -29,8 +29,6 @@ import { Netlio } from './Netlio.js';
 import { AnimeDirect } from './AnimeDirect.js';
 // Megaplay — megaplay.buzz / vidtube.site embed pages (Anikoto, StreamXTV anime)
 import { Megaplay } from './Megaplay.js';
-// HDGharTV — passthrough for streamraiwind.stream HLS URLs
-import { HDGharTV as HDGharTVExtractor } from './HDGharTV.js';
 // Pantyflix — passthrough for direct MP4/MKV URLs (must come before Netlio
 // to prevent Netlio from claiming *.workers.dev URLs from Pantyflix source)
 import { Pantyflix as PantyflixExtractor } from './Pantyflix.js';
@@ -54,8 +52,6 @@ export const createExtractors = (fetcher, logger) => {
   const hubExtractor = new HubExtractor(fetcher, logger);
 
   return [
-    // HDGharTV — passthrough for streamraiwind.stream HLS URLs
-    new HDGharTVExtractor(fetcher, logger),
     // Pantyflix — passthrough for direct MP4/MKV URLs (must come before Netlio)
     new PantyflixExtractor(fetcher, logger),
     // AnimeGG — routes animegg.org MP4 through /proxy with Referer

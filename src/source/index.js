@@ -46,7 +46,6 @@ import { TwoDhive } from './TwoDhive.js';
 import { AniDoor } from './AniDoor.js';
 import { NowHDTime } from './NowHDTime.js';
 import { CineFreak } from './CineFreak.js';
-import { HDGharTV } from './HDGharTV.js';
 import { Pantyflix } from './Pantyflix.js';
 import { AnimeGG } from './AnimeGG.js';
 import { Peckle } from './Peckle.js';
@@ -123,8 +122,6 @@ export const createSources = (fetcher) => {
     // filmeonlinehd.digital — Hindi movies/series via linksdrive → HubCloud/GDFlix
     // cinefreak.net — movies/series/anime/kdrama → generate.php → r2.dev direct MKV
     new CineFreak(fetcher),
-    // hdghartv.cc — movies/series/anime with multi-audio HLS (Hindi/English/Tamil/Telugu)
-    new HDGharTV(fetcher),
     // pantyflix.org — movies/series/anime via /api/streamrip/download (direct MP4/MKV)
     new Pantyflix(fetcher),
     // animegg.org — anime sub+dub direct MP4 (720p/1080p)
