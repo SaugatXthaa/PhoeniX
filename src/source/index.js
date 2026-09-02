@@ -15,6 +15,8 @@ import { NikaStream } from './NikaStream.js';
 import { CinebyRocks } from './CinebyRocks.js';
 // stellar.rip — movies/TV/anime via 19-server PoW API (direct HLS, up to 4K)
 import { StellarRip } from './StellarRip.js';
+// stellar.gdn — movies/TV/anime via PoW + AES-GCM API (direct HLS, up to 4K)
+import { Stellar } from './Stellar.js';
 // HDHub4u v2 — movies/TV via new5.hdhub4u.cl sitemap search (up to 4K)
 import { HDHub4uV2 } from './HDHub4uV2.js';
 // MoviesHunt v2 — movies/TV via movieshunt.casa (up to 4K)
@@ -180,6 +182,8 @@ export const createSources = (fetcher) => {
     new CinebyRocks(fetcher),
     // stellar.rip — movies/TV/anime via 19-server PoW API (direct HLS, up to 4K)
     new StellarRip(fetcher),
+    // stellar.gdn — movies/TV/anime via PoW + AES-GCM (direct HLS, up to 4K)
+    new Stellar(fetcher),
     // HDHub4u v2 — movies/TV via new5.hdhub4u.cl sitemap search (up to 4K)
     new HDHub4uV2(fetcher),
     // MoviesHunt v2 — movies/TV via movieshunt.casa (up to 4K)
