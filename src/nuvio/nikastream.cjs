@@ -100,6 +100,119 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+// got-scraping loader — NikaStream's Anivexa API + AniList + downstream CDNs
+// (kryntal.top, animeapps.top, flixcloud.cc) can return 403/429 to non-browser
+// TLS fingerprints. got-scraping uses Chrome's TLS fingerprint to bypass these.
+// Native fetch is kept as a fallback if got-scraping is unavailable.
+let _gotScrapingMod = null;
+async function getGotScraping() {
+  if (_gotScrapingMod !== null) return _gotScrapingMod;
+  try {
+    const mod = await import('got-scraping');
+    _gotScrapingMod = mod.gotScraping || (mod.default && mod.default.gotScraping) || mod.default;
+  } catch (e) {
+    _gotScrapingMod = false;
+  }
+  return _gotScrapingMod;
+}
+
+// Wrapper: GET with got-scraping (Chrome TLS) + native fetch fallback.
+// `referer` is optional. `timeoutMs` defaults to 12s.
+async function gotGet(url, { referer, timeoutMs = 12000, headers: extraHeaders = {} } = {}) {
+  const gs = await getGotScraping();
+  if (gs) {
+    const res = await gs({
+      url,
+      method: 'GET',
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        ...(referer && { Referer: referer }),
+        ...extraHeaders,
+      },
+      timeout: { request: timeoutMs },
+      throwHttpErrors: false,
+      followRedirect: true,
+      headerGeneratorOptions: {
+        browsers: ['chrome'],
+        devices: ['desktop'],
+        operatingSystems: ['windows'],
+      },
+    });
+    return { ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, body: res.body };
+  }
+  // Fallback: native fetch
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, {
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'application/json, text/plain, */*',
+        ...(referer && { Referer: referer }),
+        ...extraHeaders,
+      },
+      signal: ctrl.signal,
+    });
+    const body = await r.text();
+    return { ok: r.ok, status: r.status, body };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Wrapper: POST JSON with got-scraping + native fetch fallback.
+async function gotPostJson(url, data, { referer, timeoutMs = 15000, headers: extraHeaders = {} } = {}) {
+  const bodyStr = JSON.stringify(data);
+  const gs = await getGotScraping();
+  if (gs) {
+    const res = await gs({
+      url,
+      method: 'POST',
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Content-Type': 'application/json',
+        ...(referer && { Referer: referer }),
+        ...extraHeaders,
+      },
+      body: bodyStr,
+      timeout: { request: timeoutMs },
+      throwHttpErrors: false,
+      followRedirect: true,
+      headerGeneratorOptions: {
+        browsers: ['chrome'],
+        devices: ['desktop'],
+        operatingSystems: ['windows'],
+      },
+    });
+    return { ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, body: res.body };
+  }
+  // Fallback: native fetch
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': UA,
+        'Accept': 'application/json, text/plain, */*',
+        ...(referer && { Referer: referer }),
+        ...extraHeaders,
+      },
+      body: bodyStr,
+      signal: ctrl.signal,
+    });
+    const body = await r.text();
+    return { ok: r.ok, status: r.status, body };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // All Anivexa providers — listed in priority order (most reliable first).
 // We query all of them in parallel; failures are silently skipped.
 const ALL_PROVIDERS = [
@@ -122,12 +235,9 @@ const ALL_PROVIDERS = [
 async function getTMDBInfo(tmdbId, type) {
   const url = `https://api.themoviedb.org/3/${type === 'tv' ? 'tv' : 'movie'}/${tmdbId}` +
     `?api_key=${TMDB_API_KEY}&language=en-US`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': UA, Accept: 'application/json' },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) throw new Error(`TMDB HTTP ${res.status}`);
-  const j = await res.json();
+  const r = await gotGet(url, { timeoutMs: 12000 });
+  if (!r.ok) throw new Error(`TMDB HTTP ${r.status}`);
+  const j = JSON.parse(r.body);
   return {
     title: j.name || j.title || 'Unknown',
     year: (j.first_air_date || j.release_date || '').slice(0, 4),
@@ -183,22 +293,18 @@ async function findAniListId(title, type) {
     for (const format of formats) {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 20000);
-          const res = await fetch(ANILIST_GRAPHQL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({ query, variables: { search, format } }),
-            signal: ctrl.signal,
-          });
-          clearTimeout(timer);
-          if (res.status === 429) {
-            const retryAfter = parseInt(res.headers.get('retry-after') || '2', 10);
-            await new Promise(r => setTimeout(r, retryAfter * 1000));
+          const r = await gotPostJson(
+            ANILIST_GRAPHQL,
+            { query, variables: { search, format } },
+            { timeoutMs: 20000 }
+          );
+          if (r.status === 429) {
+            // AniList rate-limited — retry after 2s
+            await new Promise(res => setTimeout(res, 2000));
             continue;
           }
-          if (!res.ok) continue;
-          const j = await res.json();
+          if (!r.ok) continue;
+          const j = JSON.parse(r.body);
           const media = j?.data?.Page?.media || [];
           if (media.length > 0) {
             return {
@@ -210,7 +316,7 @@ async function findAniListId(title, type) {
           break; // No results for this format, try next format
         } catch (e) {
           if (attempt < 2) {
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(res => setTimeout(res, 1500));
           }
         }
       }
@@ -228,17 +334,13 @@ async function findAniListId(title, type) {
 async function fetchProviderEpisodes(provider, anilistId) {
   const url = `${ANIVEXA_API}/episodes/${provider}/${anilistId}`;
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': UA,
-        'Accept': 'application/json',
-        'Origin': NIKASTREAM_ORIGIN,
-        'Referer': NIKASTREAM_ORIGIN + '/',
-      },
-      signal: AbortSignal.timeout(8000),
+    const r = await gotGet(url, {
+      referer: NIKASTREAM_ORIGIN + '/',
+      timeoutMs: 12000,
+      headers: { 'Origin': NIKASTREAM_ORIGIN },
     });
-    if (!res.ok) return null;
-    const j = await res.json();
+    if (!r.ok) return null;
+    const j = JSON.parse(r.body);
     return j[provider]?.episodes || null;
   } catch (e) {
     return null;
@@ -273,19 +375,15 @@ async function fetchWatch(provider, anilistId, audio, epNum) {
   const epId = `watch/${provider}/${anilistId}/${audio}/${provider}-${epNum}`;
   const url = `${ANIVEXA_API}/${epId}`;
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': UA,
-        'Accept': 'application/json',
-        'Origin': NIKASTREAM_ORIGIN,
-        'Referer': NIKASTREAM_ORIGIN + '/',
-      },
-      signal: AbortSignal.timeout(12000),
+    const r = await gotGet(url, {
+      referer: NIKASTREAM_ORIGIN + '/',
+      timeoutMs: 15000,
+      headers: { 'Origin': NIKASTREAM_ORIGIN },
     });
-    if (!res.ok) {
-      return { provider, audio, error: `HTTP ${res.status}`, streams: [] };
+    if (!r.ok) {
+      return { provider, audio, error: `HTTP ${r.status}`, streams: [] };
     }
-    const j = await res.json();
+    const j = JSON.parse(r.body);
     if (!j.streams || !Array.isArray(j.streams)) {
       return { provider, audio, error: 'no streams', streams: [] };
     }
@@ -300,21 +398,18 @@ async function fetchWatch(provider, anilistId, audio, epNum) {
 // Some CDNs reject Range requests (flixcloud.cc returns 403 "Invalid token"),
 // so we do a plain GET and just check the HTTP status.
 // Returns true if HTTP 200/206.
+// Uses got-scraping so CF-protected CDNs (kryntal.top, animeapps.top) validate.
 // ---------------------------------------------------------------------------
 async function validateStreamUrl(url, referer) {
   try {
-    const headers = { 'User-Agent': UA, 'Accept': '*/*' };
+    const extraHeaders = { 'Accept': '*/*' };
     if (referer) {
-      headers['Referer'] = referer;
-      headers['Origin'] = referer.replace(/\/$/, '');
+      extraHeaders['Referer'] = referer;
+      extraHeaders['Origin'] = referer.replace(/\/$/, '');
     }
-    const res = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: AbortSignal.timeout(8000),
-    });
+    const r = await gotGet(url, { referer, timeoutMs: 10000, headers: extraHeaders });
     // 200 = OK, 206 = partial content (Range honored) — both mean playable
-    return res.ok || res.status === 206;
+    return r.ok || r.status === 206;
   } catch (e) {
     return false;
   }
@@ -526,29 +621,59 @@ async function getStreams(tmdbId, type, season, episode) {
     watchQueries.map(q => fetchWatch(q.provider, anilistResult.anilistId, q.audio, epNum))
   );
 
-  // 5. Convert each /watch result into Stremio stream objects
-  const allStreams = [];
-  const seenUrls = new Set(); // dedupe by URL (reanime returns same URL for sub+dub)
+  // 5. Convert each /watch result into Stremio stream objects.
+  // We collect ALL raw streams first, then convert+validate them in parallel
+  // with bounded concurrency. Sequential validation was the bottleneck
+  // (11 streams × 10s timeout = 110s). With concurrency=8, total time drops
+  // to ~15s even when several CDNs time out.
+  const conversionTasks = [];
   for (const r of watchResults) {
-    if (r.error) {
-      // Silent — too noisy to log every provider error
-      continue;
-    }
-    let added = 0;
+    if (r.error) continue; // silent — too noisy to log every provider error
     for (const rawStream of r.streams) {
-      // Convert sequentially so validateStreamUrl doesn't hammer CDNs in parallel
-      const stream = await convertStream(rawStream, r.provider, r.audio, info, epNum);
-      if (!stream) continue;
-      // Dedupe by URL+audio (some providers return same stream multiple times)
-      const dedupeKey = stream.url + '|' + r.audio;
-      if (seenUrls.has(dedupeKey)) continue;
-      seenUrls.add(dedupeKey);
-      allStreams.push(stream);
-      added++;
+      conversionTasks.push({ rawStream, provider: r.provider, audio: r.audio });
     }
-    if (added > 0) {
-      console.log('[NikaStream]   ' + r.provider + ' ' + r.audio.toUpperCase() + ': ' + added + ' stream(s)');
+  }
+
+  // Bounded parallel conversion (8 at a time) — validateStreamUrl hits CDNs
+  // that may be slow. Sequential was the slow path (62s+); parallel gets us
+  // to ~10-15s for 11 streams.
+  async function mapPool(items, concurrency, worker) {
+    const out = new Array(items.length);
+    let next = 0;
+    const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (true) {
+        const i = next++;
+        if (i >= items.length) break;
+        out[i] = await worker(items[i], i);
+      }
+    });
+    await Promise.all(runners);
+    return out;
+  }
+
+  const converted = await mapPool(conversionTasks, 8, async (task) => {
+    try {
+      const s = await convertStream(task.rawStream, task.provider, task.audio, info, epNum);
+      return s ? { stream: s, provider: task.provider, audio: task.audio } : null;
+    } catch (e) {
+      return null;
     }
+  });
+
+  // Dedupe by URL+audio (some providers return same stream multiple times)
+  const allStreams = [];
+  const seenUrls = new Set();
+  const addedCounts = {};
+  for (const c of converted) {
+    if (!c || !c.stream) continue;
+    const dedupeKey = c.stream.url + '|' + c.audio;
+    if (seenUrls.has(dedupeKey)) continue;
+    seenUrls.add(dedupeKey);
+    allStreams.push(c.stream);
+    addedCounts[c.provider + ' ' + c.audio.toUpperCase()] = (addedCounts[c.provider + ' ' + c.audio.toUpperCase()] || 0) + 1;
+  }
+  for (const [k, v] of Object.entries(addedCounts)) {
+    console.log('[NikaStream]   ' + k + ': ' + v + ' stream(s)');
   }
 
   // 6. Sort streams: SUB first, then DUB; reanime/anikoto first within each audio

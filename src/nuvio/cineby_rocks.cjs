@@ -136,13 +136,20 @@ function buildEmbedUrl(server, tmdbId, type, season, episode) {
 // ---------------------------------------------------------------------------
 // Fetch the vidbolt VidRock API — returns DIRECT m3u8 stream URLs
 // This is the only server that exposes a public stream API.
-// Endpoint: /api/proxy?path=/scrape/VidRock/{type}/{id}?tmdbId=...&title=...&year=...
+//
+// As of 2024-09 the /api/proxy?path=/scrape/VidRock/{type}/{id} endpoint
+// times out (vidbolt.xyz's VidRock backend appears dead). The bundle now
+// uses /api/scraper?path=/scrape/FastVa/{type}/{id} which works and returns
+// the same source shape ({ sources: [{url, quality, type, name, language}] }).
+//
+// We try FastVa first (current, working), then VidRock as a fallback in case
+// vidbolt revives it.
 // ---------------------------------------------------------------------------
 async function fetchVidRockStreams(tmdbId, type, season, episode, info) {
   const isMovie = type !== 'tv';
   const mediaType = isMovie ? 'movie' : 'tv';
-  
-  // Build the scrape path
+
+  // Build the scrape path params (shared by both extractors)
   const params = new URLSearchParams();
   params.set('tmdbId', String(tmdbId));
   if (info.title) params.set('title', info.title);
@@ -151,43 +158,52 @@ async function fetchVidRockStreams(tmdbId, type, season, episode, info) {
     params.set('season', String(season));
     params.set('episode', String(episode));
   }
-  const scrapePath = `/scrape/VidRock/${mediaType}/${tmdbId}?${params.toString()}`;
-  const vidboltApiUrl = `https://vidbolt.xyz/api/proxy?path=${encodeURIComponent(scrapePath)}`;
 
-  try {
-    // Use got-scraping for Cloudflare bypass — vidbolt.xyz is behind CF
-    // and may challenge native fetch. Also sends browser-like headers.
-    const { gotScraping } = await import('got-scraping');
-    const res = await gotScraping.get(vidboltApiUrl, {
-      headers: {
-        'User-Agent': UA,
-        'Accept': 'application/json',
-        'Referer': 'https://cineby.rocks/',
-        'Origin': 'https://cineby.rocks',
-      },
-      timeout: { request: 15000 },
-      throwHttpErrors: false,
-      followRedirect: true,
-      http2: true,
-    });
-    if (res.statusCode !== 200) {
-      console.log('[Cineby] VidRock API HTTP ' + res.statusCode);
-      return [];
+  // Extractors to try, in priority order. FastVa is the current working one.
+  // VidRock is kept as a fallback in case vidbolt revives the old endpoint.
+  const extractors = ['FastVa', 'VidRock'];
+
+  for (const extractor of extractors) {
+    const scrapePath = `/scrape/${extractor}/${mediaType}/${tmdbId}?${params.toString()}`;
+    const vidboltApiUrl = `https://vidbolt.xyz/api/scraper?path=${encodeURIComponent(scrapePath)}`;
+
+    try {
+      // Use got-scraping for Cloudflare bypass — vidbolt.xyz is behind CF
+      const { gotScraping } = await import('got-scraping');
+      const res = await gotScraping.get(vidboltApiUrl, {
+        headers: {
+          'User-Agent': UA,
+          'Accept': 'application/json',
+          'Referer': 'https://cineby.rocks/',
+          'Origin': 'https://cineby.rocks',
+        },
+        timeout: { request: 25000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+        http2: true,
+      });
+      if (res.statusCode !== 200) {
+        console.log('[Cineby] ' + extractor + ' API HTTP ' + res.statusCode);
+        continue; // try next extractor
+      }
+      let j;
+      try { j = JSON.parse(res.body); } catch (e) {
+        console.log('[Cineby] ' + extractor + ' API: invalid JSON');
+        continue;
+      }
+      if (!j.sources || !Array.isArray(j.sources) || j.sources.length === 0) {
+        console.log('[Cineby] ' + extractor + ' API: no sources');
+        continue;
+      }
+      console.log('[Cineby] ' + extractor + ' API returned ' + j.sources.length + ' sources');
+      return j.sources;
+    } catch (e) {
+      console.log('[Cineby] ' + extractor + ' API error: ' + e.message);
+      // try next extractor
     }
-    let j;
-    try { j = JSON.parse(res.body); } catch (e) {
-      console.log('[Cineby] VidRock API: invalid JSON');
-      return [];
-    }
-    if (!j.sources || !Array.isArray(j.sources)) {
-      console.log('[Cineby] VidRock API: no sources');
-      return [];
-    }
-    return j.sources;
-  } catch (e) {
-    console.log('[Cineby] VidRock API error: ' + e.message);
-    return [];
   }
+
+  return [];
 }
 
 // ---------------------------------------------------------------------------

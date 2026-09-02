@@ -3,7 +3,6 @@
 
 import { CineWave } from './CineWave.js';
 import { AnimeFlix } from './AnimeFlix.js';
-import { AnimeWorld } from './AnimeWorld.js';
 import { AniDB } from './AniDB.js';
 import { AniNeko } from './AniNeko.js';
 import { AcerMovies } from './AcerMovies.js';
@@ -14,8 +13,6 @@ import { CineJoyAllInOne } from './CineJoyAllInOne.js';
 import { NikaStream } from './NikaStream.js';
 // cineby.rocks — movies/TV/anime via VidRock API (8 servers, up to 4K)
 import { CinebyRocks } from './CinebyRocks.js';
-// stellar.gdn — movies/TV/anime via PoW + AES-GCM API (direct HLS, up to 4K)
-import { Stellar } from './Stellar.js';
 // stellar.rip — movies/TV/anime via 19-server PoW API (direct HLS, up to 4K)
 import { StellarRip } from './StellarRip.js';
 // HDHub4u v2 — movies/TV via new5.hdhub4u.cl sitemap search (up to 4K)
@@ -32,7 +29,6 @@ import { MovieBox } from './MovieBox.js';
 import { Necro } from './Necro.js';
 import { Movix } from './Movix.js';
 import { Netlio } from './Netlio.js';
-import { NineAnime } from './NineAnime.js';
 import { PrimeShows } from './PrimeShows.js';
 import { VerHdLink } from './VerHdLink.js';
 import { VidSrcSbs } from './VidSrcSbs.js';
@@ -50,7 +46,6 @@ import { TwoDhive } from './TwoDhive.js';
 import { AniDoor } from './AniDoor.js';
 import { NowHDTime } from './NowHDTime.js';
 import { CineFreak } from './CineFreak.js';
-import { AniVault } from './AniVault.js';
 import { HDGharTV } from './HDGharTV.js';
 import { Pantyflix } from './Pantyflix.js';
 import { AnimeGG } from './AnimeGG.js';
@@ -74,7 +69,6 @@ import { UHDMovies } from './UHDMovies.js';
 // Nuvio provider sources — Batch 2 (each has its own dedicated source file)
 import { VidEasy } from './VidEasy.js';
 import { AnikotoTV } from './AnikotoTV.js';
-import { AnimeSalt } from './AnimeSalt.js';
 import { AnimeWorldIN } from './AnimeWorldIN.js';
 import { AnimesDigital } from './AnimesDigital.js';
 
@@ -99,8 +93,6 @@ export const createSources = (fetcher) => {
     // Netlio (netlio.vercel.app — HLS streams with Hindi + English audio)
     new Netlio(fetcher),
     // anime
-    new NineAnime(fetcher),
-    new AnimeWorld(fetcher),
     new AnimeFlix(fetcher),
     new AniDB(fetcher),
     new AniNeko(fetcher),
@@ -131,8 +123,6 @@ export const createSources = (fetcher) => {
     // filmeonlinehd.digital — Hindi movies/series via linksdrive → HubCloud/GDFlix
     // cinefreak.net — movies/series/anime/kdrama → generate.php → r2.dev direct MKV
     new CineFreak(fetcher),
-    // anivault.co — anime sub/dub via AniVault API (AnimeHeaven MP4 + Anikoto HLS)
-    new AniVault(fetcher),
     // hdghartv.cc — movies/series/anime with multi-audio HLS (Hindi/English/Tamil/Telugu)
     new HDGharTV(fetcher),
     // pantyflix.org — movies/series/anime via /api/streamrip/download (direct MP4/MKV)
@@ -169,8 +159,6 @@ export const createSources = (fetcher) => {
     new VidEasy(fetcher),
     // anikototv — anime-only sub+dub (megap.akirax.buzz, Referer: megaplay.buzz)
     new AnikotoTV(fetcher),
-    // animesalt — anime-only (as-cdn21.top, 720p, Referer: as-cdn21.top)
-    new AnimeSalt(fetcher),
     // animeworldindia — anime-only (play.zephyrix.top, 1080p, watchanimeworld.top)
     new AnimeWorldIN(fetcher),
     // animesdigital — anime-only (cdn.imagesskill.com, Portuguese sub/dub)
@@ -193,8 +181,6 @@ export const createSources = (fetcher) => {
     new NikaStream(fetcher),
     // cineby.rocks — movies/TV/anime via VidRock API (8 servers, direct m3u8/mp4, up to 4K)
     new CinebyRocks(fetcher),
-    // stellar.gdn — movies/TV/anime via PoW + AES-GCM (direct HLS, up to 4K)
-    new Stellar(fetcher),
     // stellar.rip — movies/TV/anime via 19-server PoW API (direct HLS, up to 4K)
     new StellarRip(fetcher),
     // HDHub4u v2 — movies/TV via new5.hdhub4u.cl sitemap search (up to 4K)

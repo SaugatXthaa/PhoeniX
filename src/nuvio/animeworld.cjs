@@ -3,30 +3,93 @@
 // ================================================================
 
 var TMDB_KEY = 'd80ba92bc7cefe3359668d30d06f3305'
-var BASE     = 'https://watchanimeworld.top'
-var PLAYER   = 'https://play.zephyrix.top'
+// Updated 2024-09: site moved from watchanimeworld.top → watchanimeworld.one.
+// The .top domain still serves the search page but its result links now point
+// to the .one domain. Using .one directly avoids the extra redirect.
+// Also: the player iframe domain moved from play.zephyrix.top → play.zephyrix.org.
+// We support BOTH TLDs in the regex below so the fix is forward-compatible.
+var BASE     = 'https://watchanimeworld.one'
+var PLAYER   = 'https://play.zephyrix.org'
 var UA       = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
+// got-scraping loader — watchanimeworld.top is behind Cloudflare which can
+// 403 native fetch() requests. got-scraping uses Chrome's TLS fingerprint
+// to bypass CF. Falls back to native fetch if got-scraping fails to load.
+var _gotScrapingMod = null
+function getGotScraping() {
+  if (_gotScrapingMod !== null) return Promise.resolve(_gotScrapingMod)
+  return import('got-scraping').then(function (mod) {
+    _gotScrapingMod = mod.gotScraping || (mod.default && mod.default.gotScraping) || mod.default
+    return _gotScrapingMod
+  }).catch(function () {
+    _gotScrapingMod = false
+    return false
+  })
+}
+
 function httpGet(url, headers) {
-  return fetch(url, {
-    headers: Object.assign({ 'User-Agent': UA }, headers || {})
-  }).then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status)
-    return r.text()
+  var hdrs = Object.assign({ 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9' }, headers || {})
+  return getGotScraping().then(function (gs) {
+    if (gs) {
+      return gs({
+        url: url,
+        method: 'GET',
+        headers: hdrs,
+        timeout: { request: 35000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+        headerGeneratorOptions: {
+          browsers: ['chrome'],
+          devices: ['desktop'],
+          operatingSystems: ['windows']
+        }
+      }).then(function (res) {
+        if (res.statusCode >= 400) throw new Error('HTTP ' + res.statusCode)
+        return res.body
+      })
+    }
+    return fetch(url, { headers: hdrs }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      return r.text()
+    })
   })
 }
 
 function httpPost(url, body, headers) {
-  return fetch(url, {
-    method: 'POST',
-    headers: Object.assign({
-      'User-Agent': UA,
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }, headers || {}),
-    body: body
-  }).then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status)
-    return r.json()
+  var hdrs = Object.assign({
+    'User-Agent': UA,
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Accept': 'application/json, text/javascript, */*; q=0.01',
+    'Accept-Language': 'en-US,en;q=0.9'
+  }, headers || {})
+  return getGotScraping().then(function (gs) {
+    if (gs) {
+      return gs({
+        url: url,
+        method: 'POST',
+        headers: hdrs,
+        body: body,
+        timeout: { request: 35000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+        headerGeneratorOptions: {
+          browsers: ['chrome'],
+          devices: ['desktop'],
+          operatingSystems: ['windows']
+        }
+      }).then(function (res) {
+        if (res.statusCode >= 400) throw new Error('HTTP ' + res.statusCode)
+        try { return JSON.parse(res.body) } catch (e) { throw new Error('JSON parse failed: ' + e.message) }
+      })
+    }
+    return fetch(url, {
+      method: 'POST',
+      headers: hdrs,
+      body: body
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      return r.json()
+    })
   })
 }
 
@@ -64,7 +127,7 @@ function searchSite(title, mediaType) {
     return httpGet(url, { 'Referer': BASE + '/' })
       .then(function(html) {
         var results = []
-        var re = /href="(https:\/\/watchanimeworld.top\/(series|movies)\/([^\/\"]+)\/)"/g
+        var re = /href="(https:\/\/watchanimeworld\.(?:top|one)\/(series|movies)\/([^\/\"]+)\/)"/g
         var m
         while ((m = re.exec(html)) !== null) {
           var link = m[1], type = m[2], slug = m[3]
@@ -95,7 +158,7 @@ function getEpisodeUrl(seriesUrl, season, episode) {
       return httpGet(ajaxUrl, { 'Referer': seriesUrl })
         .then(function(epHtml) {
           var suffix = season + 'x' + episode + '/'
-          var re = /href="(https:\/\/watchanimeworld.top\/episode\/([^"]+))"/g
+          var re = /href="(https:\/\/watchanimeworld\.(?:top|one)\/episode\/([^"]+))"/g
           var m
           while ((m = re.exec(epHtml)) !== null) {
             if (m[1].indexOf(suffix) !== -1) return m[1]
@@ -108,7 +171,7 @@ function getEpisodeUrl(seriesUrl, season, episode) {
 function getStreamFromPage(pageUrl) {
   return httpGet(pageUrl, { 'Referer': BASE + '/' })
     .then(function(html) {
-      var iframeM = html.match(/(?:src|data-src)="(https:\/\/play.zephyrix.top\/video\/([a-f0-9]+))"/)
+      var iframeM = html.match(/(?:src|data-src)="(https:\/\/play\.zephyrix\.(?:top|org)\/video\/([a-f0-9]+))"/)
       if (!iframeM) return null
 
       var videoHash = iframeM[2]
@@ -121,7 +184,10 @@ function getStreamFromPage(pageUrl) {
           'X-Requested-With': 'XMLHttpRequest'
         }
       ).then(function(data) {
-        var m3u8 = data.videoSource || data.securedLink
+        // Prefer securedLink (master.m3u8?md5=...&expires=...) over videoSource
+        // (master.txt). The .txt endpoint returns "security error" unless
+        // accessed with the matching md5+expires signature.
+        var m3u8 = data.securedLink || data.videoSource
         if (!m3u8) return null
 
         var contentHashM = m3u8.match(/\/cdn\/hls\/([a-f0-9]+)\//)
@@ -137,8 +203,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
   return new Promise(function(resolve) {
     var tmdbUrl = 'https://api.themoviedb.org/3/' + (mediaType === 'movie' ? 'movie' : 'tv') + '/' + tmdbId + '?api_key=' + TMDB_KEY
 
-    fetch(tmdbUrl)
-      .then(function(r) { return r.json() })
+    httpGet(tmdbUrl)
+      .then(function(body) { return JSON.parse(body) })
       .then(function(data) {
         var title = data.title || data.name
         return searchSite(title, mediaType)

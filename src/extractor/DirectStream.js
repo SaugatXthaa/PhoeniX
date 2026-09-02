@@ -60,6 +60,8 @@ const DIRECT_CDN_HOSTS = [
   // GDrive — direct MKV/MP4 from lh3.googleusercontent.com and video-downloads.googleusercontent.com
   'lh3.googleusercontent.com',
   'video-downloads.googleusercontent.com',
+  // CinebyRocks — HLS proxy from scraper.vidbolt.xyz
+  'scraper.vidbolt.xyz',
   // AniPriv8 — handled by dedicated AniPriv8 extractor (needs proxy for m3u8 rewriting)
 ];
 

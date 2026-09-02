@@ -15,13 +15,51 @@ var DEFAULT_HEADERS = {
 };
 
 // ===== FETCH HELPERS =====
+// anineko.to is behind Cloudflare and times out / returns 522 with native fetch().
+// got-scraping uses Chrome's TLS fingerprint + browser-like headers to bypass CF.
+// We cache the got-scraping import so subsequent calls are fast.
+
+var _gotScrapingMod = null;
+function getGotScraping() {
+  if (_gotScrapingMod !== null) return Promise.resolve(_gotScrapingMod);
+  return import("got-scraping").then(function (mod) {
+    _gotScrapingMod = mod.gotScraping || (mod.default && mod.default.gotScraping) || mod.default;
+    return _gotScrapingMod;
+  }).catch(function () {
+    _gotScrapingMod = false;
+    return false;
+  });
+}
 
 function fetchText(url, options) {
-  return fetch(url, Object.assign({ headers: DEFAULT_HEADERS }, options || {}))
-    .then(function(res) {
+  options = options || {};
+  var headers = Object.assign({}, DEFAULT_HEADERS, options.headers || {});
+  return getGotScraping().then(function (gs) {
+    if (gs) {
+      return gs({
+        url: url,
+        method: options.method || "GET",
+        headers: headers,
+        body: options.body,
+        timeout: { request: options.timeout || 35000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+        headerGeneratorOptions: {
+          browsers: ["chrome"],
+          devices: ["desktop"],
+          operatingSystems: ["windows"]
+        }
+      }).then(function (res) {
+        if (res.statusCode >= 400) throw new Error("HTTP " + res.statusCode);
+        return res.body;
+      });
+    }
+    // Fallback: native fetch
+    return fetch(url, Object.assign({ headers: headers }, options)).then(function (res) {
       if (!res.ok) throw new Error("HTTP " + res.status);
       return res.text();
     });
+  });
 }
 
 // ===== TMDB =====
@@ -31,8 +69,9 @@ function getTMDBTitle(tmdbId, mediaType) {
   var url = "https://api.themoviedb.org/3/" + type + "/" + tmdbId +
             "?api_key=" + TMDB_KEY;
 
-  return fetch(url)
-    .then(function(r) { return r.json(); })
+  // Use got-scraping for consistency — some networks block direct TMDB fetches.
+  return fetchText(url, { timeout: 10000 })
+    .then(function(body) { return JSON.parse(body); })
     .then(function(data) {
       return {
         title: data.name || data.title || "",

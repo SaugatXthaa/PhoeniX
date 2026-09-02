@@ -74,8 +74,14 @@ const STELLAR_RIP_ORIGIN = 'https://stellar.rip'; // fallback domain
 const BACKEND_URL = 'https://api.stellar.gdn';
 const TMDB_API_KEY = '8476a7ab80ad76f0936744df0430e67c';
 
-// AES-GCM encryption key secret (from stellar.gdn JS bundle)
-const AES_KEY_SECRET = '+Llfj2dFC+cgFDwWSo4Yyd6ZtZmgXC7nIjaNUupYq4PCVQelINhtKiohtmm0dYUI:';
+// AES-GCM encryption key secret (from stellar.gdn JS bundle).
+// Updated 2024-09 — the previous key ("+Llfj2dFC...YUI:") expired and the
+// backend started rejecting requests with "Invalid or expired encryption".
+// Pulled from /_next/static/chunks/43z1m9c5fr_0f.js — the format is
+// `${secret}:${date}` SHA-256 hashed to derive the AES-256 key.
+// If this expires again, search the stellar.gdn JS bundle for
+// `crypto.subtle.digest("SHA-256"` and grab the preceding string literal.
+const AES_KEY_SECRET = 'KT1b67W1DU2ebpGxQkMiFVyz1iaP/PeMgv/xJQDdDoU=:';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
@@ -119,19 +125,129 @@ function encryptPayload(data) {
 }
 
 // ---------------------------------------------------------------------------
-// Get a fresh challenge from the API
+// got-scraping loader — stellar.gdn/api.stellar.gdn are behind Cloudflare
+// which can challenge native fetch() with 403. got-scraping uses Chrome's
+// TLS fingerprint to bypass CF. Falls back to native fetch if unavailable.
 // ---------------------------------------------------------------------------
-async function getChallenge() {
-  const res = await fetch(BACKEND_URL + '/api/challenge', {
+var _gotScrapingMod = null;
+function getGotScraping() {
+  if (_gotScrapingMod !== null) return Promise.resolve(_gotScrapingMod);
+  return import('got-scraping').then(function (mod) {
+    _gotScrapingMod = mod.gotScraping || (mod.default && mod.default.gotScraping) || mod.default;
+    return _gotScrapingMod;
+  }).catch(function () {
+    _gotScrapingMod = false;
+    return false;
+  });
+}
+
+// Wrapper: GET JSON via got-scraping (with native fetch fallback).
+async function gotGetJson(url, referer, timeoutMs) {
+  const gs = await getGotScraping();
+  if (gs) {
+    const res = await gs({
+      url: url,
+      method: 'GET',
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': STELLAR_ORIGIN,
+        'Referer': referer || (STELLAR_ORIGIN + '/'),
+      },
+      timeout: { request: timeoutMs || 15000 },
+      throwHttpErrors: false,
+      followRedirect: true,
+      headerGeneratorOptions: {
+        browsers: ['chrome'],
+        devices: ['desktop'],
+        operatingSystems: ['windows'],
+      },
+    });
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const err = new Error('HTTP ' + res.statusCode + ' for ' + url);
+      err.status = res.statusCode;
+      err.body = res.body;
+      throw err;
+    }
+    try { return JSON.parse(res.body); } catch (e) {
+      throw new Error('Invalid JSON from ' + url + ': ' + String(res.body).slice(0, 200));
+    }
+  }
+  // Fallback: native fetch
+  const r = await fetch(url, {
     headers: {
       'User-Agent': UA,
+      'Accept': 'application/json',
       'Origin': STELLAR_ORIGIN,
-      'Referer': STELLAR_ORIGIN + '/',
+      'Referer': referer || (STELLAR_ORIGIN + '/'),
     },
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(timeoutMs || 15000),
   });
-  if (!res.ok) throw new Error(`Challenge HTTP ${res.status}`);
-  return res.json();
+  if (!r.ok) {
+    const err = new Error('HTTP ' + r.status + ' for ' + url);
+    err.status = r.status;
+    throw err;
+  }
+  return r.json();
+}
+
+// Wrapper: POST JSON via got-scraping (with native fetch fallback).
+async function gotPostJson(url, data, referer, timeoutMs) {
+  const bodyStr = JSON.stringify(data);
+  const gs = await getGotScraping();
+  if (gs) {
+    const res = await gs({
+      url: url,
+      method: 'POST',
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Content-Type': 'application/json',
+        'Origin': STELLAR_ORIGIN,
+        'Referer': referer || (STELLAR_ORIGIN + '/'),
+      },
+      body: bodyStr,
+      timeout: { request: timeoutMs || 15000 },
+      throwHttpErrors: false,
+      followRedirect: true,
+      headerGeneratorOptions: {
+        browsers: ['chrome'],
+        devices: ['desktop'],
+        operatingSystems: ['windows'],
+      },
+    });
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const err = new Error('HTTP ' + res.statusCode + ' for ' + url + ': ' + String(res.body).slice(0, 200));
+      err.status = res.statusCode;
+      err.body = res.body;
+      throw err;
+    }
+    try { return JSON.parse(res.body); } catch (e) {
+      throw new Error('Invalid JSON from ' + url + ': ' + String(res.body).slice(0, 200));
+    }
+  }
+  // Fallback: native fetch
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': UA,
+      'Accept': 'application/json',
+      'Origin': STELLAR_ORIGIN,
+      'Referer': referer || (STELLAR_ORIGIN + '/'),
+    },
+    body: bodyStr,
+    signal: AbortSignal.timeout(timeoutMs || 15000),
+  });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => '');
+    const err = new Error('HTTP ' + r.status + ' for ' + url + ': ' + txt.slice(0, 200));
+    err.status = r.status;
+    throw err;
+  }
+  return r.json();
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +256,7 @@ async function getChallenge() {
 // ---------------------------------------------------------------------------
 async function resolveStreamUrl(mediaType, id, season, episode, source) {
   // 1. Get challenge
-  const challengeResp = await getChallenge();
+  const challengeResp = await gotGetJson(BACKEND_URL + '/api/challenge', STELLAR_ORIGIN + '/', 15000);
 
   // 2. Solve PoW
   const nonce = solvePoW(challengeResp.challenge, challengeResp.difficulty);
@@ -160,24 +276,7 @@ async function resolveStreamUrl(mediaType, id, season, episode, source) {
   const enc = encryptPayload(payload);
 
   // 5. POST to /api/resolve
-  const res = await fetch(BACKEND_URL + '/api/resolve', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': UA,
-      'Origin': STELLAR_ORIGIN,
-      'Referer': STELLAR_ORIGIN + '/',
-    },
-    body: JSON.stringify(enc),
-    signal: AbortSignal.timeout(15000),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Resolve HTTP ${res.status}: ${errText.slice(0, 200)}`);
-  }
-
-  return res.json();
+  return await gotPostJson(BACKEND_URL + '/api/resolve', enc, STELLAR_ORIGIN + '/', 20000);
 }
 
 // ---------------------------------------------------------------------------
@@ -191,7 +290,7 @@ async function resolveStreamUrl(mediaType, id, season, episode, source) {
 // ---------------------------------------------------------------------------
 async function fetchDownloadFiles(mediaType, id, season, episode) {
   try {
-    const challengeResp = await getChallenge();
+    const challengeResp = await gotGetJson(BACKEND_URL + '/api/challenge', STELLAR_ORIGIN + '/', 15000);
     const nonce = solvePoW(challengeResp.challenge, challengeResp.difficulty);
 
     // /api/download uses "type" instead of "mediaType"
@@ -209,24 +308,7 @@ async function fetchDownloadFiles(mediaType, id, season, episode) {
 
     const enc = encryptPayload(payload);
 
-    const res = await fetch(BACKEND_URL + '/api/download', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': UA,
-        'Origin': STELLAR_ORIGIN,
-        'Referer': STELLAR_ORIGIN + '/',
-      },
-      body: JSON.stringify(enc),
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!res.ok) {
-      console.log('[Stellar] Download API HTTP ' + res.status);
-      return [];
-    }
-
-    const data = await res.json();
+    const data = await gotPostJson(BACKEND_URL + '/api/download', enc, STELLAR_ORIGIN + '/', 20000);
     if (!data.files || !Array.isArray(data.files)) return [];
     return data.files;
   } catch (e) {
@@ -239,9 +321,25 @@ async function fetchDownloadFiles(mediaType, id, season, episode) {
 // Quick-check a download URL — returns HTTP status (not full validation)
 // Used to sort streams: playable ones first, quota-limited ones last
 // Returns: { playable: boolean, status: number }
+// Uses got-scraping for CF-protected CDNs (cdn.reallyfast.ch etc.).
 // ---------------------------------------------------------------------------
 async function quickCheckUrl(url) {
   try {
+    const gs = await getGotScraping();
+    if (gs) {
+      const res = await gs({
+        url: url,
+        method: 'GET',
+        headers: { 'User-Agent': UA, Range: 'bytes=0-3', Accept: '*/*' },
+        timeout: { request: 6000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+      });
+      if (res.statusCode === 200 || res.statusCode === 206) {
+        return { playable: true, status: res.statusCode };
+      }
+      return { playable: false, status: res.statusCode };
+    }
     const res = await fetch(url, {
       headers: { 'User-Agent': UA, Range: 'bytes=0-3' },
       signal: AbortSignal.timeout(5000),
@@ -258,15 +356,31 @@ async function quickCheckUrl(url) {
 // ---------------------------------------------------------------------------
 // Fetch the master playlist and extract resolution info
 // Returns: { maxResolution, maxQuality, variantCount, has4K }
+// Uses got-scraping so CF-protected stream CDNs (cdn.reallyfast.ch) work.
 // ---------------------------------------------------------------------------
 async function probeMasterPlaylist(url) {
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': UA },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return null;
-    const text = await res.text();
+    let text;
+    const gs = await getGotScraping();
+    if (gs) {
+      const res = await gs({
+        url: url,
+        method: 'GET',
+        headers: { 'User-Agent': UA, Accept: '*/*' },
+        timeout: { request: 12000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+      });
+      if (res.statusCode < 200 || res.statusCode >= 300) return null;
+      text = res.body;
+    } else {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': UA },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) return null;
+      text = await res.text();
+    }
 
     // Find all RESOLUTION= variants
     const variants = [];
@@ -326,12 +440,34 @@ function mapResolutionToQuality(w, h) {
 async function getTMDBInfo(tmdbId, type) {
   const url = `https://api.themoviedb.org/3/${type === 'tv' ? 'tv' : 'movie'}/${tmdbId}` +
     `?api_key=${TMDB_API_KEY}&language=en-US`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': UA, Accept: 'application/json' },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) throw new Error(`TMDB HTTP ${res.status}`);
-  const j = await res.json();
+
+  // Try got-scraping first (Chrome TLS fingerprint), then fall back to native fetch
+  let body = null;
+  try {
+    const gs = await getGotScraping();
+    if (gs) {
+      const res = await gs({
+        url: url,
+        method: 'GET',
+        headers: { 'User-Agent': UA, Accept: 'application/json' },
+        timeout: { request: 10000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+      });
+      if (res.statusCode === 200) body = res.body;
+    }
+  } catch (e) { /* fall through to native fetch */ }
+
+  if (!body) {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) throw new Error(`TMDB HTTP ${res.status}`);
+    body = await res.text();
+  }
+
+  const j = JSON.parse(body);
   return {
     title: j.name || j.title || 'Unknown',
     year: (j.first_air_date || j.release_date || '').slice(0, 4),
@@ -594,7 +730,6 @@ async function getIframeFallbacks(tmdbId, type, season, episode, info) {
 module.exports = {
   getStreams: getStreams,
   getTMDBInfo: getTMDBInfo,
-  getChallenge: getChallenge,
   solvePoW: solvePoW,
   encryptPayload: encryptPayload,
   resolveStreamUrl: resolveStreamUrl,

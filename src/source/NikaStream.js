@@ -149,7 +149,7 @@ export class NikaStream extends Source {
     try {
       streams = await Promise.race([
         mod.getStreams(String(tmdbId.id), mediaType, tmdbId.season || null, tmdbId.episode || null),
-        new Promise(r => setTimeout(() => r(null), 40000)),
+        new Promise(r => setTimeout(() => r(null), 70000)),
       ]);
     } catch (e) {
       console.error(`[nikastream] getStreams error: ${e?.message || e}`);

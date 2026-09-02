@@ -402,6 +402,12 @@ export class StreamResolver {
       'videasy',
       // NikaStream — Anivexa API takes 20-30s; must start early
       'nikastream',
+      // AniKage — prox.anicore.tv API takes 15-25s; must start early
+      'anikage',
+      // AniNeko — vivibebe.site API takes 15-25s; must start early
+      'anineko',
+      // AnimeWorldIN — play.zephyrix.top API takes 15-25s; must start early
+      'animeworldindia',
     ]);
     const sortedSources = [...sources].sort((a, b) => {
       const aPriority = PRIORITY_SOURCE_IDS.has(a.id) ? 0 : 1;
