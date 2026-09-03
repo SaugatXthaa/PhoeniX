@@ -72,6 +72,10 @@ import { VidEasy } from './VidEasy.js';
 import { AnikotoTV } from './AnikotoTV.js';
 import { AnimeWorldIN } from './AnimeWorldIN.js';
 import { AnimesDigital } from './AnimesDigital.js';
+// itachi.tv — anime-only sub+dub via VidHawk REST API + MegaPlay fallback
+//   VidHawk: 3 servers × 2 audio = 6 HLS streams + English VTT subtitles
+//   MegaPlay: 2 fallback URLs (sub + dub) — resolved by Megaplay extractor
+import { Itachi } from './Itachi.js';
 
 export { Source } from './Source.js';
 
@@ -162,6 +166,8 @@ export const createSources = (fetcher) => {
     new AnimeWorldIN(fetcher),
     // animesdigital — anime-only (cdn.imagesskill.com, Portuguese sub/dub)
     new AnimesDigital(fetcher),
+    // itachi.tv — anime-only sub+dub via VidHawk REST API + MegaPlay fallback
+    new Itachi(fetcher),
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)

@@ -29,6 +29,8 @@ import { Netlio } from './Netlio.js';
 import { AnimeDirect } from './AnimeDirect.js';
 // Megaplay — megaplay.buzz / vidtube.site embed pages (Anikoto, StreamXTV anime)
 import { Megaplay } from './Megaplay.js';
+// VidHawk — vidhawk.buzz embed pages (Itachi source) — REST API → HLS + subs
+import { VidHawk } from './VidHawk.js';
 // Pantyflix — passthrough for direct MP4/MKV URLs (must come before Netlio
 // to prevent Netlio from claiming *.workers.dev URLs from Pantyflix source)
 import { Pantyflix as PantyflixExtractor } from './Pantyflix.js';
@@ -70,6 +72,8 @@ export const createExtractors = (fetcher, logger) => {
     new AnimeDirect(fetcher, logger),
     // Megaplay — megaplay.buzz / vidtube.site embed pages (Anikoto, StreamXTV anime)
     new Megaplay(fetcher, logger),
+    // VidHawk — vidhawk.buzz embed pages (Itachi source) — REST API → HLS + subs
+    new VidHawk(fetcher, logger),
     // HubCloud extractors (must come first — handles hubcloud/hubdrive/hubcdn)
     hubExtractor,
     new HBLinks(fetcher, logger, hubExtractor),

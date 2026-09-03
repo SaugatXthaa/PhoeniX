@@ -62,6 +62,8 @@ const DIRECT_CDN_HOSTS = [
   'video-downloads.googleusercontent.com',
   // CinebyRocks — HLS proxy from scraper.vidbolt.xyz
   'scraper.vidbolt.xyz',
+  // VidHawk — direct HLS from edge.vidhawk.buzz (public CDN, no Referer needed)
+  'edge.vidhawk.buzz',
   // AniPriv8 — handled by dedicated AniPriv8 extractor (needs proxy for m3u8 rewriting)
 ];
 

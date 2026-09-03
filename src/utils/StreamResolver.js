@@ -408,6 +408,8 @@ export class StreamResolver {
       'anineko',
       // AnimeWorldIN — play.zephyrix.top API takes 15-25s; must start early
       'animeworldindia',
+      // Itachi — VidHawk API (3 servers × resolve + play) takes 10-20s
+      'itachi',
     ]);
     const sortedSources = [...sources].sort((a, b) => {
       const aPriority = PRIORITY_SOURCE_IDS.has(a.id) ? 0 : 1;
