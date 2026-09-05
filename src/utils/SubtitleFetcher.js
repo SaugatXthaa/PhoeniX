@@ -35,7 +35,12 @@ const OPENSUBS_XMLRPC_URL = 'https://api.opensubtitles.org/xml-rpc';
 const USER_AGENT = 'PhoeniXStremio v1.0';
 
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
-const MAX_SUBTITLES = 8; // Per movie/episode
+// Max subtitles per movie/episode. Increased from 8 → 15 to provide broader
+// multi-language coverage. Stremio's UI handles 15+ subtitle tracks fine —
+// users get more language choices (English, Spanish, French, German, Italian,
+// Portuguese, Russian, Dutch, Polish, Turkish, Arabic, Hindi, Chinese,
+// Japanese, Korean) instead of being capped at 8.
+const MAX_SUBTITLES = 15;
 const FETCH_TIMEOUT_MS = 9000;
 const TOKEN_TTL = 12 * 60 * 1000; // 12 min (server-side tokens last 15 min)
 
