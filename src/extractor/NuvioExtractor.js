@@ -83,6 +83,20 @@ export class NuvioExtractor extends Extractor {
     const hls = isHlsUrl(url);
     const videoFile = isVideoFileUrl(url);
 
+    // Google Drive hosts don't support HTTP Range — route through /range-proxy
+    // for Range translation so Stremio can seek. This applies to UHDMovies
+    // (googleusercontent) and MoviesDrive (lh3.googleusercontent).
+    // /range-proxy does NOT support Referer — Google URLs don't need Referer.
+    if (url.hostname.includes('googleusercontent.com')) {
+      const proxyUrl = new URL('/range-proxy', ctx.hostUrl);
+      proxyUrl.searchParams.set('url', url.href);
+      return [{
+        url: proxyUrl,
+        format: Format.mp4,
+        meta: { ...meta },
+      }];
+    }
+
     // Routing strategy (same as HiAnime/AnimeKai pattern):
     //   - HLS + Referer → /proxy (proxy rewrites m3u8 URLs + sends Referer)
     //   - Ambiguous URL + Referer → /proxy with forceHls=1

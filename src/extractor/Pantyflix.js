@@ -150,6 +150,18 @@ export class Pantyflix extends Extractor {
       if (resolvedUrl) {
         try {
           const directUrl = new URL(resolvedUrl);
+          // Google's video-downloads.googleusercontent.com doesn't support
+          // HTTP Range requests — route through /range-proxy for Range
+          // translation so Stremio can seek in the video.
+          if (directUrl.hostname.includes('googleusercontent.com')) {
+            const proxyUrl = new URL('/range-proxy', ctx.hostUrl);
+            proxyUrl.searchParams.set('url', directUrl.href);
+            return [{
+              url: proxyUrl,
+              format: Format.mp4,
+              meta: { ...meta },
+            }];
+          }
           // Check if the resolved URL needs proxy
           if (NEEDS_PROXY.test(directUrl.hostname)) {
             const proxyUrl = new URL('/proxy', ctx.hostUrl);
@@ -183,6 +195,18 @@ export class Pantyflix extends Extractor {
     }
 
     // Non-fastdlserver URLs (googleusercontent, workers.dev, hakunaymatata, etc.)
+    // Google's video-downloads.googleusercontent.com doesn't support Range —
+    // route through /range-proxy for Range translation (seekable playback).
+    if (url.hostname.includes('googleusercontent.com')) {
+      const proxyUrl = new URL('/range-proxy', ctx.hostUrl);
+      proxyUrl.searchParams.set('url', url.href);
+      return [{
+        url: proxyUrl,
+        format: Format.mp4,
+        meta: { ...meta },
+      }];
+    }
+
     // Only proxy URLs that are known to fail with direct access.
     if (NEEDS_PROXY.test(url.hostname)) {
       const proxyUrl = new URL('/proxy', ctx.hostUrl);

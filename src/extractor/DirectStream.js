@@ -57,14 +57,25 @@ const DIRECT_CDN_HOSTS = [
   'nhdapi.com',
   // AnimeSuge/NikaStream — direct HLS from cdn.kryntal.top (needs Referer via proxyHeaders)
   'cdn.kryntal.top',
-  // GDrive — direct MKV/MP4 from lh3.googleusercontent.com and video-downloads.googleusercontent.com
-  'lh3.googleusercontent.com',
-  'video-downloads.googleusercontent.com',
   // CinebyRocks — HLS proxy from scraper.vidbolt.xyz
   'scraper.vidbolt.xyz',
   // VidHawk — direct HLS from edge.vidhawk.buzz (public CDN, no Referer needed)
   'edge.vidhawk.buzz',
   // AniPriv8 — handled by dedicated AniPriv8 extractor (needs proxy for m3u8 rewriting)
+  // NOTE: googleusercontent.com hosts REMOVED from this list — they don't support
+  // HTTP Range requests (Google returns 200 + full file, ignoring Range headers).
+  // Without Range support, Stremio can't seek in the video. They're now handled
+  // by the DirectStream extractor which routes them through /range-proxy for
+  // Range translation (see extractInternal below).
+];
+
+// Google Drive hosts that DON'T support HTTP Range requests.
+// Google's video-downloads.googleusercontent.com returns HTTP 200 with the
+// FULL file regardless of any Range header — this breaks video seeking.
+// Route these through /range-proxy for Range translation.
+const NO_RANGE_HOSTS = [
+  'video-downloads.googleusercontent.com',
+  'lh3.googleusercontent.com',
 ];
 
 // Host suffixes (for wildcard matching like *.r2.dev)
@@ -84,6 +95,12 @@ function isDirectCdnHost(hostname) {
   return false;
 }
 
+// Check if host is a Google Drive CDN that doesn't support Range requests
+function isNoRangeHost(hostname) {
+  return NO_RANGE_HOSTS.includes(hostname) ||
+         NO_RANGE_HOSTS.some(h => hostname.endsWith('.' + h));
+}
+
 function inferFormat(url) {
   const path = url.pathname.toLowerCase();
   if (path.endsWith('.m3u8') || path.includes('.m3u8')) return Format.hls;
@@ -101,10 +118,37 @@ export class DirectStream extends Extractor {
   }
 
   supports(_ctx, url) {
-    return isDirectCdnHost(url.hostname);
+    // Claim both direct CDN hosts AND Google's Range-unsupported hosts
+    return isDirectCdnHost(url.hostname) || isNoRangeHost(url.hostname);
   }
 
-  async extractInternal(_ctx, url, meta) {
+  async extractInternal(ctx, url, meta) {
+    // Google Drive hosts (video-downloads.googleusercontent.com, lh3.googleusercontent.com)
+    // don't support HTTP Range requests — Google returns 200 + full file regardless
+    // of Range header. This breaks video seeking in Stremio.
+    // Route through /range-proxy which does Range translation:
+    //   1. Fetches full file from Google (stream)
+    //   2. Slices the requested byte range
+    //   3. Returns 206 + Content-Range + Accept-Ranges so Stremio can seek
+    if (isNoRangeHost(url.hostname)) {
+      const proxyUrl = new URL('/range-proxy', ctx.hostUrl);
+      proxyUrl.searchParams.set('url', url.href);
+      // Pass through requestHeaders (User-Agent, Referer) if set by source
+      if (meta?.requestHeaders) {
+        // The /range-proxy doesn't accept a referer param, but it sets a
+        // browser UA automatically. requestHeaders are mainly for Referer
+        // which Google URLs don't need.
+      }
+      return [{
+        url: proxyUrl,
+        format: inferFormat(url),
+        label: this.label,
+        meta: { ...meta },
+        // Pass through requestHeaders from source → StreamResolver sets proxyHeaders
+        ...(meta?.requestHeaders && { requestHeaders: meta.requestHeaders }),
+      }];
+    }
+
     // Return direct URL — these CDNs support direct access with Range headers.
     // Proxying causes "network connection was lost" on large file downloads
     // because Render kills long-running proxy connections.

@@ -535,6 +535,248 @@ app.get('/proxy', async (req, res) => {
   }
 });
 
+// ============================================================================
+// /range-proxy — Range-translation proxy for CDNs that IGNORE Range headers
+// (e.g. video-downloads.googleusercontent.com, lh3.googleusercontent.com).
+//
+// Google's video-downloads.googleusercontent.com returns HTTP 200 with the
+// FULL file regardless of any Range header sent. This breaks video seeking
+// in Stremio because the player needs 206 Partial Content + Content-Range
+// to scrub to a specific timestamp.
+//
+// This endpoint:
+//   1. Receives Stremio's Range header (e.g. bytes=5000000-10000000)
+//   2. Fetches the FULL file from upstream as a stream (no Range sent upstream)
+//   3. Uses a byte-counting Transform stream to:
+//      - Drop bytes 0 to Range.start-1
+//      - Pipe bytes Range.start to Range.end (or EOF) to Stremio
+//   4. Returns 206 Partial Content + Content-Range + Accept-Ranges: bytes
+//      + correct Content-Length so Stremio can seek properly.
+//
+// When no Range is sent, pipes the whole file with 200 + Accept-Ranges: bytes
+// so Stremio knows it CAN seek on the next request.
+//
+// Performance note: seeking to a late position (e.g. byte 5GB of a 6GB file)
+// requires downloading 5GB from upstream first. This is slow but WORKS —
+// better than no seeking at all. Most playback starts from byte 0 (fast).
+// ============================================================================
+app.get('/range-proxy', async (req, res) => {
+  const rawUrl = req.query.url;
+  if (!rawUrl) {
+    return res.status(400).send('Missing url parameter');
+  }
+
+  let targetUrl;
+  try {
+    targetUrl = new URL(rawUrl);
+  } catch {
+    return res.status(400).send('Invalid url parameter');
+  }
+
+  logger.log(`[${ADDON_NAME}] range-proxy ${targetUrl.hostname}${targetUrl.pathname.slice(0, 50)}`);
+
+  try {
+    const { gotScraping } = await import('got-scraping');
+    const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+    // Step 1: HEAD request to get Content-Length + Content-Type
+    // Google returns 200 + full Content-Length for HEAD (even with Range).
+    let totalSize = 0;
+    let contentType = 'application/octet-stream';
+    let contentDisposition = null;
+    try {
+      const headRes = await gotScraping.head(targetUrl.href, {
+        headers: { 'User-Agent': UA, 'Accept': '*/*' },
+        timeout: { request: 10000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+        http2: true,
+      });
+      if (headRes.statusCode < 400) {
+        totalSize = parseInt(headRes.headers['content-length'] || '0', 10);
+        contentType = headRes.headers['content-type'] || contentType;
+        contentDisposition = headRes.headers['content-disposition'];
+      }
+    } catch (e) {
+      logger.error(`[${ADDON_NAME}] range-proxy HEAD failed: ${e.message}`);
+    }
+
+    if (!totalSize) {
+      // Can't determine size — fall back to direct stream without Range translation
+      logger.log(`[${ADDON_NAME}] range-proxy: no Content-Length, streaming direct`);
+      const stream = gotScraping.stream(targetUrl.href, {
+        headers: { 'User-Agent': UA, 'Accept': '*/*' },
+        timeout: { request: 60000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+        isStream: true,
+        http2: false,
+      });
+      res.status(200);
+      res.setHeader('Content-Type', contentType);
+      if (contentDisposition) res.setHeader('Content-Disposition', contentDisposition);
+      stream.pipe(res);
+      stream.on('error', () => { try { res.end(); } catch {} });
+      return;
+    }
+
+    // Step 2: Parse Range header from Stremio
+    const rangeHeader = req.headers.range;
+    let rangeStart = 0;
+    let rangeEnd = totalSize - 1;
+    let hasRange = false;
+
+    if (rangeHeader) {
+      const m = String(rangeHeader).match(/bytes=(\d*)-(\d*)/);
+      if (m) {
+        hasRange = true;
+        if (m[1]) rangeStart = parseInt(m[1], 10);
+        if (m[2]) rangeEnd = parseInt(m[2], 10);
+        // If start is empty but end is set: suffix range (last N bytes)
+        if (!m[1] && m[2]) {
+          rangeStart = Math.max(0, totalSize - parseInt(m[2], 10));
+          rangeEnd = totalSize - 1;
+        }
+        // Clamp to file bounds
+        if (rangeStart >= totalSize) {
+          res.status(416);
+          res.setHeader('Content-Range', `bytes */${totalSize}`);
+          return res.end();
+        }
+        if (rangeEnd >= totalSize) rangeEnd = totalSize - 1;
+      }
+    }
+
+    const contentLength = rangeEnd - rangeStart + 1;
+
+    // Step 3: Fetch the FULL file from upstream (no Range — Google ignores it anyway)
+    const upstreamStream = gotScraping.stream(targetUrl.href, {
+      headers: { 'User-Agent': UA, 'Accept': '*/*' },
+      timeout: { request: 60000 },
+      throwHttpErrors: false,
+      followRedirect: true,
+      isStream: true,
+      http2: false,  // HTTP/1.1 for better streaming compatibility
+    });
+
+    // Wait for upstream response headers
+    const upstreamResp = await new Promise((resolve, reject) => {
+      upstreamStream.on('response', (resp) => resolve(resp));
+      upstreamStream.on('error', (err) => reject(err));
+      setTimeout(() => reject(new Error('range-proxy upstream timeout')), 15000);
+    });
+
+    if (upstreamResp.statusCode >= 400) {
+      logger.error(`[${ADDON_NAME}] range-proxy upstream ${upstreamResp.statusCode}`);
+      upstreamStream.destroy();
+      return res.status(upstreamResp.statusCode).send(`Upstream error: ${upstreamResp.statusCode}`);
+    }
+
+    // Use the upstream Content-Type if our HEAD didn't get it
+    if (upstreamResp.headers['content-type']) {
+      contentType = upstreamResp.headers['content-type'];
+    }
+
+    // Step 4: Set response headers
+    if (hasRange) {
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${rangeStart}-${rangeEnd}/${totalSize}`);
+    } else {
+      res.status(200);
+    }
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Length', contentLength);
+    if (contentDisposition) res.setHeader('Content-Disposition', contentDisposition);
+
+    // Step 5: Byte-range translation using a Transform stream
+    // - Skip bytes 0 to rangeStart-1
+    // - Pipe bytes rangeStart to rangeEnd
+    // - Stop after contentLength bytes piped
+    let bytesSkipped = 0;
+    let bytesPiped = 0;
+    let aborted = false;
+
+    const { Transform } = await import('stream');
+    const rangeTransform = new Transform({
+      transform(chunk, encoding, callback) {
+        if (aborted) return callback();
+
+        let offset = 0;
+        let chunkLen = chunk.length;
+
+        // Skip bytes before rangeStart
+        if (bytesSkipped < rangeStart) {
+          const need = rangeStart - bytesSkipped;
+          if (chunkLen <= need) {
+            // Entire chunk is before rangeStart — skip it all
+            bytesSkipped += chunkLen;
+            return callback();
+          }
+          // Skip the first 'need' bytes, process the rest
+          offset = need;
+          chunkLen -= need;
+          bytesSkipped += need;
+        }
+
+        // Limit to contentLength
+        const remaining = contentLength - bytesPiped;
+        if (chunkLen > remaining) {
+          chunkLen = remaining;
+        }
+
+        if (chunkLen <= 0) {
+          return callback();
+        }
+
+        bytesPiped += chunkLen;
+        this.push(chunk.slice(offset, offset + chunkLen));
+
+        // If we've piped all requested bytes, end the stream
+        if (bytesPiped >= contentLength) {
+          aborted = true;
+          this.push(null);
+          try { upstreamStream.destroy(); } catch {}
+        }
+
+        callback();
+      },
+      flush(callback) {
+        if (!aborted && bytesPiped < contentLength) {
+          // Upstream ended before we got all requested bytes — that's OK,
+          // just end the response.
+        }
+        callback();
+      },
+    });
+
+    // Pipe: upstream → rangeTransform → response
+    upstreamStream.pipe(rangeTransform).pipe(res);
+
+    // Handle errors
+    upstreamStream.on('error', (err) => {
+      logger.error(`[${ADDON_NAME}] range-proxy upstream stream error: ${err.message}`);
+      rangeTransform.destroy();
+      try { res.end(); } catch {}
+    });
+    rangeTransform.on('error', (err) => {
+      logger.error(`[${ADDON_NAME}] range-proxy transform error: ${err.message}`);
+      try { res.end(); } catch {}
+    });
+
+    // Handle client disconnect
+    req.on('close', () => {
+      aborted = true;
+      try { upstreamStream.destroy(); } catch {}
+      try { rangeTransform.destroy(); } catch {}
+    });
+  } catch (err) {
+    logger.error(`[${ADDON_NAME}] range-proxy error: ${err.message}`);
+    if (!res.headersSent) res.status(502).send('Range proxy error');
+    else try { res.end(); } catch {}
+  }
+});
+
 // Rewrite relative URLs in an m3u8 playlist to absolute /proxy URLs.
 // This ensures the player fetches variant playlists and segments through
 // the proxy with the correct Referer — without it, relative URLs resolve

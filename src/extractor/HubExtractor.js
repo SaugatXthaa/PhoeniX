@@ -99,6 +99,19 @@ export class HubExtractor extends Extractor {
           } catch { return []; }
         }
         // True CDN direct URL (googleusercontent.com)
+        // Google's video-downloads.googleusercontent.com doesn't support HTTP
+        // Range requests — route through /range-proxy for Range translation
+        // so Stremio can seek in the video.
+        if (result.url.hostname.includes('googleusercontent.com')) {
+          const proxyUrl = new URL('/range-proxy', ctx.hostUrl);
+          proxyUrl.searchParams.set('url', result.url.href);
+          return [{
+            url: proxyUrl,
+            format: Format.mp4,
+            meta: { ...meta, extractorId: `hub_cdn_${cdnHash(url)}` },
+            label: 'HubCloud (CDN)',
+          }];
+        }
         return [{
           url: result.url,
           format: Format.unknown,

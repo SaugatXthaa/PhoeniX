@@ -657,7 +657,7 @@ export class StreamResolver {
       // ffmpeg player fetches them directly.
       let finalUrl = urlResult.url;
       let finalMeta = urlResult.meta;
-      const isAlreadyProxied = finalUrl.href.includes('/proxy?');
+      const isAlreadyProxied = finalUrl.href.includes('/proxy?') || finalUrl.href.includes('/range-proxy?');
       const hasProxyHeaders = !!urlResult.requestHeaders;
       // Route URLs through /proxy ONLY if they are known to fail with direct access.
       // Proxying everything causes "network connection was lost" on Render when

@@ -1,19 +1,21 @@
 // src/extractor/AcerMovies.js
-// AcerMovies extractor — passthrough for direct GDrive CDN URLs.
+// AcerMovies extractor — routes GDrive CDN URLs through /range-proxy.
 //
-// The AcerMovies source already resolves to a direct
-// video-downloads.googleusercontent.com URL via the acermovies.fun API,
-// so no extraction step is needed. This extractor just marks the URL as
-// MP4 and passes it through.
+// The AcerMovies source resolves to a direct
+// video-downloads.googleusercontent.com URL via the acermovies.fun API.
 //
-// Only matches googleusercontent.com URLs when the source is AcerMovies
-// (identified via meta.sourceId === 'acermovies'). This prevents the
-// extractor from hijacking HubCloud's googleusercontent URLs.
+// IMPORTANT: Google's video-downloads.googleusercontent.com does NOT support
+// HTTP Range requests — it returns HTTP 200 with the FULL file regardless of
+// any Range header. This breaks video seeking in Stremio (the player needs
+// 206 Partial Content + Content-Range to scrub to a specific timestamp).
 //
-// Streams are routed through /proxy to enable Range-request seeking.
-// Without the proxy, Stremio's player often can't seek on direct GDrive
-// MP4 URLs (the player needs 206 Partial Content responses with proper
-// Content-Range headers, which the /proxy endpoint handles correctly).
+// We route these URLs through /range-proxy which does Range translation:
+//   1. Fetches the full file from Google (stream)
+//   2. Slices the requested byte range
+//   3. Returns 206 + Content-Range + Accept-Ranges so Stremio can seek
+//
+// Only matches video-downloads.googleusercontent.com URLs. Other googleusercontent
+// subdomains (lh3, drive.usercontent) are handled by DirectStream.
 
 import { Format } from '../types.js';
 import { Extractor } from './Extractor.js';
@@ -29,15 +31,19 @@ export class AcerMovies extends Extractor {
   supports(_ctx, url) {
     // Only claim video-downloads.googleusercontent.com URLs (AcerMovies'
     // direct GDrive CDN). Other googleusercontent subdomains are left to
-    // their respective extractors (HubExtractor, etc.).
+    // their respective extractors (HubExtractor, DirectStream, etc.).
     return url.hostname === 'video-downloads.googleusercontent.com';
   }
 
-  async extractInternal(_ctx, url, meta) {
-    // Return direct URL — googleusercontent.com supports Range requests
-    // directly. Proxying causes "network connection was lost" on downloads.
+  async extractInternal(ctx, url, meta) {
+    // Route through /range-proxy for Range translation.
+    // Google's video-downloads.googleusercontent.com ignores Range headers
+    // and returns the full file with HTTP 200 — /range-proxy translates this
+    // to proper 206 Partial Content responses so Stremio can seek.
+    const proxyUrl = new URL('/range-proxy', ctx.hostUrl);
+    proxyUrl.searchParams.set('url', url.href);
     return [{
-      url,
+      url: proxyUrl,
       format: Format.mp4,
       label: this.label,
       meta: { ...meta },
