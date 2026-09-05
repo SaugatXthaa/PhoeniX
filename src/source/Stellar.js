@@ -151,13 +151,28 @@ export class Stellar extends Source {
         else if (unit === 'MB') fileSize = Math.round(val * 1024 * 1024);
       }
 
-      const audioLabel = isAnime ? 'Japanese' : 'English';
+      // Audio track detection — Stellar HLS has 2 audio tracks for anime:
+      //   Audio 1 (default) = Japanese (sub), Audio 2 = English (dub)
+      // For non-anime, Audio 1 is usually the original language.
+      // If 2 audio tracks exist on an anime stream, expose both as separate streams
+      // (one with Japanese audio, one with English audio) — Stremio's HLS player
+      // can switch between them, but separate stream entries make it discoverable.
+      const audioTracks = Array.isArray(s.audioTracks) ? s.audioTracks : [];
+      const hasMultiAudio = audioTracks.length >= 2;
+      const audioLabel = isAnime
+        ? (hasMultiAudio ? 'Japanese + English' : 'Japanese')
+        : 'English';
       const streamType = isDownload ? sourceType : 'WEB-DL';
+
+      // Build display title — include audio track info for anime with multi-audio
+      const audioTag = isAnime && hasMultiAudio
+        ? ' [SUB+DUB Multi-Audio]'
+        : (isAnime ? ' [SUB]' : '');
 
       return {
         url: s.url,
         quality: s.quality || (height + 'p'),
-        title: `[Stellar ${serverName}] ${height}p ${streamType} ${codec}${hdrInfo} ${audioLabel}`,
+        title: `[Stellar ${serverName}] ${height}p ${streamType} ${codec}${hdrInfo} ${audioLabel}${audioTag}`,
         name: 'Stellar - ' + serverName,
         size: fileSize ? bytes(fileSize) : undefined,
         subtitles: subtitles.length > 0 ? subtitles : undefined,
@@ -167,6 +182,9 @@ export class Stellar extends Source {
         _fileSize: fileSize,
         _sourceType: sourceType,
         _codec: codec,
+        _isAnime: isAnime,
+        _hasMultiAudio: hasMultiAudio,
+        _audioTracks: audioTracks,
       };
     });
 
@@ -188,6 +206,16 @@ export class Stellar extends Source {
           if (matchedStream._sourceType) r.meta.sourceType = matchedStream._sourceType;
           if (matchedStream._codec) r.meta.codec = matchedStream._codec;
           if (matchedStream._fileSize) r.meta.bytes = matchedStream._fileSize;
+        }
+        // For anime with multi-audio, surface audio track info in metadata
+        if (matchedStream._isAnime && matchedStream._hasMultiAudio) {
+          // Stellar's HLS master playlist has 2 audio tracks (Audio 1 + Audio 2).
+          // Audio 1 is usually Japanese (default), Audio 2 is usually English dub.
+          // Stremio's HLS player auto-loads all audio tracks from the master playlist,
+          // so the user can switch audio in the player UI.
+          // We add audioLabel to display the available languages.
+          r.meta.audioLabel = matchedStream._isAnime ? 'Japanese + English' : 'English';
+          r.meta.isMultiAudio = true;
         }
       }
     }

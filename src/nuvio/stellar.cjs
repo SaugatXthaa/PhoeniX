@@ -109,8 +109,51 @@ async function resolveStreamUrl(mediaType, id, season, episode, source) {
 }
 
 // ---------------------------------------------------------------------------
-// Probe master playlist for resolution info
-// Returns: { quality, width, height, has4K, variants }
+// Fetch subtitles via /api/subtitles (separate endpoint, requires fresh PoW).
+// Returns array of { language, label, url, source } — up to 200+ multi-lang VTTs.
+// Stellar.gdn has subtitles for movies + TV + anime (e.g. Naruto S1E1 has 63
+// subtitles across 25+ languages: Arabic, English, French, German, Japanese, etc.)
+// ---------------------------------------------------------------------------
+async function fetchSubtitles(mediaType, id, season, episode) {
+  try {
+    // Get fresh challenge (subtitles endpoint requires its own PoW)
+    const chRes = await fetch(`${BACKEND_URL}/api/challenge`, {
+      headers: { 'User-Agent': UA, 'Origin': STELLAR_GDN, 'Referer': STELLAR_GDN + '/' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!chRes.ok) return [];
+    const challenge = await chRes.json();
+    const nonce = solvePoW(challenge.challenge, challenge.difficulty);
+
+    const payload = {
+      mediaType,
+      id: Number(id),
+      challenge: challenge.challenge,
+      nonce,
+    };
+    if (season != null) payload.season = Number(season);
+    if (episode != null) payload.episode = Number(episode);
+
+    const r = await fetch(`${BACKEND_URL}/api/subtitles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': UA, 'Origin': STELLAR_GDN, 'Referer': STELLAR_GDN + '/' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) return [];
+    const data = await r.json();
+    return Array.isArray(data.subtitles) ? data.subtitles : [];
+  } catch (e) {
+    console.log('[Stellar]   subtitles fetch failed: ' + e.message);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Probe master playlist for resolution info + audio track count
+// Returns: { quality, width, height, has4K, variants, audioTracks }
+// audioTracks: array of { name, url, default } — Stellar HLS has 2 audio tracks
+// (typically Audio 1=Japanese, Audio 2=English for anime)
 // ---------------------------------------------------------------------------
 async function probeMasterPlaylist(url) {
   try {
@@ -118,11 +161,24 @@ async function probeMasterPlaylist(url) {
     if (!res.ok) return null;
     const text = await res.text();
     const variants = [];
+    const audioTracks = [];
     for (const line of text.split('\n')) {
       if (line.startsWith('#EXT-X-STREAM-INF')) {
         const m = line.match(/RESOLUTION=(\d+)x(\d+)/);
         const bw = line.match(/BANDWIDTH=(\d+)/);
         if (m) variants.push({ w: +m[1], h: +m[2], bw: bw ? +bw[1] : 0 });
+      }
+      if (line.startsWith('#EXT-X-MEDIA:TYPE=AUDIO')) {
+        const nameM = line.match(/NAME="([^"]+)"/);
+        const uriM = line.match(/URI="([^"]+)"/);
+        const defM = line.match(/DEFAULT=(YES|NO)/);
+        if (nameM && uriM) {
+          audioTracks.push({
+            name: nameM[1],
+            url: uriM[1],
+            default: defM?.[1] === 'YES',
+          });
+        }
       }
     }
     if (variants.length === 0) return null;
@@ -133,6 +189,7 @@ async function probeMasterPlaylist(url) {
       quality: r >= 3840 ? '2160p' : r >= 1920 ? '1080p' : r >= 1280 ? '720p' : 'SD',
       width: best.w, height: best.h, has4K: r >= 3840,
       variants: variants.map(v => `${v.w}x${v.h}`),
+      audioTracks,
     };
   } catch (e) { return null; }
 }
@@ -149,6 +206,10 @@ function buildStream(opts) {
     behaviorHints: { bingeGroup: opts.bingeGroup || 'stellar-' + opts.serverLabel.toLowerCase() },
     ...(opts.subtitles && opts.subtitles.length > 0 ? {
       subtitles: opts.subtitles.map(s => ({ id: s.language || 'en', url: s.url, lang: s.label || s.language || 'English' }))
+    } : {}),
+    // Pass through audio tracks (Stellar HLS has 2 audio tracks for anime)
+    ...(opts.audioTracks && opts.audioTracks.length > 0 ? {
+      audioTracks: opts.audioTracks,
     } : {}),
   };
 }
@@ -190,15 +251,29 @@ async function getStreams(tmdbId, type, season, episode) {
 
   if (!result.url) { console.log('[Stellar] No stream URL'); return []; }
 
-  // Probe for resolution (4K detection)
+  // Probe for resolution (4K detection) + audio tracks
   const probe = await probeMasterPlaylist(result.url);
   if (probe) {
     console.log('[Stellar] Master playlist: ' + probe.variants.join(', ') + ' → max=' + probe.width + 'x' + probe.height + ' (' + probe.quality + (probe.has4K ? ' 4K!' : '') + ')');
+    if (probe.audioTracks?.length > 0) {
+      console.log('[Stellar] Audio tracks: ' + probe.audioTracks.map(a => a.name + (a.default ? ' (default)' : '')).join(', '));
+    }
+  }
+
+  // Fetch subtitles via separate /api/subtitles endpoint (needs fresh PoW).
+  // Stellar's /api/resolve response often returns subtitles:[] even when
+  // /api/subtitles returns 60-200+ multi-language VTTs. Always call /api/subtitles.
+  let subtitles = result.subtitles;
+  if (!Array.isArray(subtitles) || subtitles.length === 0) {
+    console.log('[Stellar] Fetching subtitles via /api/subtitles (separate PoW)...');
+    subtitles = await fetchSubtitles(mediaType, tmdbId, season, episode);
+    console.log('[Stellar] + ' + subtitles.length + ' subtitle(s) from /api/subtitles');
   }
 
   const quality = probe ? probe.quality : '1080p';
   const resStr = probe ? ' ' + probe.width + 'x' + probe.height : '';
   const sourceLabel = result.source || 'Default';
+  const audioTracks = probe?.audioTracks || [];
 
   allStreams.push(buildStream({
     title: `${info.title} [Stellar ${sourceLabel}${resStr}${probe && probe.has4K ? ' 4K' : ''}]`,
@@ -206,7 +281,8 @@ async function getStreams(tmdbId, type, season, episode) {
     quality,
     serverLabel: sourceLabel,
     bingeGroup: `stellar-${sourceLabel.toLowerCase()}-${tmdbId}`,
-    subtitles: result.subtitles,
+    subtitles,
+    audioTracks,
   }));
   console.log('[Stellar] + ' + sourceLabel + ' (' + quality + '): ' + result.url.slice(0, 80));
 
@@ -221,6 +297,11 @@ async function getStreams(tmdbId, type, season, episode) {
           const altProbe = await probeMasterPlaylist(altResult.url);
           const altQuality = altProbe ? altProbe.quality : '1080p';
           const altResStr = altProbe ? ' ' + altProbe.width + 'x' + altProbe.height : '';
+          const altAudioTracks = altProbe?.audioTracks || [];
+
+          // Use altResult.subtitles if present, else reuse shared subtitles from /api/subtitles
+          const altSubs = (Array.isArray(altResult.subtitles) && altResult.subtitles.length > 0)
+            ? altResult.subtitles : subtitles;
 
           allStreams.push(buildStream({
             title: `${info.title} [Stellar ${src}${altResStr}${altProbe && altProbe.has4K ? ' 4K' : ''}]`,
@@ -228,7 +309,8 @@ async function getStreams(tmdbId, type, season, episode) {
             quality: altQuality,
             serverLabel: src,
             bingeGroup: `stellar-${src.toLowerCase()}-${tmdbId}`,
-            subtitles: altResult.subtitles,
+            subtitles: altSubs,
+            audioTracks: altAudioTracks,
           }));
           console.log('[Stellar] + ' + src + ' (' + altQuality + '): ' + altResult.url.slice(0, 80));
         }
@@ -248,7 +330,7 @@ async function getStreams(tmdbId, type, season, episode) {
 
 module.exports = {
   getStreams, getTMDBInfo, solvePoW, encryptPayload,
-  resolveStreamUrl, probeMasterPlaylist,
+  resolveStreamUrl, probeMasterPlaylist, fetchSubtitles,
 };
 
 if (require.main === module) {
