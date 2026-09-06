@@ -61,6 +61,8 @@ import { BollyFlix } from './BollyFlix.js';
 import { FourKHDHubOne } from './FourKHDHubOne.js';
 // Nuvio provider sources (additive — each has its own dedicated source file)
 import { Cineby } from './Cineby.js';
+// hindmoviez — movies/TV MKV (hshare.ink → workers.dev, 4K/1080p)
+import { HindMoviez } from './HindMoviez.js';
 import { MovieBlast } from './MovieBlast.js';
 import { PlayImdb } from './PlayImdb.js';
 // Re-added sources (from uploaded Nuvio scrapers — each with dedicated source file)
@@ -79,9 +81,6 @@ import { Itachi } from './Itachi.js';
 // cinevood.love — movies/TV/anime download links (up to 4K) via mobilejsr.rest
 //   Returns external URLs with enriched metadata (quality, codec, size from titles)
 import { Cinevood } from './Cinevood.js';
-// hindmovie.fit — movies/TV/anime via mvlink.blog → hshare.ink (up to 4K)
-//   Resolves direct download URLs through hshare.ink r.php/f.php chain
-import { HindMovieFit } from './HindMovieFit.js';
 
 export { Source } from './Source.js';
 
@@ -152,6 +151,7 @@ export const createSources = (fetcher) => {
     // cineby.at — movies/TV HLS (4K, speedracelight API + XOR encryption)
     new Cineby(fetcher),
     // hindmoviez — movies/TV MKV (hshare.ink → workers.dev, 4K/1080p)
+    new HindMoviez(fetcher),
     // movieblast — movies/TV HLS (mblinkmove.mycdn-mb.xyz, 1080p)
     new MovieBlast(fetcher),
     // playimdb — movies/TV HLS (scalableimpactgroup.site, 1080p)
@@ -176,8 +176,6 @@ export const createSources = (fetcher) => {
     new Itachi(fetcher),
     // cinevood.love — movies/TV/anime download links (up to 4K) via mobilejsr.rest
     new Cinevood(fetcher),
-    // hindmovie.fit — movies/TV/anime via mvlink.blog → hshare.ink (up to 4K)
-    new HindMovieFit(fetcher),
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)
