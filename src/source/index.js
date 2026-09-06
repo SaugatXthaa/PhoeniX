@@ -76,6 +76,10 @@ import { AnimesDigital } from './AnimesDigital.js';
 //   VidHawk: 3 servers × 2 audio = 6 HLS streams + English VTT subtitles
 //   MegaPlay: 2 fallback URLs (sub + dub) — resolved by Megaplay extractor
 import { Itachi } from './Itachi.js';
+// multimovies.beer — movies/TV/anime via DooPlay API (4 servers, up to 4K)
+//   Returns embed URLs from modiplay/iqsmartgames/screenscape/nxsha
+//   iqsmartgames API provides file list with quality detection (4K/1080p/720p)
+import { MultiMovies } from './MultiMovies.js';
 
 export { Source } from './Source.js';
 
@@ -168,6 +172,8 @@ export const createSources = (fetcher) => {
     new AnimesDigital(fetcher),
     // itachi.tv — anime-only sub+dub via VidHawk REST API + MegaPlay fallback
     new Itachi(fetcher),
+    // multimovies.beer — movies/TV/anime via DooPlay API (4 servers, up to 4K)
+    new MultiMovies(fetcher),
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)
