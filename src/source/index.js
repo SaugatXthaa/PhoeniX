@@ -80,6 +80,9 @@ import { Itachi } from './Itachi.js';
 //   Returns embed URLs from modiplay/iqsmartgames/screenscape/nxsha
 //   iqsmartgames API provides file list with quality detection (4K/1080p/720p)
 import { MultiMovies } from './MultiMovies.js';
+// cinevood.love — movies/TV/anime download links (up to 4K) via mobilejsr.rest
+//   Returns external URLs with enriched metadata (quality, codec, size from titles)
+import { Cinevood } from './Cinevood.js';
 
 export { Source } from './Source.js';
 
@@ -174,6 +177,8 @@ export const createSources = (fetcher) => {
     new Itachi(fetcher),
     // multimovies.beer — movies/TV/anime via DooPlay API (4 servers, up to 4K)
     new MultiMovies(fetcher),
+    // cinevood.love — movies/TV/anime download links (up to 4K) via mobilejsr.rest
+    new Cinevood(fetcher),
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)
