@@ -1,35 +1,23 @@
 // src/source/IMDBPlay.js
 // imdbplay.tech — movies/TV/anime via vidsrc.me backend (up to 4K)
 //
-// IMDbPlay is a Vite/TanStack Start SPA that wraps vidsrc.me streams.
-// The streaming chain (reverse-engineered from the userscript + JS bundles):
+// REVERSE-ENGINEERED CHAIN (fully resolved to direct playable m3u8):
+//   1. TMDB → IMDB ID
+//   2. proxy.garageband.rocks/vs_src.php?type={type}&id={imdbId} → {src: embed URL}
+//   3. cloudorchestranova.com embed page → window.CFG with playerUrl + metaApi
+//   4. data.vidsrcme.ru/api.php?type={type}&imdb={imdbId}&stream_urls → encrypted stream URLs + WASM URL
+//   5. Download WASM → compile → decrypt stream_urls (ChaCha20 via WebAssembly)
+//   6. peregrinepalaver.space/generate.php → JWT token (IP-bound)
+//   7. Append ?token={jwt} to m3u8 URL → DIRECT PLAYABLE HLS STREAM
 //
-//   1. TMDB → IMDB ID (via TMDB API)
-//   2. proxy.garageband.rocks/embed/{movie|tv}/{imdbId} → embed page
-//   3. /vs_src.php?type={type}&id={imdbId} → {src: cloudorchestranova embed URL}
-//   4. cloudorchestranova embed → window.CFG with metaApi URL
-//   5. data.vidsrcme.ru/api.php?type={type}&imdb={imdbId} → file_name + quality
-//
-// The actual stream URLs are encrypted with ChaCha20 via WASM (can't decrypt
-// server-side). The garageband embed URL is returned as an external stream.
-//
-// ENRICHED METADATA (from data.vidsrcme.ru/api.php):
-//   - file_name contains quality info: "Inception.2010.1080p.BrRip.x264.YIFY.mp4"
-//   - height: 1080 (from file_name)
-//   - codec: x264 (from file_name)
-//   - sourceType: BluRay (from file_name)
-//   - audioLabel: Dual Audio / Hindi / English (inferred)
-//
-// ANIME SUPPORT:
-//   - Detects anime via TMDB genres (Animation=16) or original_language=ja
-//   - Anime files typically have Japanese audio with subtitles
+// The m3u8 URL + token is returned as a direct stream (routed through /proxy for HLS rewriting)
+// Stremio plays it directly via HLS.
 
-import { CountryCode } from '../types.js';
+import { CountryCode, Format } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 const BASE_URL = 'https://www.imdbplay.tech';
-const GARAGEBAND_EMBED = 'https://proxy.garageband.rocks/embed';
 const GARAGEBAND_API = 'https://proxy.garageband.rocks/vs_src.php';
 const VS_API = 'https://data.vidsrcme.ru/api.php';
 const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
@@ -38,26 +26,23 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 let _gotScraping = null;
 async function getGot() {
   if (_gotScraping) return _gotScraping;
-  try {
-    const mod = await import('got-scraping');
-    _gotScraping = mod.gotScraping;
-  } catch (e) {
-    console.error('[imdbplay] Failed to load got-scraping:', e.message);
-  }
+  try { const mod = await import('got-scraping'); _gotScraping = mod.gotScraping; }
+  catch (e) { console.error('[imdbplay] Failed to load got-scraping:', e.message); }
   return _gotScraping;
 }
 
-async function gotGet(url, headers = {}, timeoutMs = 12000) {
+async function gotGet(url, headers = {}, timeoutMs = 12000, responseType) {
   const got = await getGot();
   if (!got) throw new Error('got-scraping unavailable');
-  const res = await got(url, {
+  const opts = {
     headers: { 'User-Agent': UA, ...headers },
     timeout: { request: timeoutMs },
     throwHttpErrors: false,
     followRedirect: true,
     http2: true,
-  });
-  return res;
+  };
+  if (responseType === 'buffer') opts.responseType = 'buffer';
+  return got(url, opts);
 }
 
 async function gotJson(url, headers = {}, timeoutMs = 12000) {
@@ -66,7 +51,6 @@ async function gotJson(url, headers = {}, timeoutMs = 12000) {
   try { return JSON.parse(res.body); } catch { return null; }
 }
 
-// Detect anime via TMDB genres + original language
 async function isAnimeContent(fetcher, ctx, tmdbId) {
   try {
     const type = tmdbId.season ? 'tv' : 'movie';
@@ -74,17 +58,15 @@ async function isAnimeContent(fetcher, ctx, tmdbId) {
     url.searchParams.set('api_key', TMDB_API_KEY);
     const data = await fetcher.json(ctx, url);
     if (!data) return false;
-    const genres = data.genres || [];
-    if (genres.some(g => g.id === 16)) return true;
+    if ((data.genres || []).some(g => g.id === 16)) return true;
     if (data.original_language === 'ja') return true;
     return false;
   } catch { return false; }
 }
 
-// Parse quality from filename
 function parseHeight(text) {
   const t = (text || '').toLowerCase();
-  if (t.includes('2160') || t.includes('4k') || t.includes('uhd')) return 2160;
+  if (t.includes('2160') || t.includes('4k')) return 2160;
   if (t.includes('1080')) return 1080;
   if (t.includes('720')) return 720;
   if (t.includes('480')) return 480;
@@ -122,34 +104,43 @@ function parseLanguage(text, isAnime) {
   return 'English';
 }
 
-// Fetch metadata from vidsrc.me API
-async function fetchVsMeta(type, imdbId, season, episode) {
-  let url = `${VS_API}?type=${type}&imdb=${imdbId}`;
-  if (type === 'tv' && season && episode) {
-    url += `&season=${season}&episode=${episode}`;
-  }
+// Decrypt stream_urls using the vidsrc.me WASM module
+async function decryptStreamUrls(encryptedB64, wasmUrl) {
   try {
-    const data = await gotJson(url);
-    if (data?.status_code === '200' && data?.data) {
-      return data;
-    }
+    // Download WASM
+    const wasmRes = await gotGet(wasmUrl, { Accept: '*/*' }, 10000, 'buffer');
+    if (!wasmRes.body || wasmRes.statusCode !== 200) return [];
+
+    // Compile + instantiate
+    const wasmModule = await WebAssembly.compile(wasmRes.body);
+    const wasmInstance = await WebAssembly.instantiate(wasmModule, {});
+    const { memory, alloc, decrypt } = wasmInstance.exports;
+
+    // Decrypt: alloc → write encrypted bytes → decrypt → read output at ptr+12
+    const enc = Buffer.from(encryptedB64, 'base64');
+    const ptr = alloc(enc.length);
+    new Uint8Array(memory.buffer, ptr, enc.length).set(enc);
+    const outLen = decrypt(ptr, enc.length);
+    const output = new TextDecoder().decode(new Uint8Array(memory.buffer, ptr + 12, outLen));
+
+    // Split by newlines to get individual stream URLs
+    return output.split('\n').filter(s => s);
   } catch (e) {
-    console.log(`[imdbplay] VS API failed: ${e.message}`);
+    console.log(`[imdbplay] WASM decrypt error: ${e.message}`);
+    return [];
   }
-  return null;
 }
 
-// Fetch the embed URL from garageband
-async function fetchEmbedUrl(type, imdbId, season, episode) {
-  let url = `${GARAGEBAND_API}?type=${type}&id=${imdbId}`;
-  if (type === 'tv' && season && episode) {
-    url += `&season=${season}&episode=${episode}`;
-  }
+// Fetch JWT token from the stream host's generate.php
+async function fetchToken(streamHost) {
   try {
-    const data = await gotJson(url, { Referer: GARAGEBAND_EMBED + '/' });
-    if (data?.src) return data.src;
+    const tokenUrl = `https://${streamHost}/generate.php`;
+    const res = await gotGet(tokenUrl, { Referer: 'https://cloudorchestranova.com/' }, 8000);
+    if (res.statusCode === 200 && res.body && !res.body.includes('<')) {
+      return res.body.trim();
+    }
   } catch (e) {
-    console.log(`[imdbplay] Garageband API failed: ${e.message}`);
+    console.log(`[imdbplay] Token fetch error: ${e.message}`);
   }
   return null;
 }
@@ -163,7 +154,7 @@ export class IMDBPlay extends Source {
     this.countryCodes = [CountryCode.multi, CountryCode.hi, CountryCode.en];
     this.baseUrl = BASE_URL;
     this.fetcher = fetcher;
-    this.ttl = 10 * 60 * 1000;
+    this.ttl = 5 * 60 * 1000; // 5min — tokens are short-lived
   }
 
   async handleInternal(ctx, _type, id) {
@@ -190,99 +181,119 @@ export class IMDBPlay extends Source {
       console.log('[imdbplay] No IMDB ID found');
       return [];
     }
-    console.log(`[imdbplay] IMDB ID: ${imdbId}${isAnime ? ' [ANIME]' : ''}`);
+    console.log(`[imdbplay] IMDB: ${imdbId}${isAnime ? ' [ANIME]' : ''}`);
 
     const mediaType = tmdbId.season ? 'tv' : 'movie';
     const season = tmdbId.season || null;
     const episode = tmdbId.episode || null;
 
-    // Step 1: Fetch metadata from vidsrc.me API
-    const vsMeta = await fetchVsMeta(mediaType, imdbId, season, episode);
-    if (!vsMeta) {
-      console.log('[imdbplay] No metadata found');
+    // Step 1: Fetch vs_src.php to get embed URL
+    let vsApiUrl = `${GARAGEBAND_API}?type=${mediaType}&id=${imdbId}`;
+    if (mediaType === 'tv' && season && episode) {
+      vsApiUrl += `&season=${season}&episode=${episode}`;
+    }
+    const vsData = await gotJson(vsApiUrl, { Referer: 'https://proxy.garageband.rocks/' });
+    if (!vsData?.src) {
+      console.log('[imdbplay] No embed URL from vs_src.php');
+      return [];
+    }
+    const embedUrl = vsData.src;
+    const embedOrigin = new URL(embedUrl).origin;
+    console.log(`[imdbplay] Embed: ${embedUrl.slice(0, 60)}...`);
+
+    // Step 2: Fetch embed page to get metaApi
+    const embedRes = await gotGet(embedUrl, { Referer: 'https://proxy.garageband.rocks/' });
+    if (embedRes.statusCode !== 200) {
+      console.log('[imdbplay] Embed page failed');
       return [];
     }
 
-    const fileName = vsMeta.data?.file_name || '';
+    // Step 3: Fetch API data with stream_urls
+    let apiUrl = `${VS_API}?type=${mediaType}&imdb=${imdbId}&stream_urls`;
+    if (mediaType === 'tv' && season && episode) {
+      apiUrl += `&season=${season}&episode=${episode}`;
+    }
+    const apiData = await gotJson(apiUrl, { Referer: embedOrigin + '/' });
+    if (!apiData?.data) {
+      console.log('[imdbplay] API failed');
+      return [];
+    }
+
+    const fileName = apiData.data.file_name || '';
     const height = parseHeight(fileName);
     const codec = parseCodec(fileName);
     const sourceType = parseSourceType(fileName);
     const language = parseLanguage(fileName, isAnime);
-    const subs = vsMeta.default_subs || [];
+    console.log(`[imdbplay] File: ${fileName.slice(0, 50)}... | ${height}p ${codec}`);
 
-    console.log(`[imdbplay] File: ${fileName.slice(0, 60)}... | ${height}p ${codec} ${sourceType}`);
-
-    // Step 2: Fetch the embed URL from garageband
-    const embedUrl = await fetchEmbedUrl(mediaType, imdbId, season, episode);
-    if (!embedUrl) {
-      console.log('[imdbplay] No embed URL found');
+    // Step 4: Decrypt stream URLs using WASM
+    if (!apiData.data.stream_urls || typeof apiData.data.stream_urls !== 'string') {
+      console.log('[imdbplay] No encrypted stream_urls');
       return [];
     }
-    console.log(`[imdbplay] Embed: ${embedUrl.slice(0, 80)}...`);
+    if (!apiData.vs?.wasm_url) {
+      console.log('[imdbplay] No WASM URL');
+      return [];
+    }
 
-    // Build stream result
-    const countryCodes = isAnime
-      ? [CountryCode.multi, CountryCode.ja, CountryCode.en]
-      : [CountryCode.multi, CountryCode.hi, CountryCode.en];
+    const streamUrls = await decryptStreamUrls(apiData.data.stream_urls, apiData.vs.wasm_url);
+    if (streamUrls.length === 0) {
+      console.log('[imdbplay] Decryption returned no URLs');
+      return [];
+    }
+    console.log(`[imdbplay] Decrypted: ${streamUrls.length} stream URL(s)`);
 
-    const audioTag = isAnime ? ' [SUB+DUB]' : '';
+    // Step 5: Fetch token from the stream host's generate.php
     const results = [];
+    for (const streamUrl of streamUrls) {
+      try {
+        const streamHost = new URL(streamUrl).hostname;
+        const token = await fetchToken(streamHost);
+        if (!token) {
+          console.log(`[imdbplay] No token for ${streamHost}`);
+          continue;
+        }
 
-    // The embed URL is an iframe player — return as external URL
-    // Stremio opens it in browser where the player loads the encrypted stream
-    let embedUrlObj;
-    try { embedUrlObj = new URL(embedUrl); } catch { return []; }
+        // Append token to stream URL
+        const urlWithToken = streamUrl + (streamUrl.includes('?') ? '&' : '?') + 'token=' + token;
+        const streamUrlObj = new URL(urlWithToken);
 
-    results.push({
-      url: embedUrlObj,
-      format: 'iframe',
-      isExternal: true,
-      meta: {
-        countryCodes,
-        title: `${title} — [IMDBPlay ${height}p ${sourceType} ${codec} ${language}]${audioTag}`,
-        sourceId: this.id,
-        sourceLabel: this.label,
-        height,
-        sourceType,
-        codec,
-        serverName: 'vidsrc',
-        audioLabel: language,
-        isMultiAudio: /multi|dual/i.test(language),
-        ...(isAnime && { isMultiAudio: true }),
-        // Pass subtitles from the API if available
-        ...(Array.isArray(subs) && subs.length > 0 && {
-          subtitles: subs.map(s => ({
-            id: s.lang || s.label || 'en',
-            url: s.url || s.src || '',
-            lang: s.label || s.lang || 'English',
-          })).filter(s => s.url),
-        }),
-      },
-    });
+        // Route through /proxy for HLS rewriting (m3u8 needs Referer)
+        const proxyUrl = new URL('/proxy', ctx.hostUrl);
+        proxyUrl.searchParams.set('url', streamUrlObj.href);
+        proxyUrl.searchParams.set('referer', embedOrigin + '/');
 
-    // Also add the garageband embed URL as a second stream (different server)
-    const garagebandUrl = `${GARAGEBAND_EMBED}/${mediaType}/${imdbId}` +
-      (mediaType === 'tv' && season && episode ? `?s=${season}&e=${episode}` : '');
-    results.push({
-      url: new URL(garagebandUrl),
-      format: 'iframe',
-      isExternal: true,
-      meta: {
-        countryCodes,
-        title: `${title} — [IMDBPlay Garageband ${height}p ${sourceType} ${codec} ${language}]${audioTag}`,
-        sourceId: this.id,
-        sourceLabel: this.label,
-        height,
-        sourceType,
-        codec,
-        serverName: 'garageband',
-        audioLabel: language,
-        isMultiAudio: /multi|dual/i.test(language),
-        ...(isAnime && { isMultiAudio: true }),
-      },
-    });
+        const countryCodes = isAnime
+          ? [CountryCode.multi, CountryCode.ja, CountryCode.en]
+          : [CountryCode.multi, CountryCode.hi, CountryCode.en];
+        const audioTag = isAnime ? ' [SUB+DUB]' : '';
 
-    console.log(`[imdbplay] ${results.length} stream(s)${isAnime ? ' [anime]' : ''}`);
+        results.push({
+          url: proxyUrl,
+          format: Format.hls,
+          meta: {
+            countryCodes,
+            title: `${title} — [IMDBPlay ${height}p ${sourceType} ${codec} ${language}]${audioTag}`,
+            sourceId: this.id,
+            sourceLabel: this.label,
+            height,
+            sourceType,
+            codec,
+            serverName: streamHost,
+            audioLabel: language,
+            isMultiAudio: /multi|dual/i.test(language),
+            ...(isAnime && { isMultiAudio: true }),
+          },
+        });
+
+        console.log(`[imdbplay] ✓ ${streamHost} (token: ${token.slice(0, 20)}...)`);
+        break; // Use first working stream only (others are mirrors)
+      } catch (e) {
+        console.log(`[imdbplay] Stream failed: ${e.message}`);
+      }
+    }
+
+    console.log(`[imdbplay] ${results.length} direct playable stream(s)${isAnime ? ' [anime]' : ''}`);
     return results;
   }
 }
