@@ -81,6 +81,9 @@ import { Itachi } from './Itachi.js';
 // cinevood.love — movies/TV/anime download links (up to 4K) via mobilejsr.rest
 //   Returns external URLs with enriched metadata (quality, codec, size from titles)
 import { Cinevood } from './Cinevood.js';
+// imdbplay.tech — movies/TV/anime via vidsrc.me backend (up to 4K)
+//   Returns external embed URLs with enriched metadata from vidsrc.me API
+import { IMDBPlay } from './IMDBPlay.js';
 
 export { Source } from './Source.js';
 
@@ -176,6 +179,8 @@ export const createSources = (fetcher) => {
     new Itachi(fetcher),
     // cinevood.love — movies/TV/anime download links (up to 4K) via mobilejsr.rest
     new Cinevood(fetcher),
+    // imdbplay.tech — movies/TV/anime via vidsrc.me backend (up to 4K)
+    new IMDBPlay(fetcher),
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)
