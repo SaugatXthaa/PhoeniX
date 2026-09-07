@@ -287,7 +287,7 @@ export class IMDBPlay extends Source {
         });
 
         console.log(`[imdbplay] ✓ ${streamHost} (token: ${token.slice(0, 20)}...)`);
-        break; // Use first working stream only (others are mirrors)
+        // Don't break — return ALL streams (different hosts = different servers)
       } catch (e) {
         console.log(`[imdbplay] Stream failed: ${e.message}`);
       }
