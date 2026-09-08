@@ -668,7 +668,7 @@ export class StreamResolver {
       // bcdn.hakunaymatata.com for direct MP4 streams that play fine without
       // proxy. MovieBox URLs (which DO need proxy) have requestHeaders set and
       // are handled by the hasProxyHeaders block below.
-      const needsProxy = /valentine|fukggl|fileserver|animeheaven|pixel\.hubcloud|gpdl\.hubcloud|workers\.dev/.test(finalUrl.hostname);
+      const needsProxy = /valentine|fukggl|fileserver|animeheaven|pixel\.hubcloud|gpdl\.hubcloud|workers\.dev|img1\.|ngcorp\.dad|valhallastream/.test(finalUrl.hostname);
 
       if (!isAlreadyProxied && !hasProxyHeaders && needsProxy) {
         const proxyUrl = new URL('/proxy', ctx.hostUrl);

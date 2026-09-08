@@ -87,6 +87,10 @@ import { IMDBPlay } from './IMDBPlay.js';
 // raflixx.vercel.app — movies/TV/anime via multiple embed providers (8+17 sources)
 //   Movies/TV: 8 servers | Anime: 17 servers (sub + dub) via /api/media/sources + /api/anime/sources
 import { Raflix } from './Raflix.js';
+// hindmovie.fit — movies/TV/anime via GDShine API (direct MKV, up to 4K)
+import { HindMovie } from './HindMovie.js';
+// rivestream.ru — multi-server direct HLS (11 providers, up to 4K)
+import { RiveStream } from './RiveStream.js';
 
 export { Source } from './Source.js';
 
@@ -186,6 +190,10 @@ export const createSources = (fetcher) => {
     new IMDBPlay(fetcher),
     // raflixx.vercel.app — movies/TV/anime via multiple embed providers (8+17 sources)
     new Raflix(fetcher),
+    // hindmovie.fit — movies/TV/anime via GDShine API (direct MKV, up to 4K)
+    new HindMovie(fetcher),
+    // rivestream.ru — multi-server direct HLS (11 providers, up to 4K)
+    new RiveStream(fetcher),
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)
