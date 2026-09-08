@@ -91,6 +91,8 @@ import { Raflix } from './Raflix.js';
 import { HindMovie } from './HindMovie.js';
 // rivestream.ru — multi-server direct HLS (11 providers, up to 4K)
 import { RiveStream } from './RiveStream.js';
+// reanime.to — anime sub+dub via FlixCloud CDN (XOR-encrypted HLS, /reanime-proxy)
+import { ReAnime } from './ReAnime.js';
 
 export { Source } from './Source.js';
 
@@ -194,6 +196,8 @@ export const createSources = (fetcher) => {
     new HindMovie(fetcher),
     // rivestream.ru — multi-server direct HLS (11 providers, up to 4K)
     new RiveStream(fetcher),
+    // reanime.to — anime sub+dub via FlixCloud CDN (XOR-encrypted HLS, /reanime-proxy)
+    new ReAnime(fetcher),
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)

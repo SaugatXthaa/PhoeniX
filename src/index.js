@@ -777,6 +777,214 @@ app.get('/range-proxy', async (req, res) => {
   }
 });
 
+// ============================================================================
+// /reanime-proxy — XOR-decryption proxy for ReAnime/FlixCloud streams
+// ============================================================================
+// ReAnime (reanime.to) returns HLS streams from FlixCloud CDN that are
+// XOR-encrypted:
+//   - m3u8 playlists: base64-encoded + XOR with 32-byte key
+//   - Segments: WebP/PNG fake headers + XOR with 16-byte key
+//
+// This proxy:
+//   1. Fetches the m3u8 from flixcloud.cc (via curl for CF bypass)
+//   2. Decrypts XOR-encrypted m3u8 content
+//   3. Rewrites segment URLs to route through this proxy
+//   4. Decrypts segment payloads (strips fake headers + XOR)
+//
+// URL formats:
+//   /reanime-proxy/playlist.m3u8?url=<encoded>&key=<base64-32-byte-key>
+//   /reanime-proxy/seg.ts?url=<encoded>
+//   /reanime-proxy/raw?url=<encoded>&key=<base64>
+// ============================================================================
+app.get('/reanime-proxy/*', async (req, res) => {
+  const rawUrl = req.query.url;
+  const keyB64 = req.query.key;
+
+  if (!rawUrl) {
+    return res.status(400).send('Missing url parameter');
+  }
+
+  let targetUrl;
+  try { targetUrl = new URL(rawUrl); }
+  catch { return res.status(400).send('Invalid url parameter'); }
+
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  const isHead = req.method === 'HEAD';
+  logger.log(`[${ADDON_NAME}] reanime-proxy ${targetUrl.hostname}${targetUrl.pathname.slice(0, 50)}`);
+
+  try {
+    // Fetch upstream via curl (CF bypass for flixcloud.cc)
+    const { execFileSync } = await import('child_process');
+    const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+    const curlArgs = [
+      '-sL', '--max-time', '15',
+      '-H', `User-Agent: ${UA}`,
+      '-H', 'Referer: https://flixcloud.cc/',
+      '-H', 'Origin: https://flixcloud.cc',
+      '-H', 'Accept: */*',
+      rawUrl,
+    ];
+
+    let body;
+    try {
+      body = execFileSync('curl', curlArgs, { maxBuffer: 50 * 1024 * 1024, timeout: 20000, encoding: 'buffer' });
+    } catch (e) {
+      return res.status(502).send(`Upstream fetch failed: ${e.message.slice(0, 80)}`);
+    }
+
+    if (!body || body.length === 0) {
+      return res.status(502).send('Empty upstream response');
+    }
+
+    // 16-byte XOR key for segment decryption
+    const SEGMENT_XOR_KEY = Buffer.from([157, 42, 241, 71, 179, 142, 92, 112, 166, 25, 228, 59, 216, 98, 15, 197]);
+
+    // 32-byte XOR key for m3u8 playlist decryption
+    let xorKey = null;
+    if (keyB64) {
+      try {
+        xorKey = Buffer.from(keyB64, 'base64');
+        if (xorKey.length !== 32) xorKey = null;
+      } catch { xorKey = null; }
+    }
+
+    const bodyStr = body.toString('utf8');
+    let plaintext;
+    let contentType;
+    let isSegment = false;
+    let isM3u8 = false;
+
+    // Detect content type by inspecting body bytes
+    if (body.length >= 12 && body[0] === 0x52 && body[1] === 0x49 && body[2] === 0x46 && body[3] === 0x46
+        && body[8] === 0x57 && body[9] === 0x45 && body[10] === 0x42 && body[11] === 0x50) {
+      // WebP disguised segment — strip 12-byte header, XOR with 16-byte key
+      const payload = body.slice(12);
+      plaintext = Buffer.alloc(payload.length);
+      for (let i = 0; i < payload.length; i++) plaintext[i] = payload[i] ^ SEGMENT_XOR_KEY[i % 16];
+      isSegment = true;
+      contentType = 'video/mp2t';
+    } else if (body.length >= 8 && body[0] === 0x89 && body[1] === 0x50 && body[2] === 0x4E && body[3] === 0x47
+               && body[4] === 0x0D && body[5] === 0x0A && body[6] === 0x1A && body[7] === 0x0A) {
+      // PNG disguised segment — strip 8-byte header, XOR with 16-byte key
+      const payload = body.slice(8);
+      plaintext = Buffer.alloc(payload.length);
+      for (let i = 0; i < payload.length; i++) plaintext[i] = payload[i] ^ SEGMENT_XOR_KEY[i % 16];
+      isSegment = true;
+      contentType = 'video/mp2t';
+    } else if (bodyStr.startsWith('#EXTM3U')) {
+      // Plain m3u8 (already decoded)
+      plaintext = body;
+      isM3u8 = true;
+      contentType = 'application/vnd.apple.mpegurl';
+    } else if (xorKey) {
+      // Encrypted m3u8 playlist (base64 + XOR with 32-byte key)
+      try {
+        const decoded = Buffer.from(bodyStr, 'base64');
+        plaintext = Buffer.alloc(decoded.length);
+        for (let i = 0; i < decoded.length; i++) plaintext[i] = decoded[i] ^ xorKey[i % xorKey.length];
+        if (plaintext.toString('utf8').startsWith('#EXTM3U')) {
+          isM3u8 = true;
+          contentType = 'application/vnd.apple.mpegurl';
+        } else {
+          plaintext = body;
+          contentType = 'application/octet-stream';
+        }
+      } catch {
+        plaintext = body;
+        contentType = 'application/octet-stream';
+      }
+    } else {
+      plaintext = body;
+      contentType = 'application/octet-stream';
+    }
+
+    // HEAD request — return headers only
+    if (isHead) {
+      res.status(200);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', plaintext.length);
+      res.setHeader('Cache-Control', isSegment ? 'public, max-age=86400' : 'no-store');
+      return res.end();
+    }
+
+    // Segments — stream decrypted MPEG-TS directly
+    if (isSegment) {
+      res.status(200);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', plaintext.length);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Accept-Ranges', 'bytes');
+      return res.end(plaintext);
+    }
+
+    // m3u8 playlists — rewrite URLs to route through this proxy
+    let rewritten = plaintext.toString('utf8');
+    if (isM3u8) {
+      const baseUrl = targetUrl;
+      const basePath = baseUrl.pathname.replace(/\/[^/]*$/, '/');
+      const baseOrigin = `${baseUrl.protocol}//${baseUrl.host}`;
+      const proxyBase = `${req.protocol}://${req.get('host')}/reanime-proxy`;
+
+      const toAbsolute = (line) => {
+        if (line.startsWith('http://') || line.startsWith('https://')) return line;
+        if (line.startsWith('//')) return baseUrl.protocol + line;
+        if (line.startsWith('/')) return baseOrigin + line;
+        if (line.startsWith('../')) {
+          let p = basePath;
+          let rest = line;
+          while (rest.startsWith('../')) { p = p.replace(/[^/]*\/$/, ''); rest = rest.substring(3); }
+          return baseOrigin + p + rest;
+        }
+        return baseOrigin + basePath + line;
+      };
+
+      const toProxy = (absUrl) => {
+        if (absUrl.includes('flixcloud.cc') || absUrl.includes('atomic4cdn.top')) {
+          if (absUrl.endsWith('.webp') || absUrl.endsWith('.png')) {
+            return `${proxyBase}/seg.ts?url=${encodeURIComponent(absUrl)}&e=.ts`;
+          }
+          if (absUrl.endsWith('.m3u8')) {
+            return `${proxyBase}/playlist.m3u8?url=${encodeURIComponent(absUrl)}&key=${encodeURIComponent(keyB64 || '')}`;
+          }
+          return `${proxyBase}/raw?url=${encodeURIComponent(absUrl)}&key=${encodeURIComponent(keyB64 || '')}`;
+        }
+        return absUrl;
+      };
+
+      // Rewrite URI="..." attributes
+      rewritten = rewritten.replace(/(URI=")([^"]+)(")/g, (m, prefix, url, suffix) =>
+        prefix + toProxy(toAbsolute(url)) + suffix);
+
+      // Rewrite standalone URL lines
+      rewritten = rewritten.replace(/(^[^#\n].*$)/gm, (line) => {
+        if (!line.trim() || line.startsWith('#')) return line;
+        return toProxy(toAbsolute(line.trim()));
+      });
+
+      // Remove AES-128 KEY directives (segments are XOR-encrypted, not AES)
+      rewritten = rewritten.replace(/^#EXT-X-KEY:METHOD=AES-128.*$/gm, '');
+    }
+
+    res.status(200);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.end(rewritten);
+  } catch (err) {
+    logger.error(`[${ADDON_NAME}] reanime-proxy error: ${err.message}`);
+    if (!res.headersSent) res.status(502).send('ReAnime proxy error');
+    else try { res.end(); } catch {}
+  }
+});
+
 // Rewrite relative URLs in an m3u8 playlist to absolute /proxy URLs.
 // This ensures the player fetches variant playlists and segments through
 // the proxy with the correct Referer — without it, relative URLs resolve
