@@ -395,7 +395,7 @@ export class StreamResolver {
     // probing) would wait 10-15s in the queue, leaving only 15-20s before the
     // GLOBAL_TIMEOUT_MS = 33s cutoff.
     const PRIORITY_SOURCE_IDS = new Set([
-      'cinejoy', 'zinkmovies', '4khdhub', 'playimdb',
+      'cinejoyaio', 'zinkmovies', '4khdhub', 'playimdb',
       // Stellar sources — PoW + AES-GCM takes 5-10s; must start early
       'stellar', 'stellarrip',
       // VidEasy — speedracelight API takes 15-25s; must start early

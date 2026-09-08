@@ -30,7 +30,13 @@ export class Frembed extends Source {
       ? new URL(`/api/series?id=${tmdbId.id}&sa=${tmdbId.season}&epi=${tmdbId.episode}&idType=tmdb`, baseUrl)
       : new URL(`/api/films?id=${tmdbId.id}&idType=tmdb`, baseUrl);
 
-    const json = await this.fetcher.json(ctx, apiUrl, { headers: { Referer: baseUrl.origin } });
+    let json;
+    try {
+      json = await this.fetcher.json(ctx, apiUrl, { headers: { Referer: baseUrl.origin } });
+    } catch {
+      // Site returned 4xx/5xx or is down — no streams available
+      return [];
+    }
 
     const urls = [];
     for (const key in json) {

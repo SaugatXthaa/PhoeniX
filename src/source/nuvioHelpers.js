@@ -216,9 +216,9 @@ export function buildStreamResults({ streams, title, sourceId, sourceLabel, coun
       ...(referer && !skipReferer && !hls && !videoFile && { nuvioForceHls: true }),
       // Pass through subtitles from raw stream objects. Many nuvio scrapers
       // (cineby, castle, 1embed, anikototv, animesalt, animesuge, animeworld,
-      // anineko, ctgmovies, cinejoy_v2, etc.) return subtitle URLs in their
-      // stream objects but this was previously dropped. StreamResolver reads
-      // meta.subtitles and attaches them to the final Stremio stream output.
+      // anineko, etc.) return subtitle URLs in their stream objects but this
+      // was previously dropped. StreamResolver reads meta.subtitles and
+      // attaches them to the final Stremio stream output.
       // Format: [{ id, url, lang }] — Stremio standard.
       ...((Array.isArray(s.subtitles) && s.subtitles.length > 0) && {
         subtitles: s.subtitles

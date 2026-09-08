@@ -36,13 +36,13 @@ const NUVIO_SOURCE_IDS = new Set([
   'oneembed',
   // Re-added sources (from uploaded Nuvio scrapers):
   // zxcstream — embed URLs from player.zxcstream.xyz (route through /proxy)
-  // cinejoy — HLS m3u8 from hdhub.thevolecitor.qzz.io (direct, no Referer)
   // animezey — anime HLS from workers.dev (direct)
   // uhdmovies — movies from googleusercontent (Referer: driveseed.org)
   // moviesdrive — direct googleusercontent URLs (resolved via hub_extractor)
   // NOTE: hdhub4u is NOT here — its hubcdn/hubcloud URLs are handled by
   // HubExtractor/HubCloud downstream, not NuvioExtractor.
-  'zxcstream', 'cinejoy', 'animezey', 'uhdmovies', 'moviesdrive', 'framextv', 'flystream', 'cinejoyaio',
+  // NOTE: 'cinejoy' (the old v1 source) was deleted — only 'cinejoyaio' remains.
+  'zxcstream', 'animezey', 'uhdmovies', 'moviesdrive', 'framextv', 'flystream', 'cinejoyaio',
   // nikastream — anime sub+dub HLS via Anivexa API (kryntal.top needs Referer)
   'nikastream',
   // cinebyrocks — movies/TV/anime via VidRock API (multi-CDN direct m3u8/mp4)
@@ -67,6 +67,14 @@ const NUVIO_SOURCE_IDS = new Set([
   // persianstremio — Persian dual-audio direct MP4/MKV (needs Referer:
   // persianstremio.vercel.app for cinamadownload.top / aslmd.sbs URLs)
   'persianstremio',
+  // Orphan Nuvio sources (registered in batch) — all use buildStreamResults
+  //   - dahmermovies: p.111477.xyz bulk API (direct, no Referer)
+  //   - dahmermovies4k: 4K variant of dahmermovies
+  //   - kmmovies: Nuvio scraper (direct URLs)
+  //   - movy: 12-server Nuvio scraper (direct HLS/MP4)
+  //   - pahe: Nuvio scraper (direct URLs)
+  //   - vidlove: Nuvio scraper (direct URLs)
+  'dahmermovies', 'dahmermovies4k', 'kmmovies', 'movy', 'pahe', 'vidlove',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

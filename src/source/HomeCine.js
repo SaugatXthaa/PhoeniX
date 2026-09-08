@@ -31,7 +31,13 @@ export class HomeCine extends Source {
       }
     }
 
-    let pageHtml = await this.fetcher.text(ctx, pageUrl);
+    let pageHtml;
+    try {
+      pageHtml = await this.fetcher.text(ctx, pageUrl);
+    } catch {
+      // Site returned 4xx/5xx or is down — no streams available
+      return [];
+    }
 
     if (tmdbId.season) {
       const episodePageUrl = await this.fetchEpisodeUrl(pageHtml, tmdbId);
@@ -40,7 +46,11 @@ export class HomeCine extends Source {
       }
 
       pageUrl = episodePageUrl;
-      pageHtml = await this.fetcher.text(ctx, pageUrl);
+      try {
+        pageHtml = await this.fetcher.text(ctx, pageUrl);
+      } catch {
+        return [];
+      }
     }
 
     const title = tmdbId.season ? `${name} ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : `${name} (${year})`;
@@ -70,7 +80,13 @@ export class HomeCine extends Source {
   async fetchPageUrl(ctx, name, tmdbId) {
     const searchUrl = new URL(`/?s=${encodeURIComponent(name)}`, this.baseUrl);
 
-    const html = await this.fetcher.text(ctx, searchUrl);
+    let html;
+    try {
+      html = await this.fetcher.text(ctx, searchUrl);
+    } catch {
+      // Site returned 4xx/5xx or is down
+      return null;
+    }
 
     const $ = cheerio.load(html);
 

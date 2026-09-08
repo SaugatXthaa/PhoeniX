@@ -100,6 +100,32 @@ import { DesiFlix } from './DesiFlix.js';
 // persianstremio — Persian-language movies/TV with dual-audio (🇺🇸|🇮🇷)
 //   Direct MP4/MKV from cinamadownload.top, aslmd.sbs, abrtech.top
 import { PersianStremio } from './PersianStremio.js';
+// ─── Orphan sources (complete but never registered — batch add) ───
+// All verified as complete with unique source IDs. Some use Nuvio scrapers
+// (dahmermovies, kmmovies, movy, pahe, vidlove, dahmermovies4k), others use
+// got-scraping or this.fetcher directly.
+import { Antova } from './Antova.js';
+import { CineHDPlus } from './CineHDPlus.js';
+import { CineSu } from './CineSu.js';
+import { Cuevana } from './Cuevana.js';
+import { DahmerMovies } from './DahmerMovies.js';
+import { DahmerMovies4k } from './DahmerMovies4k.js';
+import { FilmeOnlineHD } from './FilmeOnlineHD.js';
+import { FilmpalastTO } from './FilmpalastTO.js';
+import { Frembed } from './Frembed.js';
+import { HomeCine } from './HomeCine.js';
+import { KMMovies } from './KMMovies.js';
+import { KinoGer } from './KinoGer.js';
+import { Kokoshka } from './Kokoshka.js';
+import { Movy } from './Movy.js';
+import { Pahe } from './Pahe.js';
+import { VegaCatering } from './VegaCatering.js';
+import { VidLove } from './VidLove.js';
+import { VidSpark } from './VidSpark.js';
+import { Vidzee } from './Vidzee.js';
+import { VixSrc } from './VixSrc.js';
+import { AllWish } from './AllWish.js';
+import { HDHub4uNew } from './HDHub4uNew.js';
 
 export { Source } from './Source.js';
 
@@ -237,5 +263,50 @@ export const createSources = (fetcher) => {
     new MoviesHuntV2(fetcher),
     // MoviesDrive v2 — movies/TV via new3.moviesdrive.christmas WP API (up to 4K)
     new MoviesDriveV2(fetcher),
+    // ─── Orphan sources (registered in batch — all additive) ───
+    // antova — Russian-dub anime via AniLibria API
+    new Antova(fetcher),
+    // cinehdplus — ES/MX series via cinehdplus.com
+    new CineHDPlus(fetcher),
+    // cinesu — direct m3u8 HLS
+    new CineSu(fetcher),
+    // cuevana — ES/MX via wv3.cuevana3.eu
+    new Cuevana(fetcher),
+    // dahmermovies — movies via p.111477.xyz bulk API
+    new DahmerMovies(fetcher),
+    // dahmermovies4k — 4K movies via dahmermovies-4k
+    new DahmerMovies4k(fetcher),
+    // filmeonlinehd — Hindi movies/series via linksdrive
+    new FilmeOnlineHD(fetcher),
+    // filmpalast — DE movies via filmpalast.to
+    new FilmpalastTO(fetcher),
+    // frembed — FR movies/series via frembed.org
+    new Frembed(fetcher),
+    // homecine — ES/MX movies via homecine.co
+    new HomeCine(fetcher),
+    // kmmovies — movies via kmmovies Nuvio scraper
+    new KMMovies(fetcher),
+    // kinoger — DE movies via kinoger.at
+    new KinoGer(fetcher),
+    // kokoshka — Albanian movies via kokoshka.co
+    new Kokoshka(fetcher),
+    // movy — movies via 12-server movy Nuvio scraper
+    new Movy(fetcher),
+    // pahe — movies via pahe Nuvio scraper
+    new Pahe(fetcher),
+    // vegacatering — vegamovies.catering (distinct from VegaMovies)
+    new VegaCatering(fetcher),
+    // vidlove — movies via vidlove Nuvio scraper
+    new VidLove(fetcher),
+    // vidspark — direct API HLS
+    new VidSpark(fetcher),
+    // vidzee — 8 servers, multi-language embeds
+    new Vidzee(fetcher),
+    // vixsrc — VixSrc embed (requires MediaFlowProxy)
+    new VixSrc(fetcher),
+    // allwish — anime via all-wish.me (AnimeSuge-like, megaplay.buzz backend)
+    new AllWish(fetcher),
+    // hdhub4unew — movies via new4.hdhub4u.cl (mirror of HDHub4uV2's new5)
+    new HDHub4uNew(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
