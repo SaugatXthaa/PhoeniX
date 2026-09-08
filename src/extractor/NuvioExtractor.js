@@ -49,6 +49,10 @@ const NUVIO_SOURCE_IDS = new Set([
   'cinebyrocks',
   // stellar — movies/TV/anime via PoW + AES-GCM (direct HLS, no Referer needed)
   'stellar',
+  // desiflix — movies/TV/anime via manifest.desitvhub.eu.org Stremio addon
+  //   Streams are direct URLs (flixsix.com MP4, manifest proxy HLS/MP4) with
+  //   no Referer needed — NuvioExtractor passes them through as direct URLs.
+  'desiflix',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

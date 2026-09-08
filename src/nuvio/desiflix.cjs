@@ -73,7 +73,11 @@ const BASE_URLS = [
 ];
 
 // ─── HTTP fetch with HTTP/1.1 (fast) + Stremio UA ──────────────────────────
-function fetchJson(url, { ua = STREMIO_UA, timeout = 45000 } = {}) {
+// Retries on 502/503/504 and timeouts because the DesiFlix backend
+// (Azure Container App behind Cloudflare) has cold-start delays: the first
+// request after idle returns 504 in ~10s, but subsequent requests are fast
+// (~0.6s). Without retries, the scraper fails on every cold start.
+function fetchJsonOnce(url, { ua = STREMIO_UA, timeout = 12000 } = {}) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, {
       headers: {
@@ -92,7 +96,7 @@ function fetchJson(url, { ua = STREMIO_UA, timeout = 45000 } = {}) {
         const nextUrl = res.headers.location.startsWith('http')
           ? res.headers.location
           : new URL(res.headers.location, url).toString();
-        return resolve(fetchJson(nextUrl, { ua, timeout }));
+        return resolve(fetchJsonOnce(nextUrl, { ua, timeout }));
       }
       if (res.statusCode !== 200) {
         res.resume();
@@ -111,6 +115,38 @@ function fetchJson(url, { ua = STREMIO_UA, timeout = 45000 } = {}) {
     req.on('error', reject);
     req.setTimeout(timeout, () => req.destroy(new Error(`timeout after ${timeout}ms`)));
   });
+}
+
+// Wrap fetchJsonOnce with retry-on-cold-start logic.
+// The DesiFlix addon (Azure Container App) returns 504 for the first ~10s
+// after idle, then warms up and serves fast 200s. We retry up to 3 times
+// with a 2s backoff, which is enough to outlast the cold-start window.
+async function fetchJson(url, opts = {}) {
+  const maxRetries = 3;
+  const backoffMs = 2000;
+  let lastErr;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fetchJsonOnce(url, opts);
+    } catch (e) {
+      lastErr = e;
+      const msg = e.message || '';
+      // Retry only on transient backend errors (502/503/504 gateway errors
+      // and timeouts). Don't retry on 404 (title not found) or 4xx (client
+      // errors) — those won't fix themselves.
+      const isTransient = msg.includes('HTTP 502') ||
+                          msg.includes('HTTP 503') ||
+                          msg.includes('HTTP 504') ||
+                          msg.includes('timeout') ||
+                          msg.includes('ECONNRESET') ||
+                          msg.includes('ECONNREFUSED') ||
+                          msg.includes('socket hang up');
+      if (!isTransient || attempt === maxRetries) throw e;
+      console.log(`[DesiFlix] ${msg.slice(0, 60)} — retry ${attempt + 1}/${maxRetries} in ${backoffMs}ms`);
+      await new Promise(r => setTimeout(r, backoffMs));
+    }
+  }
+  throw lastErr;
 }
 
 // ─── Fetch TMDB info (needs browser UA, not Stremio UA) ─────────────────────

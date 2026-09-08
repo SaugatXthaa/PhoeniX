@@ -93,6 +93,10 @@ import { HindMovie } from './HindMovie.js';
 import { RiveStream } from './RiveStream.js';
 // reanime.to — anime sub+dub via FlixCloud CDN (XOR-encrypted HLS, /reanime-proxy)
 import { ReAnime } from './ReAnime.js';
+// desiflix — movies/TV/anime via manifest.desitvhub.eu.org Stremio addon
+//   Aggregates multiple upstream providers (flixsix.com MP4, vcdnx.com HLS,
+//   peakstorm.top 4K). Scraper has built-in retry for cold-start 504s.
+import { DesiFlix } from './DesiFlix.js';
 
 export { Source } from './Source.js';
 
@@ -198,6 +202,8 @@ export const createSources = (fetcher) => {
     new RiveStream(fetcher),
     // reanime.to — anime sub+dub via FlixCloud CDN (XOR-encrypted HLS, /reanime-proxy)
     new ReAnime(fetcher),
+    // desiflix — movies/TV/anime via manifest.desitvhub.eu.org (multi-provider aggregation)
+    new DesiFlix(fetcher),
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)
