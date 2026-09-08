@@ -60,16 +60,25 @@ async function getTMDBInfo(tmdbId, type) {
 // ---------------------------------------------------------------------------
 // Search via sitemaps (the ?s= search redirects to homepage, so use sitemaps)
 // ---------------------------------------------------------------------------
-async function searchSite(title) {
+async function searchSite(title, year) {
   const results = [];
-  const titleWords = title.toLowerCase().split(' ').filter(w => w.length > 2);
-  const firstWord = title.toLowerCase().split(' ')[0];
+  // Normalize title: strip non-alphanumeric, split into words, filter short words
+  // e.g. "Dune: Part Two" → ["dune", "part", "two"]
+  const titleWords = title.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2);
+  const firstWord = titleWords[0] || '';
+  const yearStr = year ? String(year) : '';
 
   // Search HDHub4u sitemaps (post-sitemap1.xml through post-sitemap15.xml)
+  // Collect ALL matches across sitemaps, then sort by relevance (most title
+  // words matched, year match preferred). Don't break on first match — the
+  // first sitemap may have an older movie with the same first word (e.g.
+  // "Dune" 2021 vs "Dune: Part Two" 2024).
   for (let i = 1; i <= 15; i++) {
     try {
       const xml = await fetchText(ORIGIN + '/post-sitemap' + (i === 1 ? '' : i) + '.xml', null, 8000);
-      // Find URLs containing the title
       const urls = [...xml.matchAll(/<loc>(https:\/\/new5\.hdhub4u\.cl\/([a-z0-9-]+)\/?)<\/loc>/g)];
       for (const m of urls) {
         const slug = m[2];
@@ -78,7 +87,6 @@ async function searchSite(title) {
           results.push({ url: m[1], slug, site: 'hdhub4u' });
         }
       }
-      if (results.length > 0) break; // Found, stop searching
     } catch (e) { /* try next sitemap */ }
   }
 
@@ -97,10 +105,25 @@ async function searchSite(title) {
             results.push({ url: m[1], slug, site: '4khdhub' });
           }
         }
-        if (results.some(r => r.site === '4khdhub')) break;
       } catch (e) {}
     }
   } catch (e) {}
+
+  // Score each result by how many title words it contains + year match
+  // e.g. "dune-part-two-2024" matches 3/3 words + year → score 4
+  //      "dune-2021" matches 1/3 words + wrong year → score 1
+  for (const r of results) {
+    const slugLower = r.slug.toLowerCase();
+    let score = 0;
+    for (const w of titleWords) {
+      if (slugLower.includes(w)) score++;
+    }
+    if (yearStr && slugLower.includes(yearStr)) score += 2; // year match is strong signal
+    r.score = score;
+  }
+
+  // Sort by score descending (best match first)
+  results.sort((a, b) => b.score - a.score);
 
   return results;
 }
@@ -309,7 +332,7 @@ async function getStreams(tmdbId, type, season, episode) {
   } catch (e) { console.log('[HDHub4u] TMDB error: ' + e.message); return []; }
   console.log('[HDHub4u] TMDB: ' + info.title + (info.year ? ' (' + info.year + ')' : ''));
 
-  const results = await searchSite(info.title);
+  const results = await searchSite(info.title, info.year);
   if (results.length === 0) { console.log('[HDHub4u] No results'); return []; }
   console.log('[HDHub4u] Found ' + results.length + ' results');
 

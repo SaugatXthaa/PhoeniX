@@ -97,6 +97,9 @@ import { ReAnime } from './ReAnime.js';
 //   Aggregates multiple upstream providers (flixsix.com MP4, vcdnx.com HLS,
 //   peakstorm.top 4K). Scraper has built-in retry for cold-start 504s.
 import { DesiFlix } from './DesiFlix.js';
+// persianstremio — Persian-language movies/TV with dual-audio (🇺🇸|🇮🇷)
+//   Direct MP4/MKV from cinamadownload.top, aslmd.sbs, abrtech.top
+import { PersianStremio } from './PersianStremio.js';
 
 export { Source } from './Source.js';
 
@@ -204,6 +207,8 @@ export const createSources = (fetcher) => {
     new ReAnime(fetcher),
     // desiflix — movies/TV/anime via manifest.desitvhub.eu.org (multi-provider aggregation)
     new DesiFlix(fetcher),
+    // persianstremio — Persian dual-audio movies/TV (cinamadownload.top, aslmd.sbs)
+    new PersianStremio(fetcher),
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)

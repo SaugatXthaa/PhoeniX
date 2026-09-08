@@ -73,9 +73,10 @@ async function searchSite(title) {
       if (slug.match(/^(category|tag|page|wp-|feed|comment|search|author|disclaimer|dmca|privacy|contact|about)/)) continue;
       if (seen.has(slug)) continue;
       seen.add(slug);
-      // Match first word of title
-      const firstWord = title.toLowerCase().split(' ')[0];
-      if (slug.toLowerCase().includes(firstWord)) {
+      // Match first word of title (strip non-alphanumeric chars like colons,
+      // apostrophes, etc. — e.g. "Dune: Part Two" → firstWord "dune:" → "dune")
+      const firstWord = title.toLowerCase().split(' ')[0].replace(/[^a-z0-9]/g, '');
+      if (firstWord && slug.toLowerCase().includes(firstWord)) {
         results.push({ url: m[1], slug });
       }
     }

@@ -53,6 +53,20 @@ const NUVIO_SOURCE_IDS = new Set([
   //   Streams are direct URLs (flixsix.com MP4, manifest proxy HLS/MP4) with
   //   no Referer needed — NuvioExtractor passes them through as direct URLs.
   'desiflix',
+  // V2 Nuvio-helper sources — use buildStreamResults from nuvioHelpers.js
+  // which sets meta.nuvioProvider = true. These don't currently set
+  // nuvioReferer (URLs are direct-playable), so NuvioExtractor routes them
+  // as direct URLs (the "else" fallback). Adding them here ensures that if
+  // they ever start returning Referer headers, the extractor will handle
+  // them correctly instead of silently dropping the Referer.
+  //   - hindmovie: GDShine workers.dev (direct MKV, no Referer)
+  //   - hdhub4uv2: GDrive googleusercontent + acek-cdn/dramiyos-cdn HLS
+  //   - movieshuntv2: hubcloud R2 + pixeldrain + GDrive (no Referer)
+  //   - moviesdrivev2: GDrive googleusercontent (no Referer, /range-proxy)
+  'hindmovie', 'hdhub4uv2', 'movieshuntv2', 'moviesdrivev2',
+  // persianstremio — Persian dual-audio direct MP4/MKV (needs Referer:
+  // persianstremio.vercel.app for cinamadownload.top / aslmd.sbs URLs)
+  'persianstremio',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)
