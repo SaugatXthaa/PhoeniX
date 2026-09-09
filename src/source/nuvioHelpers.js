@@ -261,8 +261,8 @@ export async function callNuvioProvider(providerPath, { tmdbId, mediaType, seaso
   const require_ = createRequire(providerPath);
 
   // NOTE: Do NOT delete require_.cache here. Clearing the cache forces a
-  // module reload on every call, which breaks obfuscated scrapers (animezey,
-  // etc.) that have initialization side effects or dynamic imports
+  // module reload on every call, which breaks obfuscated scrapers (videasy,
+  // animezey, etc.) that have initialization side effects or dynamic imports
   // that don't complete properly on reload. The module code doesn't change
   // between requests, so caching is safe and improves performance.
 

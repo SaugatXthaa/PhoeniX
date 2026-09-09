@@ -69,6 +69,7 @@ import { ZXCStream } from './ZXCStream.js';
 import { AnimeZeY } from './AnimeZeY.js';
 import { UHDMovies } from './UHDMovies.js';
 // Nuvio provider sources — Batch 2 (each has its own dedicated source file)
+import { VidEasy } from './VidEasy.js';
 import { AnikotoTV } from './AnikotoTV.js';
 import { AnimeWorldIN } from './AnimeWorldIN.js';
 import { AnimesDigital } from './AnimesDigital.js';
@@ -188,6 +189,8 @@ export const createSources = (fetcher) => {
     // uhdmovies — movies-only (googleusercontent, 4K/1080p)
     new UHDMovies(fetcher),
     // ─── Nuvio provider sources — Batch 2 ───
+    // videasy — movies/TV HLS (moon.ironwallnet.net, 10 speedracelight servers, Referer: vidking.net, up to 4K)
+    new VidEasy(fetcher),
     // anikototv — anime-only sub+dub (megap.akirax.buzz, Referer: megaplay.buzz)
     new AnikotoTV(fetcher),
     // animeworldindia — anime-only (play.zephyrix.top, 1080p, watchanimeworld.top)

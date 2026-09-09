@@ -398,6 +398,8 @@ export class StreamResolver {
       'cinejoyaio', 'zinkmovies', '4khdhub', 'playimdb',
       // Stellar sources — PoW + AES-GCM takes 5-10s; must start early
       'stellar', 'stellarrip',
+      // VidEasy — speedracelight API takes 15-25s; must start early
+      'videasy',
       // NikaStream — Anivexa API takes 20-30s; must start early
       'nikastream',
       // AniKage — prox.anicore.tv API takes 15-25s; must start early
