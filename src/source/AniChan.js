@@ -67,6 +67,53 @@ async function resolveAniList(name) {
   } catch { return null; }
 }
 
+// Fallback: resolve via Jikan API (MyAnimeList wrapper) when AniList is down.
+// Returns an array of media objects with the same shape as AniList results.
+async function resolveViaJikan(name, year) {
+  const JIKAN_API = 'https://api.jikan.moe/v4';
+  try {
+    const searchUrl = `${JIKAN_API}/anime?q=${encodeURIComponent(name)}&limit=5&sfw=true`;
+    const res = await fetch(searchUrl, {
+      headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const results = data?.data;
+    if (!Array.isArray(results) || results.length === 0) return null;
+    // Convert Jikan results to AniList-like shape
+    return results.map(r => ({
+      id: null, // No AniList ID — will use MAL ID instead
+      idMal: r.mal_id,
+      title: { romaji: r.title_japanese || r.title, english: r.title_english || r.title },
+      format: r.type === 'TV' ? 'TV' : r.type === 'MOVIE' ? 'MOVIE' : 'TV',
+    }));
+  } catch { return null; }
+}
+
+// Fallback: search anichan.net directly by title (returns AniList IDs from
+// the site's own search index). This works even when AniList API is down.
+async function resolveViaAniChanSearch(name) {
+  try {
+    const { gotScraping } = await import('got-scraping');
+    const res = await gotScraping.get(`${BASE}/search?q=${encodeURIComponent(name)}`, {
+      headers: { 'User-Agent': UA, 'Accept': 'text/html' },
+      timeout: { request: 10000 }, throwHttpErrors: false, http2: false,
+    });
+    if (res.statusCode !== 200) return null;
+    // Parse /anime/{anilistId}/{slug} links from HTML
+    const matches = [...res.body.matchAll(/\/anime\/(\d+)\/([a-z0-9-]+)/gi)];
+    if (matches.length === 0) return null;
+    // Convert to AniList-like shape
+    return matches.map(m => ({
+      id: parseInt(m[1]),
+      idMal: null,
+      title: { romaji: m[2].replace(/-/g, ' '), english: m[2].replace(/-/g, ' ') },
+      format: 'TV',
+    }));
+  } catch { return null; }
+}
+
 export class AniChan extends Source {
   constructor(fetcher) {
     super();
@@ -84,10 +131,16 @@ export class AniChan extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Step 1: Resolve AniList ID
-    const mediaList = await resolveAniList(name);
+    // Step 1: Resolve AniList ID (with fallbacks when AniList is down)
+    let mediaList = await resolveAniList(name);
     if (!mediaList?.length) {
-      return [];
+      // AniList is down — search anichan.net directly (returns AniList IDs)
+      mediaList = await resolveViaAniChanSearch(name);
+    }
+    if (!mediaList?.length) {
+      // Last resort: Jikan API (returns MAL IDs, not AniList IDs)
+      mediaList = await resolveViaJikan(name, year);
+      if (!mediaList?.length) return [];
     }
 
     const nameNorm = normalize(name);
@@ -111,6 +164,7 @@ export class AniChan extends Source {
     }
 
     const anilistId = bestMedia.id;
+    if (!anilistId) return [];
 
     // Step 2: Check episodes and dub availability
     const epData = await apiGet(`/api/watch/episodes?anilistId=${anilistId}`);

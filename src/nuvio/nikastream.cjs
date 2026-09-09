@@ -322,6 +322,45 @@ async function findAniListId(title, type) {
       }
     }
   }
+
+  // Fallback: Jikan API (MyAnimeList wrapper) — returns MAL IDs only.
+  // NOTE: Anivexa API requires anilistId, so a Jikan-only result will be
+  // gracefully skipped downstream. Still useful for the title cross-check.
+  try {
+    const jikanUrl = 'https://api.jikan.moe/v4/anime?q=' + encodeURIComponent(title) + '&limit=5&sfw=true';
+    const r = await gotGet(jikanUrl, { timeoutMs: 10000 });
+    if (r && r.ok) {
+      const j = JSON.parse(r.body);
+      const results = j?.data || [];
+      if (results.length > 0) {
+        const top = results[0];
+        return {
+          anilistId: null, // No AniList ID — Anivexa API can't be queried
+          malId: top.mal_id,
+          title: top.title_english || top.title_japanese || top.title,
+        };
+      }
+    }
+  } catch (e) { /* fall through to Kitsu */ }
+
+  // Fallback: Kitsu API — no AniList or MAL IDs available
+  try {
+    const kitsuUrl = 'https://kitsu.app/api/edge/anime?filter[text]=' + encodeURIComponent(title) + '&page[limit]=5';
+    const r = await gotGet(kitsuUrl, { timeoutMs: 10000 });
+    if (r && r.ok) {
+      const j = JSON.parse(r.body);
+      const results = j?.data || [];
+      if (results.length > 0) {
+        const top = results[0];
+        return {
+          anilistId: null,
+          malId: null,
+          title: top.attributes?.titles?.en || top.attributes?.canonicalTitle || title,
+        };
+      }
+    }
+  } catch (e) { /* give up */ }
+
   return null;
 }
 
@@ -582,6 +621,13 @@ async function getStreams(tmdbId, type, season, episode) {
   const anilistResult = await findAniListId(info.title, type);
   if (!anilistResult) {
     console.log('[NikaStream] Could not find AniList ID for "' + info.title + '"');
+    return [];
+  }
+  // Anivexa API requires anilistId — if the Jikan/Kitsu fallback gave us only
+  // a malId (AniList was down), we can't query the aggregator. Bail out
+  // gracefully rather than firing 13 doomed /episodes/null fetches.
+  if (!anilistResult.anilistId) {
+    console.log('[NikaStream] Only MAL ID available (AniList was down) — Anivexa API requires anilistId, skipping');
     return [];
   }
   console.log('[NikaStream] AniList: ' + anilistResult.anilistId + ' (MAL: ' + anilistResult.malId + ', title: ' + anilistResult.title + ')');

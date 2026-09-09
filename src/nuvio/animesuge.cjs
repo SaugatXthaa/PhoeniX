@@ -57,9 +57,9 @@ async function searchAnimeSuge(query) {
   const url = `${AS_API}/anime/search?keyword=${encodeURIComponent(query)}`;
   console.log(`[AnimeSuge] Search: ${url}`);
   const data = await fetchJson(url, { 'X-Requested-With': 'XMLHttpRequest' });
-  if (!data || !data.result || !data.result.html) return [];
+  if (!data || !data.result) return [];
 
-  const html = data.result.html;
+  const html = data.result.html || '';
   const matches = [...html.matchAll(/href="(https:\/\/animesuge\.at\/anime\/([^"]+))"/g)];
   const seen = new Set();
   const results = [];
@@ -171,12 +171,15 @@ async function resolveMegaPlay(streamUrl) {
   const idMatch = html.match(/data-id="(\d+)"/);
   if (!idMatch) return null;
 
-  const apiUrl = `${MEGAPLAY}/stream/getSources?id=${idMatch[1]}`;
+  // Use getSourcesNew (not getSources) — the old API was deprecated and
+  // now returns encrypted data without a sources.file field.
+  // getSourcesNew returns { sources: { file: "https://...m3u8" }, tracks: [...] }
+  const apiUrl = `${MEGAPLAY}/stream/getSourcesNew?id=${idMatch[1]}`;
   const data = await fetchJson(apiUrl, { 'Referer': streamUrl, 'X-Requested-With': 'XMLHttpRequest' });
   if (!data || !data.sources) return null;
 
   return {
-    url: data.sources.file,
+    url: data.sources.file || data.sources,
     subtitles: data.tracks || [],
     intro: data.intro || null,
     outro: data.outro || null,

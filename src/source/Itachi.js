@@ -119,6 +119,7 @@ async function isAnimeContent(fetcher, ctx, tmdbId) {
 }
 
 // Resolve AniList ID + MAL ID via AniList GraphQL search by name.
+// Falls back to Jikan API (MyAnimeList) when AniList is down.
 async function resolveAniList(name) {
   const query = `
     query($search: String) {
@@ -138,7 +139,29 @@ async function resolveAniList(name) {
       { query, variables: { search: name } },
       { Accept: 'application/json' },
       15000);
-    return data?.data?.Page?.media || [];
+    const media = data?.data?.Page?.media || [];
+    if (media.length > 0) return media;
+  } catch { /* AniList might be down — fall through to Jikan */ }
+
+  // Fallback: Jikan API (MyAnimeList wrapper) — returns MAL IDs
+  try {
+    const jikanUrl = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(name)}&limit=5&sfw=true`;
+    const res = await fetch(jikanUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const jikanData = await res.json();
+    const results = jikanData?.data || [];
+    // Convert Jikan results to AniList-like shape
+    return results.map(r => ({
+      id: null, // No AniList ID — will use MAL ID
+      idMal: r.mal_id,
+      title: { romaji: r.title_japanese || r.title, english: r.title_english || r.title, userPreferred: r.title },
+      format: r.type === 'TV' ? 'TV' : r.type === 'MOVIE' ? 'MOVIE' : 'TV',
+      episodes: r.episodes,
+      duration: r.duration,
+    }));
   } catch { return []; }
 }
 
@@ -171,12 +194,15 @@ function pickBestAniList(mediaList, name, wantMovie) {
 // for some titles (e.g. "Your Name." needs malId=32281, not just anilistId)
 async function resolveVidHawkTicket(anilistId, malId, episode, serverId, variant) {
   const params = new URLSearchParams({
-    anilistId: String(anilistId),
     episode: String(episode),
     server: serverId,
     variant,
     parentHost: 'itachi.tv',
   });
+  // Only set anilistId if we have one (Jikan fallback may only have malId)
+  if (anilistId) {
+    params.set('anilistId', String(anilistId));
+  }
   if (malId) {
     params.set('malId', String(malId));
   }
@@ -202,6 +228,8 @@ async function detectHlsHeight(hlsUrl) {
 
 // Check if a (provider, variant) is available via itachi.tv's availability API
 async function checkAvailability(anilistId, episode, language, providerId) {
+  // Skip availability check if we don't have an AniList ID (Jikan fallback)
+  if (!anilistId) return true;
   try {
     const url = `${ITACHI_BASE}/api/playback/availability?anilistId=${anilistId}&episodeNumber=${episode}&language=${language}&providerId=${providerId}`;
     const data = await gotJson(url, { Referer: `${ITACHI_BASE}/` }, 6000);
@@ -238,8 +266,10 @@ export class Itachi extends Source {
     const best = pickBestAniList(mediaList, name, wantMovie);
     if (!best) return [];
 
-    const anilistId = best.id;
+    const anilistId = best.id; // May be null when using Jikan fallback
     const malId = best.idMal;
+    // Skip if we have neither ID
+    if (!anilistId && !malId) return [];
     const epNum = wantMovie ? 1 : (tmdbId.episode || 1);
 
     const results = [];

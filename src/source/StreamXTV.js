@@ -87,8 +87,10 @@ export class StreamXTV extends Source {
 
     const results = [];
 
-    if (animeMatch) {
+    if (animeMatch && animeMatch.id) {
       // ANIME path — build Megaplay URLs with sub + dub
+      // Skip when Jikan/Kitsu fallback gave us only a malId (no anilistId):
+      // streamxtv's anime embed URL templates all require {anilistId}.
       const epNum = tmdbId.season ? (tmdbId.episode || 1) : 1;
       for (const subDub of ['sub', 'dub']) {
         for (const provider of ANIME_PROVIDERS) {
@@ -135,7 +137,9 @@ export class StreamXTV extends Source {
   }
 
   // Search streamxtv's anime backend to find AniList ID for this title.
-  // Returns { id, title } or null if no match.
+  // streamxtv's /anime/search endpoint is itself AniList-backed, so when
+  // AniList is down, this returns no results. Fall back to Jikan/Kitsu.
+  // Returns { id, malId, title } or null if no match.
   async findAniListId(name) {
     const queries = [
       name,
@@ -173,9 +177,70 @@ export class StreamXTV extends Source {
 
       // Only accept matches with a reasonable score
       if (best && bestScore >= 50) {
-        return { id: best.id, title: best.title };
+        return { id: best.id, malId: null, title: best.title };
       }
     }
+
+    // Fallback: Jikan API (MyAnimeList wrapper) — returns MAL IDs only.
+    // NOTE: streamxtv's anime embed URLs require anilistId, so a Jikan-only
+    // result will be gracefully skipped by the caller. Kept for parity with
+    // the Itachi fallback pattern + future mal-based URL templates.
+    try {
+      const jikanUrl = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(name)}&limit=5&sfw=true`;
+      const jikanData = await fetchJson(jikanUrl);
+      const results = jikanData?.data || [];
+      let best = null;
+      let bestScore = 0;
+      for (const r of results) {
+        const titles = [r.title_english, r.title_japanese, r.title].filter(Boolean);
+        for (const t of titles) {
+          const rNorm = normalize(t);
+          if (!rNorm) continue;
+          let score = 0;
+          if (rNorm === nameNorm) { score = 100; }
+          else if (rNorm.includes(nameNorm) || nameNorm.includes(rNorm)) {
+            score = Math.min(rNorm.length, nameNorm.length) / Math.max(rNorm.length, nameNorm.length) * 90;
+          }
+          if (score > bestScore) { bestScore = score; best = r; }
+        }
+      }
+      if (best && bestScore >= 50) {
+        return {
+          id: null, // No AniList ID — caller will skip the anime path
+          malId: best.mal_id,
+          title: best.title_english || best.title_japanese || best.title,
+        };
+      }
+    } catch { /* fall through to Kitsu */ }
+
+    // Fallback: Kitsu API — no AniList/MAL IDs, but lets us match the title
+    try {
+      const kitsuUrl = `https://kitsu.app/api/edge/anime?filter[text]=${encodeURIComponent(name)}&page[limit]=5`;
+      const kitsuData = await fetchJson(kitsuUrl);
+      const results = kitsuData?.data || [];
+      let best = null;
+      let bestScore = 0;
+      for (const r of results) {
+        const titles = [r.attributes?.titles?.en, r.attributes?.titles?.en_jp, r.attributes?.canonicalTitle].filter(Boolean);
+        for (const t of titles) {
+          const rNorm = normalize(t);
+          if (!rNorm) continue;
+          let score = 0;
+          if (rNorm === nameNorm) { score = 100; }
+          else if (rNorm.includes(nameNorm) || nameNorm.includes(rNorm)) {
+            score = Math.min(rNorm.length, nameNorm.length) / Math.max(rNorm.length, nameNorm.length) * 90;
+          }
+          if (score > bestScore) { bestScore = score; best = r; }
+        }
+      }
+      if (best && bestScore >= 50) {
+        return {
+          id: null,
+          malId: null,
+          title: best.attributes?.titles?.en || best.attributes?.canonicalTitle || name,
+        };
+      }
+    } catch { /* give up */ }
 
     return null;
   }

@@ -48,10 +48,62 @@ async function resolveAniList(name) {
       body: JSON.stringify({ query, variables: { search: name } }),
       timeout: { request: 10000 }, throwHttpErrors: false,
     });
-    if (res.statusCode !== 200) return null;
-    const data = JSON.parse(res.body);
-    return data?.data?.Page?.media || [];
-  } catch { return null; }
+    if (res.statusCode === 200) {
+      const data = JSON.parse(res.body);
+      const media = data?.data?.Page?.media || [];
+      if (media.length > 0) return media;
+    }
+  } catch { /* AniList might be down — fall through to Jikan */ }
+
+  // Fallback: Jikan API (MyAnimeList wrapper) — returns MAL IDs
+  try {
+    const jikanUrl = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(name)}&limit=5&sfw=true`;
+    const res = await fetch(jikanUrl, {
+      headers: { 'User-Agent': UA },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const jikanData = await res.json();
+      const results = jikanData?.data || [];
+      if (results.length > 0) {
+        // Convert Jikan results to AniList-like shape (id: null — will use MAL ID)
+        return results.map(r => ({
+          id: null,
+          idMal: r.mal_id,
+          title: { romaji: r.title_japanese || r.title, english: r.title_english || r.title },
+          format: r.type === 'TV' ? 'TV' : r.type === 'MOVIE' ? 'MOVIE' : 'TV',
+          seasonYear: r.year || (r.aired?.from ? new Date(r.aired.from).getFullYear() : null),
+        }));
+      }
+    }
+  } catch { /* fall through to Kitsu */ }
+
+  // Fallback: Kitsu API — no AniList/MAL IDs, but lets us match the title
+  try {
+    const kitsuUrl = `https://kitsu.app/api/edge/anime?filter[text]=${encodeURIComponent(name)}&page[limit]=5`;
+    const res = await fetch(kitsuUrl, {
+      headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const kitsuData = await res.json();
+      const results = kitsuData?.data || [];
+      if (results.length > 0) {
+        return results.map(r => ({
+          id: null,
+          idMal: null, // Kitsu doesn't expose MAL IDs in this endpoint
+          title: {
+            romaji: r.attributes?.titles?.en_jp || r.attributes?.canonicalTitle,
+            english: r.attributes?.titles?.en || r.attributes?.canonicalTitle,
+          },
+          format: (r.attributes?.subtype === 'movie') ? 'MOVIE' : 'TV',
+          seasonYear: r.attributes?.startDate ? new Date(r.attributes.startDate).getFullYear() : null,
+        }));
+      }
+    }
+  } catch { /* give up */ }
+
+  return [];
 }
 
 // Search animegg.org for series slugs

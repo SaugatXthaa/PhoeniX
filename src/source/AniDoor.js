@@ -89,10 +89,65 @@ async function resolveAniList(name) {
       timeout: { request: 15000 },
       throwHttpErrors: false,
     });
-    if (res.statusCode !== 200) return null;
-    const data = JSON.parse(res.body);
-    return data?.data?.Page?.media || [];
-  } catch { return null; }
+    if (res.statusCode === 200) {
+      const data = JSON.parse(res.body);
+      const media = data?.data?.Page?.media || [];
+      if (media.length > 0) return media;
+    }
+  } catch { /* AniList might be down — fall through to Jikan */ }
+
+  // Fallback: Jikan API (MyAnimeList wrapper) — returns MAL IDs
+  try {
+    const jikanUrl = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(name)}&limit=5&sfw=true`;
+    const res = await fetch(jikanUrl, {
+      headers: { 'User-Agent': UA },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const jikanData = await res.json();
+      const results = jikanData?.data || [];
+      if (results.length > 0) {
+        // Convert Jikan results to AniList-like shape (id: null — will use MAL ID)
+        return results.map(r => ({
+          id: null,
+          idMal: r.mal_id,
+          title: { romaji: r.title_japanese || r.title, english: r.title_english || r.title, userPreferred: r.title },
+          format: r.type === 'TV' ? 'TV' : r.type === 'MOVIE' ? 'MOVIE' : 'TV',
+          episodes: r.episodes,
+          duration: r.duration,
+        }));
+      }
+    }
+  } catch { /* fall through to Kitsu */ }
+
+  // Fallback: Kitsu API — no AniList/MAL IDs, but lets us match the title
+  try {
+    const kitsuUrl = `https://kitsu.app/api/edge/anime?filter[text]=${encodeURIComponent(name)}&page[limit]=5`;
+    const res = await fetch(kitsuUrl, {
+      headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const kitsuData = await res.json();
+      const results = kitsuData?.data || [];
+      if (results.length > 0) {
+        return results.map(r => ({
+          id: null,
+          idMal: null, // Kitsu doesn't expose MAL IDs in this endpoint
+          title: {
+            romaji: r.attributes?.titles?.en_jp || r.attributes?.canonicalTitle,
+            english: r.attributes?.titles?.en || r.attributes?.canonicalTitle,
+            userPreferred: r.attributes?.canonicalTitle,
+          },
+          format: (r.attributes?.subtype === 'movie') ? 'MOVIE' : 'TV',
+          episodes: r.attributes?.episodeCount,
+          duration: r.attributes?.episodeLength,
+        }));
+      }
+    }
+  } catch { /* give up */ }
+
+  return [];
 }
 
 // AniList formats that count as real anime episodes/movies — NOT music videos.
@@ -164,6 +219,8 @@ export class AniDoor extends Source {
 
     const anilistId = bestMedia.id;
     const malId = bestMedia.idMal;
+    // If neither ID is available (rare Jikan/Kitsu edge case), can't build URLs
+    if (!anilistId && !malId) return [];
     const isMovie = wantMovie;
 
     // Step 2: Fetch sources.json config
@@ -183,6 +240,10 @@ export class AniDoor extends Source {
 
       // Some templates use {mal} — skip if we don't have a MAL ID
       if (src.path.includes('{mal}') && !malId) continue;
+
+      // Some templates use {al} (AniList ID) — skip if Jikan/Kitsu fallback
+      // gave us no AniList ID (only MAL ID is available)
+      if (src.path.includes('{al}') && !anilistId) continue;
 
       // Skip dead/unextractable hosts — only megaplay.buzz URLs can be
       // resolved server-side (via the Megaplay extractor's getSourcesNew API).
