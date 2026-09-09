@@ -196,7 +196,10 @@ export function buildStreamResults({ streams, title, sourceId, sourceLabel, coun
     // pixeldrain.com is one — it's a direct-play CDN that should be accessed
     // WITHOUT a Referer. We skip nuvioReferer for these hosts so they go
     // through DirectStream instead of /proxy.
-    const NO_REFERER_HOSTS = /pixeldrain\.(com|dev)|fastdlserver\.site/i;
+    // googleusercontent.com is also direct-play (GDrive CDN) — it doesn't
+    // need a Referer and the NuvioExtractor routes it through /range-proxy
+    // (which doesn't send Referer anyway).
+    const NO_REFERER_HOSTS = /pixeldrain\.(com|dev)|fastdlserver\.site|googleusercontent\.com/i;
     const skipReferer = NO_REFERER_HOSTS.test(url.hostname);
 
     const meta = {

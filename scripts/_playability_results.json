@@ -1,0 +1,538 @@
+{
+  "timestamp": "2026-09-09T00:31:09.753Z",
+  "results": [
+    {
+      "id": "4khdhub",
+      "status": "PASS",
+      "total": 12,
+      "playable": 3
+    },
+    {
+      "id": "moviebox",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "cinewave",
+      "status": "PASS",
+      "total": 29,
+      "playable": 1
+    },
+    {
+      "id": "watchseries",
+      "status": "PASS",
+      "total": 11,
+      "playable": 5
+    },
+    {
+      "id": "necro",
+      "status": "PASS",
+      "total": 5,
+      "playable": 5
+    },
+    {
+      "id": "vidsrcsbs",
+      "status": "PASS",
+      "total": 3,
+      "playable": 3
+    },
+    {
+      "id": "vidlink2",
+      "status": "UNPLAYABLE",
+      "total": 2,
+      "playable": 0
+    },
+    {
+      "id": "vidking",
+      "status": "PASS",
+      "total": 1,
+      "playable": 1
+    },
+    {
+      "id": "vidfast",
+      "status": "PASS",
+      "total": 1,
+      "playable": 1
+    },
+    {
+      "id": "vegamovies",
+      "status": "PASS",
+      "total": 1,
+      "playable": 1
+    },
+    {
+      "id": "primeshows",
+      "status": "PASS",
+      "total": 6,
+      "playable": 5
+    },
+    {
+      "id": "netlio",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "animeflix",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "anidb",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "anineko",
+      "status": "PASS",
+      "total": 6,
+      "playable": 1
+    },
+    {
+      "id": "verhdlink",
+      "status": "PASS",
+      "total": 4,
+      "playable": 4
+    },
+    {
+      "id": "meinecloud",
+      "status": "PASS",
+      "total": 4,
+      "playable": 4
+    },
+    {
+      "id": "acermovies",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "streamxtv",
+      "status": "PASS",
+      "total": 4,
+      "playable": 4
+    },
+    {
+      "id": "anikoto",
+      "status": "PASS",
+      "total": 4,
+      "playable": 4
+    },
+    {
+      "id": "anikage",
+      "status": "UNPLAYABLE",
+      "total": 6,
+      "playable": 0
+    },
+    {
+      "id": "anibd",
+      "status": "PASS",
+      "total": 1,
+      "playable": 1
+    },
+    {
+      "id": "2dhive",
+      "status": "PASS",
+      "total": 2,
+      "playable": 2
+    },
+    {
+      "id": "anidoor",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "nowhdtime",
+      "status": "UNPLAYABLE",
+      "total": 1,
+      "playable": 0
+    },
+    {
+      "id": "cinefreak",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "pantyflix",
+      "status": "PASS",
+      "total": 7,
+      "playable": 5
+    },
+    {
+      "id": "animegg",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "peckle",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "hianime",
+      "status": "PASS",
+      "total": 2,
+      "playable": 2
+    },
+    {
+      "id": "animekai",
+      "status": "PASS",
+      "total": 2,
+      "playable": 2
+    },
+    {
+      "id": "cineby",
+      "status": "PASS",
+      "total": 4,
+      "playable": 4
+    },
+    {
+      "id": "hindmoviez",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "movieblast",
+      "status": "PASS",
+      "total": 3,
+      "playable": 3
+    },
+    {
+      "id": "playimdb",
+      "status": "PASS",
+      "total": 3,
+      "playable": 2
+    },
+    {
+      "id": "zxcstream",
+      "status": "UNPLAYABLE",
+      "total": 1,
+      "playable": 0
+    },
+    {
+      "id": "animezey",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "uhdmovies",
+      "status": "PASS",
+      "total": 7,
+      "playable": 5
+    },
+    {
+      "id": "videasy",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "anikototv",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "animeworldindia",
+      "status": "PASS",
+      "total": 1,
+      "playable": 1
+    },
+    {
+      "id": "animesdigital",
+      "status": "UNPLAYABLE",
+      "total": 1,
+      "playable": 0
+    },
+    {
+      "id": "itachi",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "cinevood",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "imdbplay",
+      "status": "UNPLAYABLE",
+      "total": 1,
+      "playable": 0
+    },
+    {
+      "id": "raflix",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "hindmovie",
+      "status": "PASS",
+      "total": 3,
+      "playable": 3
+    },
+    {
+      "id": "rivestream",
+      "status": "UNPLAYABLE",
+      "total": 15,
+      "playable": 0
+    },
+    {
+      "id": "reanime",
+      "status": "UNPLAYABLE",
+      "total": 3,
+      "playable": 0
+    },
+    {
+      "id": "desiflix",
+      "status": "PASS",
+      "total": 8,
+      "playable": 5
+    },
+    {
+      "id": "persianstremio",
+      "status": "PASS",
+      "total": 8,
+      "playable": 4
+    },
+    {
+      "id": "anichan",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "animesuge",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "bollyflix",
+      "status": "PASS",
+      "total": 6,
+      "playable": 4
+    },
+    {
+      "id": "fourkhdhubone",
+      "status": "PASS",
+      "total": 6,
+      "playable": 5
+    },
+    {
+      "id": "framextv",
+      "status": "PASS",
+      "total": 3,
+      "playable": 3
+    },
+    {
+      "id": "flystream",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "cinejoyaio",
+      "status": "PASS",
+      "total": 2,
+      "playable": 2
+    },
+    {
+      "id": "nikastream",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "cinebyrocks",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "stellarrip",
+      "status": "UNPLAYABLE",
+      "total": 4,
+      "playable": 0
+    },
+    {
+      "id": "stellar",
+      "status": "PASS",
+      "total": 2,
+      "playable": 1
+    },
+    {
+      "id": "hdhub4uv2",
+      "status": "PASS",
+      "total": 7,
+      "playable": 4
+    },
+    {
+      "id": "movieshuntv2",
+      "status": "PASS",
+      "total": 1,
+      "playable": 1
+    },
+    {
+      "id": "moviesdrivev2",
+      "status": "PASS",
+      "total": 4,
+      "playable": 4
+    },
+    {
+      "id": "antova",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "cinehdplus",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "cinesu",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "cuevana",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "dahmermovies",
+      "status": "UNPLAYABLE",
+      "total": 1,
+      "playable": 0
+    },
+    {
+      "id": "dahmermovies4k",
+      "status": "UNPLAYABLE",
+      "total": 2,
+      "playable": 0
+    },
+    {
+      "id": "filmeonlinehd",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "filmpalast",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "frembed",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "homecine",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "kmmovies",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "kinoger",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "kokoshka",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "movy",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "pahe",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "vegacatering",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "vidlove",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "vidspark",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "vidzee",
+      "status": "UNPLAYABLE",
+      "total": 2,
+      "playable": 0
+    },
+    {
+      "id": "vixsrc",
+      "status": "ZERO",
+      "total": 0
+    },
+    {
+      "id": "allwish",
+      "status": "PASS",
+      "total": 2,
+      "playable": 2
+    },
+    {
+      "id": "hdhub4unew",
+      "status": "ZERO",
+      "total": 0
+    }
+  ],
+  "failures": [
+    {
+      "id": "vidlink2",
+      "reason": "0/2 streams playable"
+    },
+    {
+      "id": "anikage",
+      "reason": "0/6 streams playable"
+    },
+    {
+      "id": "nowhdtime",
+      "reason": "0/1 streams playable"
+    },
+    {
+      "id": "zxcstream",
+      "reason": "0/1 streams playable"
+    },
+    {
+      "id": "animesdigital",
+      "reason": "0/1 streams playable"
+    },
+    {
+      "id": "imdbplay",
+      "reason": "0/1 streams playable"
+    },
+    {
+      "id": "rivestream",
+      "reason": "0/15 streams playable"
+    },
+    {
+      "id": "reanime",
+      "reason": "0/3 streams playable"
+    },
+    {
+      "id": "stellarrip",
+      "reason": "0/4 streams playable"
+    },
+    {
+      "id": "dahmermovies",
+      "reason": "0/1 streams playable"
+    },
+    {
+      "id": "dahmermovies4k",
+      "reason": "0/2 streams playable"
+    },
+    {
+      "id": "vidzee",
+      "reason": "0/2 streams playable"
+    }
+  ]
+}

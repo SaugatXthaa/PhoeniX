@@ -26,6 +26,7 @@
 import { CountryCode } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
+import { execFile } from 'child_process';
 
 const BASE_URL = 'https://cinevood.love';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -42,26 +43,62 @@ async function getGot() {
   return _gotScraping;
 }
 
-async function fetchText(url, referer) {
-  const got = await getGot();
-  if (!got) throw new Error('got-scraping unavailable');
-  const headers = {
-    'User-Agent': UA,
-    'Accept': 'text/html,*/*',
-    'Accept-Language': 'en-US,en;q=0.5',
-  };
-  if (referer) headers['Referer'] = referer;
-  const res = await got(url, {
-    headers,
-    timeout: { request: 15000 },
-    throwHttpErrors: false,
-    followRedirect: true,
-    http2: true,
+// Cinevood.love is behind Cloudflare's "Just a moment..." challenge.
+// Neither got-scraping nor native fetch can bypass it (both get 403).
+// curl works because it sends a different TLS fingerprint. We use curl
+// with a cookie jar to handle the CF challenge cookies.
+const COOKIE_FILE = '/tmp/cinevood_cookies.txt';
+function fetchViaCurl(url, referer) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-sSk', '--max-time', '20', '-L', '--compressed',
+      '-c', COOKIE_FILE, '-b', COOKIE_FILE,
+      '-A', UA,
+      '-H', 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      '-H', 'Accept-Language: en-US,en;q=0.5',
+    ];
+    if (referer) args.push('-H', `Referer: ${referer}`);
+    args.push(url);
+    execFile('curl', args, {
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 25000,
+      windowsHide: true,
+    }, (err, stdout) => {
+      if (err) { reject(new Error(`curl failed: ${err.message}`)); return; }
+      resolve(stdout || '');
+    });
   });
-  if (res.statusCode !== 200) {
-    throw new Error(`HTTP ${res.statusCode}`);
+}
+
+async function fetchText(url, referer) {
+  // Try curl first — it bypasses Cloudflare on this site
+  try {
+    const body = await fetchViaCurl(url, referer);
+    if (body && body.length > 50 && !body.includes('Just a moment')) {
+      return body;
+    }
+  } catch (e) {
+    console.log(`[cinevood] curl failed: ${e.message.slice(0, 60)}`);
   }
-  return res.body;
+  // Fallback: got-scraping (Chrome TLS fingerprint)
+  const got = await getGot();
+  if (got) {
+    try {
+      const res = await got(url, {
+        headers: { 'User-Agent': UA, 'Accept': 'text/html,*/*' },
+        timeout: { request: 15000 },
+        throwHttpErrors: false,
+        followRedirect: true,
+      });
+      if (res.statusCode === 200 && res.body && !res.body.includes('Just a moment')) {
+        return res.body;
+      }
+    } catch (e) {
+      console.log(`[cinevood] got-scraping failed: ${e.message.slice(0, 60)}`);
+    }
+  }
+  throw new Error(`HTTP 403 (Cloudflare challenge)`);
 }
 
 // Detect anime via TMDB genres + original language
