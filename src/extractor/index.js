@@ -9,7 +9,6 @@ import { Fsst } from './Fsst.js';
 import { HBLinks } from './HBLinks.js';
 import { HDStream4U } from './HDStream4U.js';
 import { HubExtractor } from './HubExtractor.js';
-import { KinoGer } from './KinoGer.js';
 import { LuluStream } from './LuluStream.js';
 import { MovieBox } from './MovieBox.js';
 import { SaveFiles } from './SaveFiles.js';
@@ -88,7 +87,6 @@ export const createExtractors = (fetcher, logger) => {
     new FileMoon(fetcher, logger),
     new Fsst(fetcher, logger),
     new HDStream4U(fetcher, logger),
-    new KinoGer(fetcher, logger),
     new LuluStream(fetcher, logger),
     new MovieBox(fetcher, logger),
     new SaveFiles(fetcher, logger),

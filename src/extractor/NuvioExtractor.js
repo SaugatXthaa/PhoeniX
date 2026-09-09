@@ -24,9 +24,9 @@ import { Extractor } from './Extractor.js';
 const NUVIO_SOURCE_IDS = new Set([
   'cineby', 'hindmoviez', 'movieblast',
   'movies4u', 'playimdb',
-  // Batch 2: videasy, anikototv, animesalt,
+  // Batch 2: anikototv, animesalt,
   // animeworldindia, animesdigital
-  'videasy', 'anikototv',
+  'anikototv',
   'animesalt', 'animeworldindia', 'animesdigital',
   // AniChan — anime sub+dub HLS via AniList ID + anichan.net API
   'anichan',
@@ -70,10 +70,7 @@ const NUVIO_SOURCE_IDS = new Set([
   // Orphan Nuvio sources (registered in batch) — all use buildStreamResults
   //   - dahmermovies: p.111477.xyz bulk API (direct, no Referer)
   //   - dahmermovies4k: 4K variant of dahmermovies
-  //   - kmmovies: Nuvio scraper (direct URLs)
-  //   - movy: 12-server Nuvio scraper (direct HLS/MP4)
-  //   - vidlove: Nuvio scraper (direct URLs)
-  'dahmermovies', 'dahmermovies4k', 'kmmovies', 'movy', 'vidlove',
+  'dahmermovies', 'dahmermovies4k',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

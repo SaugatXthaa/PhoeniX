@@ -47,7 +47,6 @@ import { AniBD } from './AniBD.js';
 import { TwoDhive } from './TwoDhive.js';
 import { AniDoor } from './AniDoor.js';
 import { NowHDTime } from './NowHDTime.js';
-import { CineFreak } from './CineFreak.js';
 import { Pantyflix } from './Pantyflix.js';
 import { AnimeGG } from './AnimeGG.js';
 import { Peckle } from './Peckle.js';
@@ -70,7 +69,6 @@ import { ZXCStream } from './ZXCStream.js';
 import { AnimeZeY } from './AnimeZeY.js';
 import { UHDMovies } from './UHDMovies.js';
 // Nuvio provider sources — Batch 2 (each has its own dedicated source file)
-import { VidEasy } from './VidEasy.js';
 import { AnikotoTV } from './AnikotoTV.js';
 import { AnimeWorldIN } from './AnimeWorldIN.js';
 import { AnimesDigital } from './AnimesDigital.js';
@@ -78,9 +76,6 @@ import { AnimesDigital } from './AnimesDigital.js';
 //   VidHawk: 3 servers × 2 audio = 6 HLS streams + English VTT subtitles
 //   MegaPlay: 2 fallback URLs (sub + dub) — resolved by Megaplay extractor
 import { Itachi } from './Itachi.js';
-// cinevood.love — movies/TV/anime download links (up to 4K) via mobilejsr.rest
-//   Returns external URLs with enriched metadata (quality, codec, size from titles)
-import { Cinevood } from './Cinevood.js';
 // imdbplay.tech — movies/TV/anime via vidsrc.me backend (up to 4K)
 //   Returns external embed URLs with enriched metadata from vidsrc.me API
 import { IMDBPlay } from './IMDBPlay.js';
@@ -102,24 +97,13 @@ import { DesiFlix } from './DesiFlix.js';
 import { PersianStremio } from './PersianStremio.js';
 // ─── Orphan sources (complete but never registered — batch add) ───
 // All verified as complete with unique source IDs. Some use Nuvio scrapers
-// (dahmermovies, kmmovies, movy, vidlove, dahmermovies4k), others use
-// got-scraping or this.fetcher directly.
+// (dahmermovies, dahmermovies4k), others use got-scraping or this.fetcher directly.
 import { Antova } from './Antova.js';
 import { CineHDPlus } from './CineHDPlus.js';
-import { CineSu } from './CineSu.js';
 import { Cuevana } from './Cuevana.js';
 import { DahmerMovies } from './DahmerMovies.js';
 import { DahmerMovies4k } from './DahmerMovies4k.js';
 import { FilmeOnlineHD } from './FilmeOnlineHD.js';
-import { FilmpalastTO } from './FilmpalastTO.js';
-import { Frembed } from './Frembed.js';
-import { HomeCine } from './HomeCine.js';
-import { KMMovies } from './KMMovies.js';
-import { KinoGer } from './KinoGer.js';
-import { Kokoshka } from './Kokoshka.js';
-import { Movy } from './Movy.js';
-import { VegaCatering } from './VegaCatering.js';
-import { VidLove } from './VidLove.js';
 import { Vidzee } from './Vidzee.js';
 import { VixSrc } from './VixSrc.js';
 import { AllWish } from './AllWish.js';
@@ -173,8 +157,6 @@ export const createSources = (fetcher) => {
     // nowhdtime.to — movies/series/anime/kdrama via nhdapi.com HLS proxy API
     new NowHDTime(fetcher),
     // filmeonlinehd.digital — Hindi movies/series via linksdrive → HubCloud/GDFlix
-    // cinefreak.net — movies/series/anime/kdrama → generate.php → r2.dev direct MKV
-    new CineFreak(fetcher),
     // pantyflix.org — movies/series/anime via /api/streamrip/download (direct MP4/MKV)
     new Pantyflix(fetcher),
     // animegg.org — anime sub+dub direct MP4 (720p/1080p)
@@ -206,8 +188,6 @@ export const createSources = (fetcher) => {
     // uhdmovies — movies-only (googleusercontent, 4K/1080p)
     new UHDMovies(fetcher),
     // ─── Nuvio provider sources — Batch 2 ───
-    // videasy — movies/TV HLS (moon.ironwallnet.net, 10 speedracelight servers, Referer: vidking.net)
-    new VidEasy(fetcher),
     // anikototv — anime-only sub+dub (megap.akirax.buzz, Referer: megaplay.buzz)
     new AnikotoTV(fetcher),
     // animeworldindia — anime-only (play.zephyrix.top, 1080p, watchanimeworld.top)
@@ -216,8 +196,6 @@ export const createSources = (fetcher) => {
     new AnimesDigital(fetcher),
     // itachi.tv — anime-only sub+dub via VidHawk REST API + MegaPlay fallback
     new Itachi(fetcher),
-    // cinevood.love — movies/TV/anime download links (up to 4K) via mobilejsr.rest
-    new Cinevood(fetcher),
     // imdbplay.tech — movies/TV/anime via vidsrc.me backend (up to 4K)
     new IMDBPlay(fetcher),
     // raflixx.vercel.app — movies/TV/anime via multiple embed providers (8+17 sources)
@@ -265,8 +243,6 @@ export const createSources = (fetcher) => {
     new Antova(fetcher),
     // cinehdplus — ES/MX series via cinehdplus.com
     new CineHDPlus(fetcher),
-    // cinesu — direct m3u8 HLS
-    new CineSu(fetcher),
     // cuevana — ES/MX via wv3.cuevana3.eu
     new Cuevana(fetcher),
     // dahmermovies — movies via p.111477.xyz bulk API
@@ -275,24 +251,6 @@ export const createSources = (fetcher) => {
     new DahmerMovies4k(fetcher),
     // filmeonlinehd — Hindi movies/series via linksdrive
     new FilmeOnlineHD(fetcher),
-    // filmpalast — DE movies via filmpalast.to
-    new FilmpalastTO(fetcher),
-    // frembed — FR movies/series via frembed.org
-    new Frembed(fetcher),
-    // homecine — ES/MX movies via homecine.co
-    new HomeCine(fetcher),
-    // kmmovies — movies via kmmovies Nuvio scraper
-    new KMMovies(fetcher),
-    // kinoger — DE movies via kinoger.at
-    new KinoGer(fetcher),
-    // kokoshka — Albanian movies via kokoshka.co
-    new Kokoshka(fetcher),
-    // movy — movies via 12-server movy Nuvio scraper
-    new Movy(fetcher),
-    // vegacatering — vegamovies.catering (distinct from VegaMovies)
-    new VegaCatering(fetcher),
-    // vidlove — movies via vidlove Nuvio scraper
-    new VidLove(fetcher),
     // vidzee — 8 servers, multi-language embeds
     new Vidzee(fetcher),
     // vixsrc — VixSrc embed (requires MediaFlowProxy)

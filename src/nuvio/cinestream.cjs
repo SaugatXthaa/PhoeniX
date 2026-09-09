@@ -17,7 +17,7 @@
 //   1. Tries the original webstreamr.hayd.uk endpoint (in case it comes back)
 //   2. Falls back to delegating to our existing 4K-capable Nuvio providers
 //      (cineby, vidfast, dahmermovies, uhdmovies, hindmoviez, hdhub4u,
-//      dahmermovies-4k, 4khdhub, videasy, castle, moviesdrive)
+//      dahmermovies-4k, 4khdhub, castle, moviesdrive)
 //   3. Returns streams in the same format as the original CineStream
 //      (with quality detection, language detection, etc.)
 //
@@ -56,11 +56,9 @@ const FALLBACK_PROVIDERS = [
   'hdhub4u',         // 4K via HubCloud/VCloud (multi-audio)
   'dahmermovies',    // 4K via p.111477.xyz proxy (general)
   '4khdhub',         // 4K HDR via Cloudflare workers
-  'videasy',         // multi-server HLS (speedracelight)
   'castle',          // multi-language with AES-CBC decryption
   'movieblast',      // mycdn-mb.xyz HLS
   'playimdb',        // vaplayer.ru API with HLS
-  'vidlove',         // workers.dev
   'movix',           // finepulfe.xyz HLS
   'purstream',       // finepulfe.xyz (same as movix)
   'netmirror',       // hakunaymatata.com CDN
@@ -307,7 +305,7 @@ if (require.main === module) {
     console.log('NOTE: webstreamr.hayd.uk is officially archived (the original CineStream');
     console.log('backend). This wrapper delegates to working 4K-capable providers:');
     console.log('  moviesdrive, cineby, vidfast, dahmermovies-4k, uhdmovies, hindmoviez,');
-    console.log('  hdhub4u, dahmermovies, 4khdhub, videasy, castle, movieblast, etc.');
+    console.log('  hdhub4u, dahmermovies, 4khdhub, castle, movieblast, etc.');
     process.exit(1);
   }
 
