@@ -23,7 +23,7 @@
 'use strict';
 
 const https = require('https');
-const { execFileSync } = require('child_process');
+const { spawnSync } = require('child_process');
 
 const PROVIDER_NAME = 'KMMovies';
 const TMDB_API_KEY = '8476a7ab80ad76f0936744df0430e67c';
@@ -31,15 +31,26 @@ const KMMOVIES_BASE = 'https://kmmovies.pics';
 const MAGICLINKS_BASE = 'https://w3.magiclinks.lol';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-function fetchBufCurl(url, { headers = {}, timeout = 30000 } = {}) {
+function fetchBufCurl(url, { headers = {}, timeout = 30000, method = 'GET', body = null, json = false } = {}) {
   const finalHeaders = { 'User-Agent': UA, 'Accept': '*/*', ...headers };
-  const args = ['-sL', '--max-time', String(Math.floor(timeout / 1000))];
+  if (json) finalHeaders['Accept'] = 'application/json';
+  const args = ['-sL', '--max-time', String(Math.floor(timeout / 1000)), '-X', method, '-w', '\n__HTTP_STATUS:%{http_code}'];
   for (const [k, v] of Object.entries(finalHeaders)) args.push('-H', `${k}: ${v}`);
+  if (body) {
+    args.push('-H', 'Content-Type: application/x-www-form-urlencoded');
+    args.push('--data', body);
+  }
   args.push(url);
-  try {
-    const out = execFileSync('curl', args, { maxBuffer: 50 * 1024 * 1024, timeout: timeout + 5000, encoding: 'buffer' });
-    return { status: 200, body: out };
-  } catch (e) { throw new Error(`curl failed: ${(e.message || '').slice(0, 80)}`); }
+  // Use spawnSync — doesn't throw on non-zero exit, captures stdout/stderr separately
+  const result = spawnSync('curl', args, { maxBuffer: 50 * 1024 * 1024, timeout: timeout + 5000, encoding: 'utf8' });
+  const out = result.stdout || '';
+  if (out.length === 0) {
+    throw new Error(`curl failed (exit ${result.status}): ${(result.stderr || '').slice(0, 80)}`);
+  }
+  const statusMatch = out.match(/__HTTP_STATUS:(\d+)$/);
+  const status = statusMatch ? parseInt(statusMatch[1]) : 200;
+  const responseBody = statusMatch ? out.replace(/\n__HTTP_STATUS:\d+$/, '') : out;
+  return { status, body: Buffer.from(responseBody, 'utf8') };
 }
 
 function fetchBufNode(url, { headers = {}, timeout = 30000, method = 'GET', body = null } = {}) {
@@ -199,22 +210,18 @@ async function resolveMagiclinks(magiclinksUrl) {
 // Vikingfile uses Cloudflare Turnstile captcha. After solving, a POST request
 // to the file page returns {link: "direct_url"}.
 //
-// Strategy: Try multiple approaches to bypass/solve the Turnstile:
-//   1. Try POST with empty token (some sites have fallback)
-//   2. Try got-scraping with Chrome TLS fingerprint (may get cf_clearance cookie)
-//   3. Try extracting video source from page HTML (poster URL pattern)
+// Strategy: Use curl for all requests (handles TLS better than Node fetch).
+//   1. POST with empty Turnstile token (some files don't require captcha)
+//   2. POST with dummy token (test tokens sometimes work)
+//   3. Scrape page HTML for embedded video source URLs
 async function resolveVikingfile(fileUrl) {
   try {
-    // Strategy 1: Try POST with Accept: application/json
-    const r1 = await fetchBufNode(fileUrl + '?json=1', {
+    // Strategy 1: POST with empty token via curl
+    const r1 = fetchBufCurl(fileUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-        'Referer': fileUrl,
-      },
+      headers: { 'Accept': 'application/json', 'Referer': fileUrl },
       body: 'cf-turnstile-response=',
-      timeout: 8000,
+      timeout: 10000,
     });
     if (r1.status === 200) {
       try {
@@ -223,44 +230,53 @@ async function resolveVikingfile(fileUrl) {
       } catch {}
     }
 
-    // Strategy 2: Try got-scraping (Chrome TLS fingerprint may bypass CF)
-    try {
-      const { gotScraping } = await import('got-scraping');
-      const res = await gotScraping(fileUrl, {
-        method: 'POST',
-        headers: {
-          'User-Agent': UA,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json',
-        },
-        body: 'cf-turnstile-response=',
-        timeout: { request: 8000 },
-        throwHttpErrors: false,
-        http2: true,
-      });
-      if (res.statusCode === 200) {
-        try {
-          const json = JSON.parse(res.body);
-          if (json.link) return json.link;
-        } catch {}
-      }
-    } catch {}
+    // Strategy 2: POST with test token via curl
+    const r2 = fetchBufCurl(fileUrl, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Referer': fileUrl },
+      body: 'cf-turnstile-response=XXXX.DUMMY.TOKEN.XXXX',
+      timeout: 10000,
+    });
+    if (r2.status === 200) {
+      try {
+        const json = JSON.parse(r2.body.toString('utf8'));
+        if (json.link) return json.link;
+      } catch {}
+    }
 
-    // Strategy 3: Extract video source from page HTML
-    // The page has a <video> element with a poster from OVH cloud.
-    // The actual video source is loaded after captcha, but sometimes
-    // the source URL is embedded in a data attribute or script.
-    const pageHtml = await fetchText(fileUrl);
-    // Look for any direct video URLs in script tags
-    const scriptUrls = [...pageHtml.matchAll(/['"](https?:\/\/[^'"'\s]+\.(?:mkv|mp4|m3u8|webm)[^'"'\s]*)['"]/gi)];
-    if (scriptUrls.length > 0) return scriptUrls[0][1];
-    // Look for data-setup with sources
+    // Strategy 3: Scrape page HTML for video source URLs
+    const pageHtml = fetchBufCurl(fileUrl, { headers: { 'Accept': 'text/html' }, timeout: 10000 }).body.toString('utf8');
+
+    // Look for video source in data-setup attribute
     const setupMatch = pageHtml.match(/data-setup='([^']+)'/);
     if (setupMatch) {
       try {
         const setup = JSON.parse(setupMatch[1].replace(/'/g, '"'));
-        if (setup.sources && setup.sources[0]?.src) return setup.sources[0].src;
+        if (setup.sources?.[0]?.src) return setup.sources[0].src;
       } catch {}
+    }
+
+    // Look for any direct video URLs embedded in script tags
+    const scriptUrls = [...pageHtml.matchAll(/['"](https?:\/\/[^'"'\s]+\.(?:mkv|mp4|m3u8|webm)[^'"'\s]*)['"]/gi)];
+    if (scriptUrls.length > 0) return scriptUrls[0][1];
+
+    // Strategy 4: Check if the poster URL reveals the video CDN pattern
+    // Poster: https://narrow-wilson.s3.eu-west-par.io.cloud.ovh.net/6a65120482d869a4.webp
+    // Try video at same path with different extensions
+    const posterMatch = pageHtml.match(/poster="([^"]+\.(?:webp|jpg|png))"/);
+    if (posterMatch) {
+      const posterUrl = posterMatch[1];
+      const baseUrl = posterUrl.replace(/\/[^/]+$/, '');
+      const fileId = posterUrl.match(/\/([a-f0-9]+)\./)?.[1];
+      if (fileId) {
+        for (const ext of ['.mp4', '.mkv', '/index.m3u8', '_1080p.mp4', '_720p.mp4']) {
+          const testUrl = baseUrl + '/' + fileId + ext;
+          try {
+            const testRes = fetchBufCurl(testUrl, { method: 'GET', timeout: 4000 });
+            if (testRes.status === 200) return testUrl;
+          } catch {}
+        }
+      }
     }
 
     return null;
@@ -271,66 +287,41 @@ async function resolveVikingfile(fileUrl) {
 }
 
 // ─── Gofile resolver ──────────────────────────────────────────────────────
-// Gofile has a public API:
+// Gofile has a public API (api.gofile.io). Use curl for all requests since
+// Node's native fetch times out on this host.
 //   1. POST api.gofile.io/accounts → get guest token
-//   2. GET api.gofile.io/contents/{fileId}?wt=4fd → get direct download URL
-//
-// Strategy: Try multiple API endpoints and methods
+//   2. GET api.gofile.io/contents/{fileId} → get direct download URL
 async function resolveGofile(fileId) {
   try {
-    // Strategy 1: Try native fetch API
-    let token = null;
-    try {
-      const acctRes = await fetch('https://api.gofile.io/accounts', {
-        method: 'POST',
-        headers: { 'User-Agent': UA, 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (acctRes.ok) {
-        const acctData = await acctRes.json();
-        token = acctData.data?.token;
-      }
-    } catch {}
-
-    // Strategy 2: Try got-scraping if native fetch failed
-    if (!token) {
-      try {
-        const { gotScraping } = await import('got-scraping');
-        const res = await gotScraping.post('https://api.gofile.io/accounts', {
-          headers: { 'User-Agent': UA, 'Accept': 'application/json' },
-          timeout: { request: 8000 },
-          throwHttpErrors: false,
-        });
-        if (res.statusCode === 200) {
-          const data = JSON.parse(res.body);
-          token = data.data?.token;
-        }
-      } catch {}
-    }
-
+    // Step 1: Create guest account via curl
+    const acctRes = fetchBufCurl('https://api.gofile.io/accounts', {
+      method: 'POST',
+      json: true,
+      timeout: 15000,
+    });
+    if (acctRes.status !== 200) return null;
+    const acctData = JSON.parse(acctRes.body.toString('utf8'));
+    const token = acctData.data?.token;
     if (!token) return null;
 
-    // Get content with token
-    const contentRes = await fetch(`https://api.gofile.io/contents/${fileId}?wt=4fd`, {
-      headers: {
-        'User-Agent': UA,
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      signal: AbortSignal.timeout(8000),
+    // Step 2: Get file content via curl
+    const contentRes = fetchBufCurl(`https://api.gofile.io/contents/${fileId}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      json: true,
+      timeout: 10000,
     });
-    if (!contentRes.ok) return null;
-    const contentData = await contentRes.json();
+    if (contentRes.status !== 200) return null;
+    const contentData = JSON.parse(contentRes.body.toString('utf8'));
 
-    // Extract direct download URL from content
+    // Step 3: Extract direct download URL from content
     const contents = contentData.data?.contents || {};
     for (const key of Object.keys(contents)) {
       const file = contents[key];
       if (file.directLink) return file.directLink;
+      // Gofile returns a link field that needs the server prefix
       if (file.link) {
-        // link may be a relative path that needs the server URL
-        const server = contentData.data?.server || 'store1';
         if (file.link.startsWith('http')) return file.link;
+        const server = contentData.data?.server || 'store1';
         return `https://${server}.gofile.io/download/${file.link}`;
       }
       if (file.url && file.url.startsWith('http')) return file.url;
@@ -347,14 +338,15 @@ async function resolveGofile(fileId) {
 // Skydrop (w1.skydrop.sbs) is a cloud download service.
 // The download page may contain direct download links or redirect URLs.
 //
-// Strategy: Scrape the page for download links, form actions, or JS redirects
+// Strategy: Use curl to fetch the page and extract direct URLs.
 async function resolveSkydrop(downloadUrl) {
   try {
-    const html = await fetchText(downloadUrl, {
+    const html = fetchBufCurl(downloadUrl, {
       headers: { 'Referer': MAGICLINKS_BASE + '/', 'Accept': 'text/html' },
-    });
+      timeout: 10000,
+    }).body.toString('utf8');
 
-    // Look for direct download URLs
+    // Look for direct download URLs (mkv, mp4, webm)
     const dlMatches = [...html.matchAll(/href="([^"]*(?:download|dl|get)[^"]*\.(?:mkv|mp4|webm)[^"]*)"/gi)];
     if (dlMatches.length > 0) return dlMatches[0][1];
 
@@ -366,14 +358,13 @@ async function resolveSkydrop(downloadUrl) {
     const metaMatch = html.match(/<meta[^>]+http-equiv="refresh"[^>]+url=([^"']+)/i);
     if (metaMatch) return metaMatch[1];
 
-    // Look for form action URLs
+    // Look for form action URLs and submit
     const formMatch = html.match(/<form[^>]+action="([^"]+)"/i);
     if (formMatch) {
-      // Try submitting the form
       const actionUrl = formMatch[1].startsWith('http') ? formMatch[1] : new URL(formMatch[1], downloadUrl).href;
-      const formRes = await fetchBufNode(actionUrl, {
+      const formRes = fetchBufCurl(actionUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': downloadUrl },
+        headers: { 'Referer': downloadUrl },
         body: '',
         timeout: 8000,
       });
@@ -387,6 +378,12 @@ async function resolveSkydrop(downloadUrl) {
     // Look for any video/file URLs in the HTML
     const videoMatch = html.match(/(https?:\/\/[^"'\s]+\.(?:mkv|mp4|webm|m3u8)[^"'\s]*)/i);
     if (videoMatch) return videoMatch[1];
+
+    // If the page says "Download Unavailable", the file is expired
+    if (html.includes('Download Unavailable') || html.includes('couldn\'t locate your file')) {
+      console.log('[KMMovies] Skydrop: file expired/unavailable');
+      return null;
+    }
 
     return null;
   } catch (e) {
