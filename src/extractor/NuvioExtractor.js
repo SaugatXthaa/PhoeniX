@@ -70,8 +70,9 @@ const NUVIO_SOURCE_IDS = new Set([
   // Orphan Nuvio sources (registered in batch) — all use buildStreamResults
   //   - dahmermovies: p.111477.xyz bulk API (direct, no Referer)
   //   - dahmermovies4k: 4K variant of dahmermovies
-  //   - videasyto: Playwright-based scraper (direct playable, no Referer)
-  'dahmermovies', 'dahmermovies4k', 'videasyto',
+  //   - videasyto: speedracelight API (direct playable, no Referer)
+  //   - kmmovies: kmmovies.pics → R2 + Pixeldrain (direct playable MKV, no Referer)
+  'dahmermovies', 'dahmermovies4k', 'videasyto', 'kmmovies',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

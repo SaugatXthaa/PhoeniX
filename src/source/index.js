@@ -100,6 +100,8 @@ import { PersianStremio } from './PersianStremio.js';
 //   9 providers, direct playable HLS/MP4 up to 4K with subtitles
 //   SEPARATE from 'videasy' (which uses player.videasy.net without Playwright)
 import { VideasyTo } from './VideasyTo.js';
+// kmmovies.pics — movies/TV with direct playable MKV (up to 4K) via R2 + Pixeldrain
+import { KMMovies } from './KMMovies.js';
 // ─── Orphan sources (complete but never registered — batch add) ───
 // All verified as complete with unique source IDs. Some use Nuvio scrapers
 // (dahmermovies, dahmermovies4k), others use got-scraping or this.fetcher directly.
@@ -264,7 +266,9 @@ export const createSources = (fetcher) => {
     new VixSrc(fetcher),
     // allwish — anime via all-wish.me (AnimeSuge-like, megaplay.buzz backend)
     new AllWish(fetcher),
-    // videasy.to — movies/TV via Playwright (9 speedracelight providers, up to 4K, subtitles)
+    // videasy.to — movies/TV via speedracelight API (9 providers, up to 4K, subtitles)
     new VideasyTo(fetcher),
+    // kmmovies.pics — movies/TV with direct playable MKV (up to 4K) via R2 + Pixeldrain
+    new KMMovies(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };
