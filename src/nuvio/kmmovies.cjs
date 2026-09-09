@@ -33,11 +33,17 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 // Async curl wrapper — uses execFile (non-blocking) so multiple calls
 // can run in parallel via Promise.all
-function fetchBufCurl(url, { headers = {}, timeout = 30000, method = 'GET', body = null, json = false } = {}) {
+// Supports cookie jars via the cookieFile option.
+function fetchBufCurl(url, { headers = {}, timeout = 30000, method = 'GET', body = null, json = false, cookieFile = null } = {}) {
   return new Promise((resolve, reject) => {
     const finalHeaders = { 'User-Agent': UA, 'Accept': '*/*', ...headers };
     if (json) finalHeaders['Accept'] = 'application/json';
     const args = ['-sL', '--max-time', String(Math.floor(timeout / 1000)), '-X', method, '-w', '\n__HTTP_STATUS:%{http_code}'];
+    // Cookie jar support — saves/loads cookies to a file so multi-step
+    // resolution chains (like Skydrop) maintain session state.
+    if (cookieFile) {
+      args.push('-c', cookieFile, '-b', cookieFile);
+    }
     for (const [k, v] of Object.entries(finalHeaders)) args.push('-H', `${k}: ${v}`);
     if (body) {
       args.push('-H', 'Content-Type: application/x-www-form-urlencoded');
@@ -392,56 +398,112 @@ async function resolveGofile(fileId) {
 }
 
 // ─── Skydrop resolver ─────────────────────────────────────────────────────
-// Skydrop (w1.skydrop.sbs) is a cloud download service.
-// The download page may contain direct download links or redirect URLs.
+// Skydrop (w1.skydrop.sbs) uses a 3-step resolution:
+//   1. GET download.php?id=XXX → sets session cookie, shows loading page
+//   2. POST /resolve/ (with cookie) → returns {ready_url: "/id/"}
+//   3. GET /fetch/ (with cookie) → returns direct MKV video data
 //
-// Strategy: Use curl to fetch the page and extract direct URLs.
+// The /fetch/ URL requires the session cookie, so we pass it via headers.
+// The NuvioExtractor routes through /proxy which forwards request headers.
 async function resolveSkydrop(downloadUrl) {
   try {
-    const html = (await fetchBufCurl(downloadUrl, {
+    // Use a unique cookie file per resolution to maintain session state
+    // across the 3-step resolution chain
+    const cookieFile = '/tmp/skydrop_' + Buffer.from(downloadUrl).toString('base64').slice(0, 16) + '.txt';
+
+    // Step 1: Fetch download page to get session cookie
+    const pageRes = await fetchBufCurl(downloadUrl, {
       headers: { 'Referer': MAGICLINKS_BASE + '/', 'Accept': 'text/html' },
-      timeout: 5000,
-    })).body.toString('utf8');
+      timeout: 8000,
+      cookieFile,
+    });
+    const pageHtml = pageRes.body.toString('utf8');
 
-    // Look for direct download URLs (mkv, mp4, webm)
-    const dlMatches = [...html.matchAll(/href="([^"]*(?:download|dl|get)[^"]*\.(?:mkv|mp4|webm)[^"]*)"/gi)];
-    if (dlMatches.length > 0) return dlMatches[0][1];
-
-    // Look for JS redirects
-    const redirectMatch = html.match(/window\.location\s*=\s*["']([^"']+)["']/);
-    if (redirectMatch) return redirectMatch[1];
-
-    // Look for meta refresh redirects
-    const metaMatch = html.match(/<meta[^>]+http-equiv="refresh"[^>]+url=([^"']+)/i);
-    if (metaMatch) return metaMatch[1];
-
-    // Look for form action URLs and submit
-    const formMatch = html.match(/<form[^>]+action="([^"]+)"/i);
-    if (formMatch) {
-      const actionUrl = formMatch[1].startsWith('http') ? formMatch[1] : new URL(formMatch[1], downloadUrl).href;
-      const formRes = await fetchBufCurl(actionUrl, {
-        method: 'POST',
-        headers: { 'Referer': downloadUrl },
-        body: '',
-        timeout: 8000,
-      });
-      if (formRes.status === 200) {
-        const formHtml = formRes.body.toString('utf8');
-        const directMatch = formHtml.match(/(https?:\/\/[^"'\s]+\.(?:mkv|mp4|webm)[^"'\s]*)/i);
-        if (directMatch) return directMatch[1];
-      }
-    }
-
-    // Look for any video/file URLs in the HTML
-    const videoMatch = html.match(/(https?:\/\/[^"'\s]+\.(?:mkv|mp4|webm|m3u8)[^"'\s]*)/i);
-    if (videoMatch) return videoMatch[1];
-
-    // If the page says "Download Unavailable", the file is expired
-    if (html.includes('Download Unavailable') || html.includes('couldn\'t locate your file')) {
+    // Check if file is available
+    if (pageHtml.includes('Download Unavailable') || pageHtml.includes("couldn't locate your file")) {
       console.log('[KMMovies] Skydrop: file expired/unavailable');
       return null;
     }
 
+    // Step 2: POST to /resolve/ (with session cookie from step 1)
+    const resolveRes = await fetchBufCurl('https://w1.skydrop.sbs/resolve/', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Referer': downloadUrl },
+      timeout: 10000,
+      cookieFile,
+    });
+
+    let readyUrl = null;
+    if (resolveRes.status === 200) {
+      try {
+        const data = JSON.parse(resolveRes.body.toString('utf8'));
+        if (data.success && data.ready_url) {
+          readyUrl = data.ready_url.startsWith('http')
+            ? data.ready_url
+            : 'https://w1.skydrop.sbs' + data.ready_url;
+        }
+        // If pending, retry once after 3s
+        if (data.success && data.pending) {
+          await new Promise(r => setTimeout(r, 3000));
+          const retryRes = await fetchBufCurl('https://w1.skydrop.sbs/resolve/', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'Referer': downloadUrl },
+            timeout: 10000,
+            cookieFile,
+          });
+          if (retryRes.status === 200) {
+            const retryData = JSON.parse(retryRes.body.toString('utf8'));
+            if (retryData.success && retryData.ready_url) {
+              readyUrl = retryData.ready_url.startsWith('http')
+                ? retryData.ready_url
+                : 'https://w1.skydrop.sbs' + retryData.ready_url;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (!readyUrl) {
+      console.log('[KMMovies] Skydrop: resolve failed (no ready_url)');
+      return null;
+    }
+
+    // Step 3: Visit /id/ page (sets up the download session)
+    await fetchBufCurl(readyUrl, {
+      headers: { 'Accept': 'text/html', 'Referer': downloadUrl },
+      timeout: 5000,
+      cookieFile,
+    });
+
+    // Step 4: GET /fetch/ (with session cookie) → returns direct MKV stream
+    const fetchUrl = 'https://w1.skydrop.sbs/fetch/';
+    const verifyRes = await fetchBufCurl(fetchUrl, {
+      headers: { 'Referer': readyUrl, 'Accept': 'video/*,*/*' },
+      timeout: 5000,
+      cookieFile,
+    });
+
+    // Check if we got MKV data (EBML header: 1A 45 DF A3)
+    const header = verifyRes.body.slice(0, 4).toString('hex');
+    if (header === '1a45dfa3') {
+      console.log('[KMMovies] Skydrop: ✅ direct MKV stream confirmed');
+      return fetchUrl;
+    }
+
+    // Check for "matroska" in the first 100 bytes
+    if (verifyRes.body.slice(0, 100).toString('ascii').toLowerCase().includes('matroska')) {
+      console.log('[KMMovies] Skydrop: ✅ Matroska MKV stream confirmed');
+      return fetchUrl;
+    }
+
+    // If we got binary data that's not HTML, it might still be video
+    const bodyStart = verifyRes.body.toString('utf8').slice(0, 20);
+    if (!bodyStart.includes('<!DOCTYPE') && !bodyStart.includes('<html') && verifyRes.body.length > 1000) {
+      console.log('[KMMovies] Skydrop: ✅ binary data received (likely video)');
+      return fetchUrl;
+    }
+
+    console.log('[KMMovies] Skydrop: /fetch/ did not return video data');
     return null;
   } catch (e) {
     console.log(`[KMMovies] Skydrop resolve failed: ${e.message.slice(0, 60)}`);
