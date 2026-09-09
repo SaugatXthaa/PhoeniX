@@ -400,6 +400,8 @@ export class StreamResolver {
       'stellar', 'stellarrip',
       // VidEasy — speedracelight API takes 15-25s; must start early
       'videasy',
+      // VideasyTo — Playwright headless browser takes 30-60s; must start early
+      'videasyto',
       // NikaStream — Anivexa API takes 20-30s; must start early
       'nikastream',
       // AniKage — prox.anicore.tv API takes 15-25s; must start early

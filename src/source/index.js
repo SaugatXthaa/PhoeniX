@@ -96,6 +96,10 @@ import { DesiFlix } from './DesiFlix.js';
 // persianstremio — Persian-language movies/TV with dual-audio (🇺🇸|🇮🇷)
 //   Direct MP4/MKV from cinamadownload.top, aslmd.sbs, abrtech.top
 import { PersianStremio } from './PersianStremio.js';
+// videasy.to — movies/TV via Playwright headless browser (speedracelight API)
+//   9 providers, direct playable HLS/MP4 up to 4K with subtitles
+//   SEPARATE from 'videasy' (which uses player.videasy.net without Playwright)
+import { VideasyTo } from './VideasyTo.js';
 // ─── Orphan sources (complete but never registered — batch add) ───
 // All verified as complete with unique source IDs. Some use Nuvio scrapers
 // (dahmermovies, dahmermovies4k), others use got-scraping or this.fetcher directly.
@@ -260,5 +264,7 @@ export const createSources = (fetcher) => {
     new VixSrc(fetcher),
     // allwish — anime via all-wish.me (AnimeSuge-like, megaplay.buzz backend)
     new AllWish(fetcher),
+    // videasy.to — movies/TV via Playwright (9 speedracelight providers, up to 4K, subtitles)
+    new VideasyTo(fetcher),
   ].filter(source => !disabledSources.includes(source.id));
 };

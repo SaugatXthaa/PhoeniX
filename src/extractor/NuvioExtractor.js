@@ -70,7 +70,8 @@ const NUVIO_SOURCE_IDS = new Set([
   // Orphan Nuvio sources (registered in batch) — all use buildStreamResults
   //   - dahmermovies: p.111477.xyz bulk API (direct, no Referer)
   //   - dahmermovies4k: 4K variant of dahmermovies
-  'dahmermovies', 'dahmermovies4k',
+  //   - videasyto: Playwright-based scraper (direct playable, no Referer)
+  'dahmermovies', 'dahmermovies4k', 'videasyto',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)
