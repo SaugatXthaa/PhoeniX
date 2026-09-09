@@ -23,7 +23,7 @@
 'use strict';
 
 const https = require('https');
-const { spawnSync } = require('child_process');
+const { execFile } = require('child_process');
 
 const PROVIDER_NAME = 'KMMovies';
 const TMDB_API_KEY = '8476a7ab80ad76f0936744df0430e67c';
@@ -31,26 +31,30 @@ const KMMOVIES_BASE = 'https://kmmovies.pics';
 const MAGICLINKS_BASE = 'https://w3.magiclinks.lol';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+// Async curl wrapper — uses execFile (non-blocking) so multiple calls
+// can run in parallel via Promise.all
 function fetchBufCurl(url, { headers = {}, timeout = 30000, method = 'GET', body = null, json = false } = {}) {
-  const finalHeaders = { 'User-Agent': UA, 'Accept': '*/*', ...headers };
-  if (json) finalHeaders['Accept'] = 'application/json';
-  const args = ['-sL', '--max-time', String(Math.floor(timeout / 1000)), '-X', method, '-w', '\n__HTTP_STATUS:%{http_code}'];
-  for (const [k, v] of Object.entries(finalHeaders)) args.push('-H', `${k}: ${v}`);
-  if (body) {
-    args.push('-H', 'Content-Type: application/x-www-form-urlencoded');
-    args.push('--data', body);
-  }
-  args.push(url);
-  // Use spawnSync — doesn't throw on non-zero exit, captures stdout/stderr separately
-  const result = spawnSync('curl', args, { maxBuffer: 50 * 1024 * 1024, timeout: timeout + 5000, encoding: 'utf8' });
-  const out = result.stdout || '';
-  if (out.length === 0) {
-    throw new Error(`curl failed (exit ${result.status}): ${(result.stderr || '').slice(0, 80)}`);
-  }
-  const statusMatch = out.match(/__HTTP_STATUS:(\d+)$/);
-  const status = statusMatch ? parseInt(statusMatch[1]) : 200;
-  const responseBody = statusMatch ? out.replace(/\n__HTTP_STATUS:\d+$/, '') : out;
-  return { status, body: Buffer.from(responseBody, 'utf8') };
+  return new Promise((resolve, reject) => {
+    const finalHeaders = { 'User-Agent': UA, 'Accept': '*/*', ...headers };
+    if (json) finalHeaders['Accept'] = 'application/json';
+    const args = ['-sL', '--max-time', String(Math.floor(timeout / 1000)), '-X', method, '-w', '\n__HTTP_STATUS:%{http_code}'];
+    for (const [k, v] of Object.entries(finalHeaders)) args.push('-H', `${k}: ${v}`);
+    if (body) {
+      args.push('-H', 'Content-Type: application/x-www-form-urlencoded');
+      args.push('--data', body);
+    }
+    args.push(url);
+    execFile('curl', args, { maxBuffer: 50 * 1024 * 1024, timeout: timeout + 5000, encoding: 'utf8' }, (err, stdout, stderr) => {
+      const out = stdout || '';
+      if (out.length === 0 && err) {
+        return reject(new Error(`curl failed: ${(err.message || '').slice(0, 80)}`));
+      }
+      const statusMatch = out.match(/__HTTP_STATUS:(\d+)$/);
+      const status = statusMatch ? parseInt(statusMatch[1]) : 200;
+      const responseBody = statusMatch ? out.replace(/\n__HTTP_STATUS:\d+$/, '') : out;
+      resolve({ status, body: Buffer.from(responseBody, 'utf8') });
+    });
+  });
 }
 
 function fetchBufNode(url, { headers = {}, timeout = 30000, method = 'GET', body = null } = {}) {
@@ -157,53 +161,63 @@ function extractMagiclinks(html) {
 // the URL is a direct playable stream (no captcha/auth needed).
 async function resolveMagiclinks(magiclinksUrl) {
   const html = await fetchText(magiclinksUrl, { headers: { Referer: KMMOVIES_BASE + '/' } });
-  const streams = [];
 
-  // 1. WATCH ONLINE → z1.kmphotos.cv/online.php → JW Player → direct MKV on R2
+  // Collect all host match data first
   const watchOnlineMatch = html.match(/href="(https:\/\/z1\.kmphotos\.cv\/online\.php\?file=[^"]+)"/);
-  if (watchOnlineMatch) {
-    try {
-      const playerHtml = await fetchText(watchOnlineMatch[1], { headers: { Referer: MAGICLINKS_BASE + '/' } });
-      const mkvMatch = playerHtml.match(/file:\s*"([^"]+)"/);
-      if (mkvMatch) streams.push({ url: mkvMatch[1], source: 'R2', playable: true });
-    } catch (e) {}
-  }
-
-  // 2. Pixeldrain → pixeldrain.com/api/file/<id> → direct MKV
   const pixeldrainMatch = html.match(/href="https:\/\/pixeldrain\.com\/u\/([^"]+)"/);
-  if (pixeldrainMatch) {
-    streams.push({ url: `https://pixeldrain.com/api/file/${pixeldrainMatch[1]}`, source: 'Pixeldrain', playable: true });
-  }
-
-  // 3. Vikingfile → resolve via POST with Turnstile bypass attempts
   const vikingfileMatch = html.match(/href="https:\/\/vikingfile\.com\/f\/([^"]+)"/);
-  if (vikingfileMatch) {
-    const vikingfileUrl = `https://vik1ngfile.site/f/${vikingfileMatch[1]}`;
-    const directUrl = await resolveVikingfile(vikingfileUrl);
-    if (directUrl) {
-      streams.push({ url: directUrl, source: 'Vikingfile', playable: true });
-    }
-  }
-
-  // 4. Gofile → resolve via Gofile API (guest account → content → direct URL)
   const gofileMatch = html.match(/href="https:\/\/gofile\.io\/d\/([^"]+)"/);
-  if (gofileMatch) {
-    const directUrl = await resolveGofile(gofileMatch[1]);
-    if (directUrl) {
-      streams.push({ url: directUrl, source: 'Gofile', playable: true });
-    }
-  }
-
-  // 5. Skydrop → resolve via page scraping (look for direct download URL)
   const skydropMatch = html.match(/href="(https:\/\/w1\.skydrop\.sbs\/download\.php\?id=[^"]+)"/);
-  if (skydropMatch) {
-    const directUrl = await resolveSkydrop(skydropMatch[1]);
-    if (directUrl) {
-      streams.push({ url: directUrl, source: 'Skydrop', playable: true });
-    }
+
+  // Start all resolvers in PARALLEL for maximum speed
+  const promises = [];
+
+  // 1. R2 (WATCH ONLINE → z1.kmphotos.cv → JW Player → direct MKV)
+  if (watchOnlineMatch) {
+    promises.push((async () => {
+      try {
+        const playerHtml = await fetchText(watchOnlineMatch[1], { headers: { Referer: MAGICLINKS_BASE + '/' } });
+        const mkvMatch = playerHtml.match(/file:\s*"([^"]+)"/);
+        if (mkvMatch) return { url: mkvMatch[1], source: 'R2', playable: true };
+      } catch {}
+      return null;
+    })());
   }
 
-  return streams;
+  // 2. Pixeldrain (instant — no resolution needed)
+  if (pixeldrainMatch) {
+    promises.push(Promise.resolve({ url: `https://pixeldrain.com/api/file/${pixeldrainMatch[1]}`, source: 'Pixeldrain', playable: true }));
+  }
+
+  // 3. Vikingfile
+  if (vikingfileMatch) {
+    promises.push((async () => {
+      const directUrl = await resolveVikingfile(`https://vik1ngfile.site/f/${vikingfileMatch[1]}`);
+      return directUrl ? { url: directUrl, source: 'Vikingfile', playable: true } : null;
+    })());
+  }
+
+  // 4. Gofile
+  if (gofileMatch) {
+    promises.push((async () => {
+      const directUrl = await resolveGofile(gofileMatch[1]);
+      return directUrl ? { url: directUrl, source: 'Gofile', playable: true } : null;
+    })());
+  }
+
+  // 5. Skydrop
+  if (skydropMatch) {
+    promises.push((async () => {
+      const directUrl = await resolveSkydrop(skydropMatch[1]);
+      return directUrl ? { url: directUrl, source: 'Skydrop', playable: true } : null;
+    })());
+  }
+
+  // Wait for all resolvers in parallel, filter out nulls
+  const results = await Promise.allSettled(promises);
+  return results
+    .filter(r => r.status === 'fulfilled' && r.value)
+    .map(r => r.value);
 }
 
 // ─── Vikingfile resolver ──────────────────────────────────────────────────
@@ -217,11 +231,11 @@ async function resolveMagiclinks(magiclinksUrl) {
 async function resolveVikingfile(fileUrl) {
   try {
     // Strategy 1: POST with empty token via curl
-    const r1 = fetchBufCurl(fileUrl, {
+    const r1 = await fetchBufCurl(fileUrl, {
       method: 'POST',
       headers: { 'Accept': 'application/json', 'Referer': fileUrl },
       body: 'cf-turnstile-response=',
-      timeout: 10000,
+      timeout: 5000,
     });
     if (r1.status === 200) {
       try {
@@ -231,11 +245,11 @@ async function resolveVikingfile(fileUrl) {
     }
 
     // Strategy 2: POST with test token via curl
-    const r2 = fetchBufCurl(fileUrl, {
+    const r2 = await fetchBufCurl(fileUrl, {
       method: 'POST',
       headers: { 'Accept': 'application/json', 'Referer': fileUrl },
       body: 'cf-turnstile-response=XXXX.DUMMY.TOKEN.XXXX',
-      timeout: 10000,
+      timeout: 5000,
     });
     if (r2.status === 200) {
       try {
@@ -245,7 +259,7 @@ async function resolveVikingfile(fileUrl) {
     }
 
     // Strategy 3: Scrape page HTML for video source URLs
-    const pageHtml = fetchBufCurl(fileUrl, { headers: { 'Accept': 'text/html' }, timeout: 10000 }).body.toString('utf8');
+    const pageHtml = (await fetchBufCurl(fileUrl, { headers: { 'Accept': 'text/html' }, timeout: 5000 })).body.toString('utf8');
 
     // Look for video source in data-setup attribute
     const setupMatch = pageHtml.match(/data-setup='([^']+)'/);
@@ -262,21 +276,48 @@ async function resolveVikingfile(fileUrl) {
 
     // Strategy 4: Check if the poster URL reveals the video CDN pattern
     // Poster: https://narrow-wilson.s3.eu-west-par.io.cloud.ovh.net/6a65120482d869a4.webp
-    // Try video at same path with different extensions
+    // The OVH S3 bucket may allow listing objects
     const posterMatch = pageHtml.match(/poster="([^"]+\.(?:webp|jpg|png))"/);
     if (posterMatch) {
       const posterUrl = posterMatch[1];
       const baseUrl = posterUrl.replace(/\/[^/]+$/, '');
       const fileId = posterUrl.match(/\/([a-f0-9]+)\./)?.[1];
       if (fileId) {
-        for (const ext of ['.mp4', '.mkv', '/index.m3u8', '_1080p.mp4', '_720p.mp4']) {
+        // Try common video file patterns at the same CDN path
+        for (const ext of ['.mp4', '.mkv', '/index.m3u8']) {
           const testUrl = baseUrl + '/' + fileId + ext;
           try {
-            const testRes = fetchBufCurl(testUrl, { method: 'GET', timeout: 4000 });
+            const testRes = await fetchBufCurl(testUrl, { method: 'GET', timeout: 3000 });
             if (testRes.status === 200) return testUrl;
           } catch {}
         }
+        // Try OVH S3 bucket listing to find all objects with this file ID
+        try {
+          const listRes = await fetchBufCurl(baseUrl + '/', { timeout: 5000 });
+          if (listRes.status === 200) {
+            const listXml = listRes.body.toString('utf8');
+            // S3 listing returns XML with <Key> elements
+            const keys = [...listXml.matchAll(/<Key>([^<]+)<\/Key>/g)];
+            for (const key of keys) {
+              if (key[1].includes(fileId) && /\.(mp4|mkv|m3u8|webm)$/i.test(key[1])) {
+                return baseUrl + '/' + key[1];
+              }
+            }
+          }
+        } catch {}
       }
+    }
+
+    // Strategy 5: Try fetching the page with a Referer that might skip captcha
+    const directRes = await fetchBufCurl(fileUrl, {
+      headers: { 'Referer': MAGICLINKS_BASE + '/', 'Accept': 'application/json' },
+      timeout: 5000,
+    });
+    if (directRes.status === 200) {
+      try {
+        const json = JSON.parse(directRes.body.toString('utf8'));
+        if (json.link) return json.link;
+      } catch {}
     }
 
     return null;
@@ -290,28 +331,44 @@ async function resolveVikingfile(fileUrl) {
 // Gofile has a public API (api.gofile.io). Use curl for all requests since
 // Node's native fetch times out on this host.
 //   1. POST api.gofile.io/accounts → get guest token
-//   2. GET api.gofile.io/contents/{fileId} → get direct download URL
+//   2. GET api.gofile.io/contents/{fileId}?wt=4fd → get direct download URL
+//
+// Note: Some files require premium access (error-notPremium). The resolver
+// returns null for these — only free/guest-accessible files are resolved.
 async function resolveGofile(fileId) {
   try {
     // Step 1: Create guest account via curl
     const acctRes = fetchBufCurl('https://api.gofile.io/accounts', {
       method: 'POST',
       json: true,
-      timeout: 15000,
+      timeout: 10000,
     });
-    if (acctRes.status !== 200) return null;
+    if (acctRes.status !== 200) {
+      console.log('[KMMovies] Gofile: API unreachable');
+      return null;
+    }
     const acctData = JSON.parse(acctRes.body.toString('utf8'));
     const token = acctData.data?.token;
     if (!token) return null;
 
-    // Step 2: Get file content via curl
-    const contentRes = fetchBufCurl(`https://api.gofile.io/contents/${fileId}`, {
+    // Step 2: Get file content via curl (wt=4fd is the website token)
+    const contentRes = fetchBufCurl(`https://api.gofile.io/contents/${fileId}?wt=4fd`, {
       headers: { 'Authorization': `Bearer ${token}` },
       json: true,
-      timeout: 10000,
+      timeout: 8000,
     });
     if (contentRes.status !== 200) return null;
     const contentData = JSON.parse(contentRes.body.toString('utf8'));
+
+    // Check for premium-only files
+    if (contentData.status === 'error-notPremium') {
+      console.log('[KMMovies] Gofile: file requires premium account');
+      return null;
+    }
+    if (contentData.status !== 'ok') {
+      console.log('[KMMovies] Gofile: ' + contentData.status);
+      return null;
+    }
 
     // Step 3: Extract direct download URL from content
     const contents = contentData.data?.contents || {};
@@ -341,10 +398,10 @@ async function resolveGofile(fileId) {
 // Strategy: Use curl to fetch the page and extract direct URLs.
 async function resolveSkydrop(downloadUrl) {
   try {
-    const html = fetchBufCurl(downloadUrl, {
+    const html = (await fetchBufCurl(downloadUrl, {
       headers: { 'Referer': MAGICLINKS_BASE + '/', 'Accept': 'text/html' },
-      timeout: 10000,
-    }).body.toString('utf8');
+      timeout: 5000,
+    })).body.toString('utf8');
 
     // Look for direct download URLs (mkv, mp4, webm)
     const dlMatches = [...html.matchAll(/href="([^"]*(?:download|dl|get)[^"]*\.(?:mkv|mp4|webm)[^"]*)"/gi)];
@@ -362,7 +419,7 @@ async function resolveSkydrop(downloadUrl) {
     const formMatch = html.match(/<form[^>]+action="([^"]+)"/i);
     if (formMatch) {
       const actionUrl = formMatch[1].startsWith('http') ? formMatch[1] : new URL(formMatch[1], downloadUrl).href;
-      const formRes = fetchBufCurl(actionUrl, {
+      const formRes = await fetchBufCurl(actionUrl, {
         method: 'POST',
         headers: { 'Referer': downloadUrl },
         body: '',
