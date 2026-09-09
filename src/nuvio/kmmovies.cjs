@@ -42,19 +42,24 @@ function fetchBufCurl(url, { headers = {}, timeout = 30000 } = {}) {
   } catch (e) { throw new Error(`curl failed: ${(e.message || '').slice(0, 80)}`); }
 }
 
-function fetchBufNode(url, { headers = {}, timeout = 30000 } = {}) {
+function fetchBufNode(url, { headers = {}, timeout = 30000, method = 'GET', body = null } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
-    const req = https.request({
-      hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
+    const reqOpts = {
+      hostname: u.hostname, path: u.pathname + u.search, method,
       headers: { 'User-Agent': UA, 'Accept': '*/*', ...headers }, timeout,
-    }, (res) => {
+    };
+    if (body) {
+      reqOpts.headers['Content-Length'] = Buffer.byteLength(body);
+    }
+    const req = https.request(reqOpts, (res) => {
       const chunks = [];
       res.on('data', c => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
     });
     req.on('error', reject);
     req.on('timeout', () => req.destroy(new Error('timeout')));
+    if (body) req.write(body);
     req.end();
   });
 }
@@ -159,26 +164,235 @@ async function resolveMagiclinks(magiclinksUrl) {
     streams.push({ url: `https://pixeldrain.com/api/file/${pixeldrainMatch[1]}`, source: 'Pixeldrain', playable: true });
   }
 
-  // 3. Vikingfile → vikingfile.com/f/<id> → needs Turnstile captcha (not directly playable)
-  //    But the file IS there and can be streamed once the captcha is solved.
+  // 3. Vikingfile → resolve via POST with Turnstile bypass attempts
   const vikingfileMatch = html.match(/href="https:\/\/vikingfile\.com\/f\/([^"]+)"/);
   if (vikingfileMatch) {
-    streams.push({ url: `https://vik1ngfile.site/f/${vikingfileMatch[1]}`, source: 'Vikingfile', playable: false });
+    const vikingfileUrl = `https://vik1ngfile.site/f/${vikingfileMatch[1]}`;
+    const directUrl = await resolveVikingfile(vikingfileUrl);
+    if (directUrl) {
+      streams.push({ url: directUrl, source: 'Vikingfile', playable: true });
+    }
   }
 
-  // 4. Gofile → gofile.io/d/<id> → needs guest token (may require premium for large files)
+  // 4. Gofile → resolve via Gofile API (guest account → content → direct URL)
   const gofileMatch = html.match(/href="https:\/\/gofile\.io\/d\/([^"]+)"/);
   if (gofileMatch) {
-    streams.push({ url: `https://gofile.io/d/${gofileMatch[1]}`, source: 'Gofile', playable: false });
+    const directUrl = await resolveGofile(gofileMatch[1]);
+    if (directUrl) {
+      streams.push({ url: directUrl, source: 'Gofile', playable: true });
+    }
   }
 
-  // 5. Skydrop → w1.skydrop.sbs/download.php?id=<id> → needs JS
+  // 5. Skydrop → resolve via page scraping (look for direct download URL)
   const skydropMatch = html.match(/href="(https:\/\/w1\.skydrop\.sbs\/download\.php\?id=[^"]+)"/);
   if (skydropMatch) {
-    streams.push({ url: skydropMatch[1], source: 'Skydrop', playable: false });
+    const directUrl = await resolveSkydrop(skydropMatch[1]);
+    if (directUrl) {
+      streams.push({ url: directUrl, source: 'Skydrop', playable: true });
+    }
   }
 
   return streams;
+}
+
+// ─── Vikingfile resolver ──────────────────────────────────────────────────
+// Vikingfile uses Cloudflare Turnstile captcha. After solving, a POST request
+// to the file page returns {link: "direct_url"}.
+//
+// Strategy: Try multiple approaches to bypass/solve the Turnstile:
+//   1. Try POST with empty token (some sites have fallback)
+//   2. Try got-scraping with Chrome TLS fingerprint (may get cf_clearance cookie)
+//   3. Try extracting video source from page HTML (poster URL pattern)
+async function resolveVikingfile(fileUrl) {
+  try {
+    // Strategy 1: Try POST with Accept: application/json
+    const r1 = await fetchBufNode(fileUrl + '?json=1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'Referer': fileUrl,
+      },
+      body: 'cf-turnstile-response=',
+      timeout: 8000,
+    });
+    if (r1.status === 200) {
+      try {
+        const json = JSON.parse(r1.body.toString('utf8'));
+        if (json.link) return json.link;
+      } catch {}
+    }
+
+    // Strategy 2: Try got-scraping (Chrome TLS fingerprint may bypass CF)
+    try {
+      const { gotScraping } = await import('got-scraping');
+      const res = await gotScraping(fileUrl, {
+        method: 'POST',
+        headers: {
+          'User-Agent': UA,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+        },
+        body: 'cf-turnstile-response=',
+        timeout: { request: 8000 },
+        throwHttpErrors: false,
+        http2: true,
+      });
+      if (res.statusCode === 200) {
+        try {
+          const json = JSON.parse(res.body);
+          if (json.link) return json.link;
+        } catch {}
+      }
+    } catch {}
+
+    // Strategy 3: Extract video source from page HTML
+    // The page has a <video> element with a poster from OVH cloud.
+    // The actual video source is loaded after captcha, but sometimes
+    // the source URL is embedded in a data attribute or script.
+    const pageHtml = await fetchText(fileUrl);
+    // Look for any direct video URLs in script tags
+    const scriptUrls = [...pageHtml.matchAll(/['"](https?:\/\/[^'"'\s]+\.(?:mkv|mp4|m3u8|webm)[^'"'\s]*)['"]/gi)];
+    if (scriptUrls.length > 0) return scriptUrls[0][1];
+    // Look for data-setup with sources
+    const setupMatch = pageHtml.match(/data-setup='([^']+)'/);
+    if (setupMatch) {
+      try {
+        const setup = JSON.parse(setupMatch[1].replace(/'/g, '"'));
+        if (setup.sources && setup.sources[0]?.src) return setup.sources[0].src;
+      } catch {}
+    }
+
+    return null;
+  } catch (e) {
+    console.log(`[KMMovies] Vikingfile resolve failed: ${e.message.slice(0, 60)}`);
+    return null;
+  }
+}
+
+// ─── Gofile resolver ──────────────────────────────────────────────────────
+// Gofile has a public API:
+//   1. POST api.gofile.io/accounts → get guest token
+//   2. GET api.gofile.io/contents/{fileId}?wt=4fd → get direct download URL
+//
+// Strategy: Try multiple API endpoints and methods
+async function resolveGofile(fileId) {
+  try {
+    // Strategy 1: Try native fetch API
+    let token = null;
+    try {
+      const acctRes = await fetch('https://api.gofile.io/accounts', {
+        method: 'POST',
+        headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (acctRes.ok) {
+        const acctData = await acctRes.json();
+        token = acctData.data?.token;
+      }
+    } catch {}
+
+    // Strategy 2: Try got-scraping if native fetch failed
+    if (!token) {
+      try {
+        const { gotScraping } = await import('got-scraping');
+        const res = await gotScraping.post('https://api.gofile.io/accounts', {
+          headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+          timeout: { request: 8000 },
+          throwHttpErrors: false,
+        });
+        if (res.statusCode === 200) {
+          const data = JSON.parse(res.body);
+          token = data.data?.token;
+        }
+      } catch {}
+    }
+
+    if (!token) return null;
+
+    // Get content with token
+    const contentRes = await fetch(`https://api.gofile.io/contents/${fileId}?wt=4fd`, {
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!contentRes.ok) return null;
+    const contentData = await contentRes.json();
+
+    // Extract direct download URL from content
+    const contents = contentData.data?.contents || {};
+    for (const key of Object.keys(contents)) {
+      const file = contents[key];
+      if (file.directLink) return file.directLink;
+      if (file.link) {
+        // link may be a relative path that needs the server URL
+        const server = contentData.data?.server || 'store1';
+        if (file.link.startsWith('http')) return file.link;
+        return `https://${server}.gofile.io/download/${file.link}`;
+      }
+      if (file.url && file.url.startsWith('http')) return file.url;
+    }
+
+    return null;
+  } catch (e) {
+    console.log(`[KMMovies] Gofile resolve failed: ${e.message.slice(0, 60)}`);
+    return null;
+  }
+}
+
+// ─── Skydrop resolver ─────────────────────────────────────────────────────
+// Skydrop (w1.skydrop.sbs) is a cloud download service.
+// The download page may contain direct download links or redirect URLs.
+//
+// Strategy: Scrape the page for download links, form actions, or JS redirects
+async function resolveSkydrop(downloadUrl) {
+  try {
+    const html = await fetchText(downloadUrl, {
+      headers: { 'Referer': MAGICLINKS_BASE + '/', 'Accept': 'text/html' },
+    });
+
+    // Look for direct download URLs
+    const dlMatches = [...html.matchAll(/href="([^"]*(?:download|dl|get)[^"]*\.(?:mkv|mp4|webm)[^"]*)"/gi)];
+    if (dlMatches.length > 0) return dlMatches[0][1];
+
+    // Look for JS redirects
+    const redirectMatch = html.match(/window\.location\s*=\s*["']([^"']+)["']/);
+    if (redirectMatch) return redirectMatch[1];
+
+    // Look for meta refresh redirects
+    const metaMatch = html.match(/<meta[^>]+http-equiv="refresh"[^>]+url=([^"']+)/i);
+    if (metaMatch) return metaMatch[1];
+
+    // Look for form action URLs
+    const formMatch = html.match(/<form[^>]+action="([^"]+)"/i);
+    if (formMatch) {
+      // Try submitting the form
+      const actionUrl = formMatch[1].startsWith('http') ? formMatch[1] : new URL(formMatch[1], downloadUrl).href;
+      const formRes = await fetchBufNode(actionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': downloadUrl },
+        body: '',
+        timeout: 8000,
+      });
+      if (formRes.status === 200) {
+        const formHtml = formRes.body.toString('utf8');
+        const directMatch = formHtml.match(/(https?:\/\/[^"'\s]+\.(?:mkv|mp4|webm)[^"'\s]*)/i);
+        if (directMatch) return directMatch[1];
+      }
+    }
+
+    // Look for any video/file URLs in the HTML
+    const videoMatch = html.match(/(https?:\/\/[^"'\s]+\.(?:mkv|mp4|webm|m3u8)[^"'\s]*)/i);
+    if (videoMatch) return videoMatch[1];
+
+    return null;
+  } catch (e) {
+    console.log(`[KMMovies] Skydrop resolve failed: ${e.message.slice(0, 60)}`);
+    return null;
+  }
 }
 
 // ─── Main entry point ────────────────────────────────────────────────────────
