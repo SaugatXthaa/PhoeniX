@@ -81,12 +81,12 @@ export class VideasyTo extends Source {
     const mediaType = tmdbId.season ? 'tv' : 'movie';
     let streams;
     try {
-      // Playwright can take 20-40s to load the page and call all providers.
-      // Give it 60s total (the PRIORITY_SOURCE_IDS in StreamResolver ensures
-      // this source starts early enough to finish before the global timeout).
+      // The scraper queries 10 speedracelight servers in parallel and
+      // decrypts responses. Takes 15-25s depending on API response times.
+      // PRIORITY_SOURCE_IDS in StreamResolver ensures this starts early.
       streams = await Promise.race([
         mod.getStreams(tmdbId.id, mediaType, tmdbId.season || null, tmdbId.episode || null),
-        new Promise(r => setTimeout(() => r(null), 60000)),
+        new Promise(r => setTimeout(() => r(null), 50000)),
       ]);
     } catch (e) {
       console.error(`[videasyto] getStreams error: ${e?.message || e}`);
@@ -97,14 +97,15 @@ export class VideasyTo extends Source {
 
     // Enrich streams with parsed height for buildStreamResults
     const enrichedStreams = streams.map(s => {
-      const height = parseHeight(s.quality);
-      const isHls = s.type === 'application/vnd.apple.mpegurl' || (s.url || '').includes('.m3u8');
-      const isMp4 = s.type === 'video/mp4' || (s.url || '').includes('.mp4');
+      // The scraper returns _is4k flag and quality string — map to height
+      let height = parseHeight(s.quality);
+      if (!height && s._is4k) height = 2160;
+      if (!height) height = 1080; // default
 
       return {
         ...s,
         // Normalize quality to height+p format for buildStreamResults
-        quality: height ? height + 'p' : (s.quality || '1080p'),
+        quality: height + 'p',
         // Keep the original type for format detection
         // headers: {} (no Referer needed — direct playable)
         headers: s.headers || {},
