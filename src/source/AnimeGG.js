@@ -218,33 +218,25 @@ export class AnimeGG extends Source {
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const titleBase = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Step 1: Resolve AniList ID
-    const mediaList = await resolveAniList(name);
-    if (!mediaList?.length) return [];
-
     const nameNorm = normalize(name);
-    let bestMedia = null;
-    let bestScore = 0;
-    for (const m of mediaList) {
-      const titles = [m.title?.english, m.title?.romaji].filter(Boolean);
-      for (const t of titles) {
-        const tNorm = normalize(t);
-        if (!tNorm) continue;
-        let score = 0;
-        if (tNorm === nameNorm) score = 100;
-        else if (tNorm.includes(nameNorm) || nameNorm.includes(tNorm)) {
-          score = Math.min(tNorm.length, nameNorm.length) / Math.max(tNorm.length, nameNorm.length) * 90;
-        }
-        if (score > bestScore) { bestScore = score; bestMedia = m; }
-      }
-    }
-    if (!bestMedia || bestScore < 60) return [];
-
-    const anilistTitle = bestMedia.title?.english || bestMedia.title?.romaji || name;
     const epNum = tmdbId.season ? (tmdbId.episode || 1) : 1;
 
-    // Step 2: Search animegg.org for the series
-    const searchResults = await searchSeries(anilistTitle);
+    // Step 1: Search animegg.org directly by title (no AniList needed)
+    let searchResults = await searchSeries(name);
+    if (!searchResults.length) {
+      // Try AniList to get an alternate title (English/Romaji) that might
+      // match better on animegg.org
+      const mediaList = await resolveAniList(name);
+      if (mediaList?.length) {
+        for (const m of mediaList) {
+          const altTitle = m.title?.english || m.title?.romaji;
+          if (altTitle && altTitle !== name) {
+            searchResults = await searchSeries(altTitle);
+            if (searchResults.length) break;
+          }
+        }
+      }
+    }
     if (!searchResults.length) return [];
 
     // Pick best match
@@ -253,7 +245,7 @@ export class AnimeGG extends Source {
       if (normalize(r.title) === nameNorm) { bestSlug = r.slug; break; }
     }
 
-    // Step 3: Get episodes
+    // Step 2: Get episodes
     const episodes = await getEpisodes(bestSlug);
     const ep = episodes.find(e => e.number === epNum) || episodes[0];
     if (!ep) return [];

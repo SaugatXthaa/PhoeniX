@@ -72,9 +72,8 @@ const NUVIO_SOURCE_IDS = new Set([
   //   - dahmermovies4k: 4K variant of dahmermovies
   //   - kmmovies: Nuvio scraper (direct URLs)
   //   - movy: 12-server Nuvio scraper (direct HLS/MP4)
-  //   - pahe: Nuvio scraper (direct URLs)
   //   - vidlove: Nuvio scraper (direct URLs)
-  'dahmermovies', 'dahmermovies4k', 'kmmovies', 'movy', 'pahe', 'vidlove',
+  'dahmermovies', 'dahmermovies4k', 'kmmovies', 'movy', 'vidlove',
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

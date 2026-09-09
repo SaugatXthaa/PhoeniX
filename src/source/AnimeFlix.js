@@ -37,16 +37,16 @@ export class AnimeFlix extends Source {
 
     if (tmdbId.season) {
       const epNum = tmdbId.episode || 1;
-      const epLink = $(`.episodes-ul a`).filter((_i, el) => {
-        const href = $(el).attr('href') || '';
-        return href.includes(`episode-${epNum}`);
-      }).first().attr('href');
+      // Site uses a[href*="episode"] pattern, not .episodes-ul
+      // e.g. /one-piece-episode-1-english-subbed/
+      const epLink = $(`a[href*="episode-${epNum}-"]`).first().attr('href')
+        || $(`a[href*="episode-${epNum}"]`).first().attr('href');
 
       if (!epLink) return [];
       episodeUrl = new URL(epLink, this.baseUrl);
     } else {
       // Movie — get first episode link (last in list = episode 1)
-      const firstEp = $(`.episodes-ul a`).last().attr('href');
+      const firstEp = $(`a[href*="episode"]`).last().attr('href');
       if (!firstEp) return [];
       episodeUrl = new URL(firstEp, this.baseUrl);
     }
@@ -118,9 +118,9 @@ export class AnimeFlix extends Source {
       const nameLower = name.toLowerCase().trim();
       const nameAscii = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
-      $('a[href*="/anime/"]').each((_i, el) => {
+      $('a[href*="/Anime/"]').each((_i, el) => {
         const href = $(el).attr('href');
-        if (!href || href.includes('/anime/?') || href.includes('/az-list') || href.includes('/genres/')) return;
+        if (!href || href.includes('/Anime/?') || href.includes('/az-list') || href.includes('/genres/')) return;
 
         // The <a> tag's text is polluted with status/type labels.
         // Walk up to the nearest <article> and use its heading instead.
