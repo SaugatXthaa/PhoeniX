@@ -175,14 +175,50 @@ async function resolveEmbed(tmdbId, type, season, episode, imdbId) {
 
 // ─── Stage B: Byse identity attestation (ECDSA P-256) ─────────────────────
 var _attest = null; // {viewer_id, device_id, confidence, expiresAt}
-var b64u = function (buf) { return Buffer.from(buf).toString("base64url"); };
+var b64u = function (buf) { return Buffer.from(buf).toString("base64url"); }
+
+// ECDSA P-256 keygen + sign — webcrypto first (browser/edge runtimes), then
+// node:crypto generateKeyPairSync + JWK export (older/sandboxed runtimes
+// without crypto.webcrypto, e.g. on-device Nuvio hosts).
+function makeIdentityKey() {
+  try {
+    if (crypto.webcrypto && crypto.webcrypto.subtle) {
+      return crypto.webcrypto.subtle.generateKey(
+        { name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])
+        .then(function (kp) {
+          return crypto.webcrypto.subtle.exportKey("jwk", kp.publicKey)
+            .then(function (pubJwk) {
+              return {
+                pubJwk: pubJwk,
+                sign: function (msg) {
+                  return crypto.webcrypto.subtle.sign(
+                    { name: "ECDSA", hash: { name: "SHA-256" } }, kp.privateKey,
+                    new TextEncoder().encode(msg)).then(b64u);
+                },
+              };
+            });
+        });
+    }
+  } catch (e) { /* fall through to node:crypto */ }
+  return new Promise(function (resolve, reject) {
+    try {
+      var kp = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+      var pubJwk = kp.publicKey.export({ format: "jwk" });
+      resolve({
+        pubJwk: pubJwk,
+        sign: function (msg) {
+          var sig = crypto.createSign("SHA256").update(msg).sign(kp.privateKey);
+          return Promise.resolve(b64u(sig));
+        },
+      });
+    } catch (e) { reject(e); }
+  });
+}
 
 async function attestation() {
   if (_attest && _attest.expiresAt > Date.now()) return _attest;
   try {
-    var kp = await crypto.webcrypto.subtle.generateKey(
-      { name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
-    var pubJwk = await crypto.webcrypto.subtle.exportKey("jwk", kp.publicKey);
+    var key = await makeIdentityKey();
 
     var chalRes = await fetchRaw("https://mfw09.org/api/videos/access/challenge", {
       method: "POST", headers: CHROME_HEADERS, timeout: 12000,
@@ -191,22 +227,20 @@ async function attestation() {
     var chal = JSON.parse(chalRes.body);
     if (!chal.challenge_id || !chal.nonce) return null;
 
-    var sig = await crypto.webcrypto.subtle.sign(
-      { name: "ECDSA", hash: { name: "SHA-256" } }, kp.privateKey,
-      new TextEncoder().encode(chal.nonce));
+    var signature = await key.sign(chal.nonce);
 
     var fp = browserFingerprint();
     var attestBody = {
       viewer_id: "", device_id: "",
       challenge_id: chal.challenge_id, nonce: chal.nonce,
-      signature: b64u(sig), public_key: pubJwk,
+      signature: signature, public_key: key.pubJwk,
       client: fp, storage: {}, attributes: { entropy: "medium" },
     };
     var attRes = await fetchRaw("https://mfw09.org/api/videos/access/attest", {
       method: "POST", headers: CHROME_HEADERS, body: JSON.stringify(attestBody), timeout: 12000,
     });
     if (attRes.status !== 200) { console.log("[ZXCStream] access/attest " + attRes.status); return null; }
-    var att = JSON.parse(attestBody && attRes.body ? attRes.body : "{}");
+    var att = JSON.parse(attRes.body);
     if (!att || !att.device_id) { console.log("[ZXCStream] attest missing device_id"); return null; }
     _attest = {
       viewer_id: att.viewer_id || "",
