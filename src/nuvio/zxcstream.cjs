@@ -484,7 +484,12 @@ async function getStreams(tmdbId, type, season, episode) {
         url: src.url,
         quality: quality,
         type: isHls ? "hls" : "mp4",
-        headers: { "User-Agent": UA },
+        // Referer here sets meta.nuvioReferer → NuvioExtractor routes the
+        // m3u8 through /proxy (whole-tree URL rewriting). REQUIRED: the
+        // sprintcdn media tokens are bound to the IP that fetched the
+        // playback config (live-measured: 200 from the minting IP, 404 from
+        // any other) — the /proxy fetches from the server that minted them.
+        headers: { "User-Agent": UA, "Referer": "https://mfw09.org/" },
         behaviorHints: { bingeGroup: "zxcstream-" + (isHls ? "hls" : "mp4") },
         ...(subs.length > 0 ? { subtitles: subs } : {}),
       });
