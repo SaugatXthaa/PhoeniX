@@ -507,13 +507,15 @@ function resolveHubcloudUrl(hubcloudUrl) {
       return fetchText(gamerxytUrl, { Referer: "https://hubcloud.cx/" });
     })
     .then(function (gamerxytHtml) {
-      // Extract ANY hubcloud.cx subdomain URL (pixel., gpdl., gpdl2., etc.)
-      var match = gamerxytHtml.match(/https:\/\/[a-z0-9]+\.hubcloud\.cx\/\?id=[^"'\s]+/);
-      if (!match) throw new Error("No hubcloud.cx CDN URL found");
-      hubcloudCdnUrl = match[0];
+      // Extract ANY hubcloud CDN-subdomain URL. Task 64: the CDN host moved
+      // from pixel.hubcloud.cx to pixel.hubcloud.ist (any *.hubcloud.<tld>
+      // subdomain now occurs) — the old .cx-only regex missed every card.
+      var match = gamerxytHtml.match(/https:\/\/[a-z0-9]+\.hubcloud\.[a-z]+(?:\.[a-z]+)?\/\?id=[^"'\s]+/);
+      if (!match) throw new Error("No hubcloud CDN URL found");
+      hubcloudCdnUrl = match[0].replace(/&amp;/g, "&");
       // SECURITY: validate CDN URL
       if (!isSafeUrl(hubcloudCdnUrl)) throw new Error("Unsafe CDN URL: " + hubcloudCdnUrl.slice(0, 80));
-      // Follow hubcloud.cx → workers.dev → dl.php?link=<gdrive>
+      // Follow hubcloud.<tld> → workers.dev → dl.php?link=<gdrive>
       return followRedirectChain(hubcloudCdnUrl, { Referer: "https://gamerxyt.com/" });
     })
     .then(function (finalUrl) {

@@ -1,30 +1,46 @@
 // Stellar (stellar.rip) — Direct Stream Extractor with 4K Support
 // =========================================================================
 // Returns DIRECT playable HLS stream URLs from stellar.rip via the
-// /api/playback-init (PoW) + /api/encrypt flow.
+// /api/request-token + /api/playback-init (PoW) + /api/encrypt flow.
 //
-// FLOW (6 steps per source):
-//   1. Fetch embed page HTML → extract __REQUEST_TOKEN__ (JWT, server-set)
-//   2. POST /api/playback-init → PoW challenge (difficulty=18 bits)
-//   3. Solve PoW: SHA-256(challenge + nonce) with 18 leading zero bits (~200ms)
-//   4. POST /api/playback-init with PoW solution → get streamToken (JWT, 120s TTL)
-//   5. POST /api/encrypt { data: {mediaId, mediaType, tv_slug, source}, endpoint: "stream-encrypted", requestToken }
-//      → { url: "/api/stream-encrypted?data=..." }
-//   6. GET opaque URL + "?requestToken=...&token=..." → stream URL on proxy2.heistotron.uk
+// TASK 64 UPDATE (2026-09-19, recovered from the deployed site bundles):
+//   1. The server catalog EXPANDED from 6 to 18 servers and the ids were
+//      remapped. Current catalog (from /_next chunk 33hvzlvd8f2ku.js):
+//        s24 Spica, s25 Vega, s0 Sirius, s2 Rigel, s26 Capella,
+//        s19 Betelgeuse, s13 Arcturus, s4 Procyon, s5 Aldebaran, s6 Deneb,
+//        s15 Altair, s7 Antares, s8 Regulus, s16 Castor, s1 Polaris,
+//        s12 Fomalhaut, s10 Bellatrix, s3 Pollux
+//      (most carry capabilities.maxResolutionHint:2160 / 4K "confirmed")
+//   2. /api/request-token now REQUIRES the body {"path": "/watch/embed/…",
+//      "embedPlayback": true} — the embed page's inline bootstrap sends
+//      exactly that (verified in a live browser session). Empty bodies were
+//      previously accepted but no longer reflect the embed session.
+//   3. New endpoint GET /api/dead-sources?mediaId&mediaType&tv_slug →
+//      {deadSources: []} — servers listed there answer playback-unavailable;
+//      skip them instead of burning encrypt calls.
+//   4. The site self-rate-limits /api/encrypt to ~6/minute with a 60s
+//      window (bundle constant n>=6 → wait). We pace in batches of 6 and
+//      retry once on 429 (Retry-After honored when present).
+//   5. The stream-encrypted step answers /api/playback-unavailable/…
+//      per-source for clients it gates (datacenter IPs, drought windows).
+//      Those are dropped HONESTLY — the provider returns only real streams.
 //
-// SOURCES (6 available, each with different quality):
-//   s0: 1080p (default, source.heistotron.uk)
-//   s1: 720p  (proxy2.heistotron.uk)
-//   s2: 4K!   (proxy2.heistotron.uk) — 3840x2160 + 1080p/720p/360p
-//   s3: 1080p scope (proxy2.heistotron.uk) — 1920x800
-//   s4: 1080p/720p/360p scope (proxy2.heistotron.uk)
-//   s5: 1080p/720p/360p scope (proxy2.heistotron.uk)
+// FLOW (per resolve):
+//   1. GET embed page → session cookies (_stellar_site, stellar-language)
+//   2. POST /api/request-token {path, embedPlayback:true} → requestToken
+//   3. POST /api/playback-init → PoW challenge (18 bits) → solve → streamToken
+//   4. GET /api/dead-sources → skip set
+//   5. POST /api/encrypt {data:{mediaId, mediaType, tv_slug, source},
+//      endpoint:"stream-encrypted", requestToken} per server (paced)
+//      → {url:"/api/stream-encrypted?data=…"} → fetch with requestToken+token
+//      → {data:{stream_url}} — drop playback-unavailable paths
+//   6. Probe master playlist for resolution (4K detection)
 //
 // The stream URL needs Referer: embed URL + Origin: https://stellar.rip
 // Stremio plays via behaviorHints.proxyHeaders.request
 //
 // USAGE:
-//   const stellar = require('./stellar_all_in_one.js');
+//   const stellar = require('./stellarrip.cjs');
 //   const streams = await stellar.getStreams('27205', 'movie');
 //   const streams = await stellar.getStreams('1396', 'tv', 1, 1);
 
@@ -37,8 +53,29 @@ const STELLAR_RIP = 'https://stellar.rip';
 const TMDB_API_KEY = '8476a7ab80ad76f0936744df0430e67c';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-// All available source IDs (s2 has 4K!)
-const ALL_SOURCES = ['s2', 's0', 's3', 's1', 's4', 's5'];
+// Current 18-server catalog (id → label), bundle-verified 2026-09-19.
+// Order = the site's own display order (4K-confirmed first).
+const SERVERS = [
+  { id: 's24', name: 'Spica' },
+  { id: 's25', name: 'Vega' },
+  { id: 's0', name: 'Sirius' },
+  { id: 's2', name: 'Rigel' },
+  { id: 's26', name: 'Capella' },
+  { id: 's19', name: 'Betelgeuse' },
+  { id: 's13', name: 'Arcturus' },
+  { id: 's4', name: 'Procyon' },
+  { id: 's5', name: 'Aldebaran' },
+  { id: 's6', name: 'Deneb' },
+  { id: 's15', name: 'Altair' },
+  { id: 's7', name: 'Antares' },
+  { id: 's8', name: 'Regulus' },
+  { id: 's16', name: 'Castor' },
+  { id: 's1', name: 'Polaris' },
+  { id: 's12', name: 'Fomalhaut' },
+  { id: 's10', name: 'Bellatrix' },
+  { id: 's3', name: 'Pollux' },
+];
+const SERVER_NAMES = Object.fromEntries(SERVERS.map(s => [s.id, s.name]));
 
 // ---------------------------------------------------------------------------
 // Solve PoW: SHA-256(challenge + nonce) with N leading zero BITS
@@ -67,44 +104,37 @@ async function getTMDBInfo(tmdbId, type) {
 }
 
 // ---------------------------------------------------------------------------
-// Step 1: Fetch embed page → extract __REQUEST_TOKEN__
-// 2026-09-16 site migration (Task 41): the embed page no longer inlines the
-// JWT (`w.__REQUEST_TOKEN__ = session.token` — assigned at runtime from a
-// bootstrap fetch). The session now comes from POST /api/request-token →
-// { token, expiresAt, deploymentVersion } (verified live: 200 + ~6h JWT).
-// Old inline regex kept FIRST as a rollback guard.
+// Step 1: Fetch embed page → session cookies (+ inline token rollback guard)
+// Task 41: the embed page no longer inlines the JWT — the session comes from
+// POST /api/request-token. Task 64: that POST now carries {path, embedPlayback:true}.
 // ---------------------------------------------------------------------------
 async function getRequestToken(tmdbId, type, season, episode) {
   const isMovie = type !== 'tv';
-  const embedPath = isMovie
-    ? `/en/watch/embed/movie/${tmdbId}`
-    : `/en/watch/embed/tv/${tmdbId}-${season}-${episode}`;
+  const watchPath = isMovie
+    ? `/watch/embed/movie/${tmdbId}`
+    : `/watch/embed/tv/${tmdbId}-${season}-${episode}`;
+  const embedPath = `/en${watchPath}`;
   const res = await fetch(STELLAR_RIP + embedPath, {
     headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`Embed page HTTP ${res.status}`);
-  // Task 41: capture the session cookies the embed page sets (_stellar_site,
-  // stellar-language) — the 2026-09-16 migration made /api/playback-init
-  // reject requests WITHOUT this cookie (401). All later API calls must
-  // replay it alongside the Referer.
   const setCookies = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
   const cookieJar = setCookies.map(c => c.split(';')[0]).filter(Boolean).join('; ');
   const html = await res.text();
   const match = html.match(/__REQUEST_TOKEN__\s*=\s*"([^"]+)"/);
   if (match) return { token: match[1], embedPath, cookieJar };
 
-  // New mechanism: bootstrap the session token from the JSON endpoint
+  // Task 64 body — path WITHOUT the /en prefix + embedPlayback, verbatim from
+  // the site's inline bootstrap: {"path":"/watch/embed/movie/27205","embedPlayback":true}
   const tokRes = await fetch(STELLAR_RIP + '/api/request-token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Origin': STELLAR_RIP, 'Referer': STELLAR_RIP + embedPath, 'User-Agent': UA, ...(cookieJar && { Cookie: cookieJar }) },
-    body: '{}',
+    body: JSON.stringify({ path: watchPath, embedPlayback: true }),
     signal: AbortSignal.timeout(10000),
   });
   if (tokRes.ok) {
     const tokData = await tokRes.json().catch(() => null);
-    // merge any cookies the bootstrap sets too
-    const setCookies2 = tokRes.headers.getSetCookie ? tokRes.headers.getSetCookie() : [];
-    const merged = [cookieJar, ...setCookies2.map(c => c.split(';')[0])].filter(Boolean).join('; ');
+    const merged = [cookieJar, ...(tokRes.headers.getSetCookie ? tokRes.headers.getSetCookie().map(c => c.split(';')[0]) : [])].filter(Boolean).join('; ');
     if (tokData && tokData.token) return { token: tokData.token, embedPath, cookieJar: merged };
   }
   throw new Error('No __REQUEST_TOKEN__ in embed page and /api/request-token failed');
@@ -141,7 +171,7 @@ async function getStreamToken(mediaId, mediaType, tvSlug, requestToken, cookieJa
 }
 
 // ---------------------------------------------------------------------------
-// Steps 5-6: Get stream URL for a specific source
+// Step 5: Get stream URL for a specific server (paced; Retry-After aware)
 // ---------------------------------------------------------------------------
 async function resolveSource(mediaId, mediaType, tvSlug, requestToken, streamToken, source, embedPath, cookieJar) {
   const encRes = await fetch(STELLAR_RIP + '/api/encrypt', {
@@ -150,6 +180,7 @@ async function resolveSource(mediaId, mediaType, tvSlug, requestToken, streamTok
     body: JSON.stringify({ data: { mediaId, mediaType, tv_slug: tvSlug || '', source }, endpoint: 'stream-encrypted', requestToken }),
     signal: AbortSignal.timeout(10000),
   });
+  if (encRes.status === 429) return { retryAfter: encRes.headers.get('retry-after') };
   if (!encRes.ok) return null;
   const encData = await encRes.json();
   if (!encData.url) return null;
@@ -164,7 +195,23 @@ async function resolveSource(mediaId, mediaType, tvSlug, requestToken, streamTok
   if (!streamData.success || !streamData.data || !streamData.data.stream_url) return null;
   const streamUrl = streamData.data.stream_url;
   if (streamUrl.includes('playback-unavailable')) return null;
-  return streamUrl;
+  return { streamUrl };
+}
+
+// ---------------------------------------------------------------------------
+// Dead-source skip set (Task 64 endpoint)
+// ---------------------------------------------------------------------------
+async function fetchDeadSources(mediaId, mediaType, tvSlug, cookieJar, embedPath) {
+  try {
+    const q = `mediaId=${encodeURIComponent(mediaId)}&mediaType=${encodeURIComponent(mediaType)}&tv_slug=${encodeURIComponent(tvSlug || '')}`;
+    const res = await fetch(STELLAR_RIP + '/api/dead-sources?' + q, {
+      headers: { 'User-Agent': UA, Referer: STELLAR_RIP + embedPath, ...(cookieJar && { Cookie: cookieJar }) },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return new Set();
+    const j = await res.json();
+    return new Set(Array.isArray(j.deadSources) ? j.deadSources : []);
+  } catch { return new Set(); }
 }
 
 // ---------------------------------------------------------------------------
@@ -187,8 +234,6 @@ async function probeMasterPlaylist(url, embedPath) {
       }
     }
     if (variants.length === 0) return { quality: '1080p', width: 0, height: 0, has4K: false, variants: [] };
-    // FIX: was (b.bw - a.w) — mixed bandwidth with width, mis-sorting variants
-    // and corrupting quality labels / 4K detection on multi-variant playlists.
     variants.sort((a, b) => b.bw - a.bw);
     const best = variants[0];
     const r = Math.max(best.w, best.h);
@@ -239,46 +284,55 @@ async function getStreams(tmdbId, type, season, episode) {
   console.log('[Stellar] TMDB: ' + info.title + (info.year ? ' (' + info.year + ')' : ''));
 
   try {
-    // Step 1: Get request token (+ session cookie jar)
     const { token: requestToken, embedPath, cookieJar } = await getRequestToken(tmdbId, type, season, episode);
     console.log('[Stellar] Request token acquired');
 
-    // Steps 2-4: Get stream token (PoW)
-    console.log('[Stellar] Solving PoW (18 bits)...');
     const streamToken = await getStreamToken(mediaId, mediaType, tvSlug, requestToken, cookieJar, embedPath);
     console.log('[Stellar] Stream token acquired');
 
-    // Steps 5-6: Try all sources (s2 first for 4K!)
-    // PERF: resolve all 6 sources IN PARALLEL — the sequential loop took 18-27s
-    // wall time and regularly blew the wrapper's 25s race (=> intermittent 0
-    // streams, the "flaky" behaviour). Parallel wall time = slowest single
-    // source (~5-8s), comfortably inside budget.
-    const settled = await Promise.allSettled(ALL_SOURCES.map(async (source) => {
-      const streamUrl = await resolveSource(mediaId, mediaType, tvSlug, requestToken, streamToken, source, embedPath, cookieJar);
-      if (!streamUrl) { console.log('[Stellar]   ' + source + ': unavailable'); return null; }
+    const dead = await fetchDeadSources(mediaId, mediaType, tvSlug, cookieJar, embedPath);
+    const servers = SERVERS.filter(s => !dead.has(s.id));
+    console.log('[Stellar] ' + servers.length + '/' + SERVERS.length + ' servers after dead-source skip');
 
-      const probe = await probeMasterPlaylist(streamUrl, embedPath);
-      const quality = probe ? probe.quality : '1080p';
-      const resStr = probe && probe.width ? ` ${probe.width}x${probe.height}` : '';
-      const is4K = probe && probe.has4K;
-
-      console.log('[Stellar] + ' + source + ' (' + quality + (is4K ? ' 4K!' : '') + '): ' + streamUrl.slice(0, 60) + '...');
-      return buildStream({
-        title: `${info.title} [Stellar ${source}${resStr}${is4K ? ' 4K' : ''}]`,
-        url: streamUrl,
-        quality,
-        serverLabel: source,
-        bingeGroup: `stellar-${source}-${tmdbId}`,
-        referer: STELLAR_RIP + embedPath,
-      });
-    }));
+    // Paced sweep: the site's own client limits itself to ~6 encrypt calls
+    // per 60s window; 18 sequential would blow the budget, so sweep the
+    // 4K-confirmed order in batches of 6 with one 429-aware retry pass.
     const allStreams = [];
-    for (const s of settled) {
-      if (s.status === 'fulfilled' && s.value) allStreams.push(s.value);
-      else if (s.status === 'rejected') console.log('[Stellar]   source error: ' + (s.reason?.message || s.reason));
+    let hit429 = false;
+    const BATCH = 6;
+    for (let i = 0; i < servers.length; i += BATCH) {
+      const batch = servers.slice(i, i + BATCH);
+      const settled = await Promise.allSettled(batch.map(async (srv) => {
+        const r = await resolveSource(mediaId, mediaType, tvSlug, requestToken, streamToken, srv.id, embedPath, cookieJar);
+        return { srv, r };
+      }));
+      for (const s of settled) {
+        if (s.status !== 'fulfilled' || !s.value) continue;
+        const { srv, r } = s.value;
+        if (!r) continue;
+        if (r.retryAfter) { hit429 = true; continue; }
+        const streamUrl = r.streamUrl;
+        const probe = await probeMasterPlaylist(streamUrl, embedPath);
+        const quality = probe ? probe.quality : '1080p';
+        const resStr = probe && probe.width ? ` ${probe.width}x${probe.height}` : '';
+        const is4K = probe && probe.has4K;
+        console.log('[Stellar] + ' + srv.name + ' (' + quality + (is4K ? ' 4K!' : '') + '): ' + streamUrl.slice(0, 60) + '...');
+        allStreams.push(buildStream({
+          title: `${info.title} [Stellar ${srv.name}${resStr}${is4K ? ' 4K' : ''}]`,
+          url: streamUrl,
+          quality,
+          serverLabel: srv.name,
+          bingeGroup: `stellar-${srv.id}-${tmdbId}`,
+          referer: STELLAR_RIP + embedPath,
+        }));
+      }
+      // one 429 retry pass for the rate-limited servers after a short pause
+      if (hit429 && i + BATCH < servers.length) {
+        await new Promise(r2 => setTimeout(r2, 1500));
+        hit429 = false;
+      }
     }
 
-    // Sort by quality (4K first)
     const qOrder = { '2160p': 0, '1080p': 1, '720p': 2, '480p': 3, 'SD': 4 };
     allStreams.sort((a, b) => (qOrder[a.quality] || 99) - (qOrder[b.quality] || 99));
 
@@ -292,12 +346,12 @@ async function getStreams(tmdbId, type, season, episode) {
 
 module.exports = {
   getStreams, getTMDBInfo, getRequestToken, getStreamToken,
-  resolveSource, solveBitPoW, probeMasterPlaylist,
+  resolveSource, solveBitPoW, probeMasterPlaylist, SERVERS, SERVER_NAMES,
 };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
-  if (args.length < 2) { console.log('Usage: node stellar_all_in_one.js <tmdbId> <movie|tv> [season] [episode]'); process.exit(1); }
+  if (args.length < 2) { console.log('Usage: node stellarrip.cjs <tmdbId> <movie|tv> [season] [episode]'); process.exit(1); }
   getStreams(args[0], args[1], args[2] ? parseInt(args[2]) : null, args[3] ? parseInt(args[3]) : null)
     .then(s => {
       console.log('\n=== Final streams ===');

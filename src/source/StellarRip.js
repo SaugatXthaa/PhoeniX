@@ -45,10 +45,15 @@ function parseHeight(q) {
   return m ? parseInt(m[1], 10) : undefined;
 }
 
-// Source ID → friendly name mapping
-const SOURCE_NAMES = {
-  s0: 'Star', s1: 'Nova', s2: 'Rigel', s3: 'Vega',
-  s4: 'Capella', s5: 'Betelgeuse',
+// Source ID → friendly name mapping — Task 64: imported from the provider,
+// which mirrors the site's CURRENT 18-server catalog (Spica, Vega, Sirius,
+// Rigel, Capella, Betelgeuse, Arcturus, Procyon, Aldebaran, Deneb, Altair,
+// Antares, Regulus, Castor, Polaris, Fomalhaut, Bellatrix, Pollux).
+const FALLBACK_SERVER_NAMES = {
+  s0: 'Sirius', s1: 'Polaris', s2: 'Rigel', s3: 'Pollux', s4: 'Procyon',
+  s5: 'Aldebaran', s6: 'Deneb', s7: 'Antares', s8: 'Regulus', s10: 'Bellatrix',
+  s12: 'Fomalhaut', s13: 'Arcturus', s15: 'Altair', s16: 'Castor',
+  s19: 'Betelgeuse', s24: 'Spica', s25: 'Vega', s26: 'Capella',
 };
 
 export class StellarRip extends Source {
@@ -125,7 +130,7 @@ export class StellarRip extends Source {
       try { url = new URL(s.url); } catch { continue; }
 
       const sourceId = (s.name || '').replace(/^Stellar\s*-\s*/, '').trim();
-      const serverName = SOURCE_NAMES[sourceId] || sourceId || 'Stellar';
+      const serverName = (mod.SERVER_NAMES && mod.SERVER_NAMES[sourceId]) || FALLBACK_SERVER_NAMES[sourceId] || sourceId || 'Stellar';
       const height = parseHeight(s.quality) || 1080;
       const codec = height >= 2160 ? 'HEVC' : 'x264';
       const audioLabel = isAnime ? 'Japanese' : 'English';

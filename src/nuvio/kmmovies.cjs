@@ -94,15 +94,28 @@ function fetchBufCurl(url, { headers = {}, timeout = 30000, method = 'GET', body
 let _gsMod = null;
 async function fetchBufViaGotScraping(url, finalHeaders, timeout, method = 'GET', body = null) {
   if (!_gsMod) _gsMod = await import('got-scraping');
-  const res = await _gsMod.gotScraping(url, {
-    method,
-    body: body || undefined,
-    headers: finalHeaders,
-    timeout: { request: timeout },
-    throwHttpErrors: false,
-    followRedirect: true,
-  });
-  return { status: res.statusCode, body: Buffer.from(res.body || '', 'utf8') };
+  // Task 64: h2→h1 fallback. magiclinks.lol (and other CF-gated hops on this
+  // chain) intermittently kill h2 conns (GOAWAY class) while h1 with the same
+  // browser JA3 lands — the animekai.at pattern from Task 52.
+  for (const http2 of [true, false]) {
+    try {
+      const res = await _gsMod.gotScraping(url, {
+        method,
+        body: body || undefined,
+        headers: finalHeaders,
+        timeout: { request: timeout },
+        throwHttpErrors: false,
+        followRedirect: true,
+        http2,
+      });
+      if (res.statusCode >= 400 && http2) continue; // retry once on h1
+      return { status: res.statusCode, body: Buffer.from(res.body || '', 'utf8') };
+    } catch (e) {
+      if (!http2) throw e;
+    }
+  }
+  // unreachable (h1 throw rethrows) — kept for shape safety
+  return { status: 0, body: Buffer.alloc(0) };
 }
 
 function fetchBufViaNodeChild(url, finalHeaders, timeout, method = 'GET', body = null) {

@@ -45,22 +45,28 @@ function httpGet(url, headers) {
   var hdrs = Object.assign({ 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9' }, headers || {})
   return getGotScraping().then(function (gs) {
     if (gs) {
-      return gs({
-        url: url,
-        method: 'GET',
-        headers: hdrs,
-        timeout: { request: 35000 },
-        throwHttpErrors: false,
-        followRedirect: true,
-        headerGeneratorOptions: {
-          browsers: ['chrome'],
-          devices: ['desktop'],
-          operatingSystems: ['windows']
-        }
-      }).then(function (res) {
-        if (res.statusCode >= 400) throw new Error('HTTP ' + res.statusCode)
-        return res.body
-      })
+      // Task 64: h2 → h1 fallback — CF gates on this host intermittently kill
+      // h2 (GOAWAY) while h1 with the same browser JA3 lands (Task 52 pattern).
+      function attempt(http2) {
+        return gs({
+          url: url,
+          method: 'GET',
+          headers: hdrs,
+          timeout: { request: 35000 },
+          throwHttpErrors: false,
+          followRedirect: true,
+          http2: http2,
+          headerGeneratorOptions: {
+            browsers: ['chrome'],
+            devices: ['desktop'],
+            operatingSystems: ['windows']
+          }
+        }).then(function (res) {
+          if (res.statusCode >= 400) throw new Error('HTTP ' + res.statusCode + ' for ' + url.slice(0, 60))
+          return res.body
+        })
+      }
+      return attempt(true).catch(function () { return attempt(false) })
     }
     return fetch(url, { headers: hdrs }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status)
@@ -78,23 +84,27 @@ function httpPost(url, body, headers) {
   }, headers || {})
   return getGotScraping().then(function (gs) {
     if (gs) {
-      return gs({
-        url: url,
-        method: 'POST',
-        headers: hdrs,
-        body: body,
-        timeout: { request: 35000 },
-        throwHttpErrors: false,
-        followRedirect: true,
-        headerGeneratorOptions: {
-          browsers: ['chrome'],
-          devices: ['desktop'],
-          operatingSystems: ['windows']
-        }
-      }).then(function (res) {
-        if (res.statusCode >= 400) throw new Error('HTTP ' + res.statusCode)
-        try { return JSON.parse(res.body) } catch (e) { throw new Error('JSON parse failed: ' + e.message) }
-      })
+      function attempt(http2) {
+        return gs({
+          url: url,
+          method: 'POST',
+          headers: hdrs,
+          body: body,
+          timeout: { request: 35000 },
+          throwHttpErrors: false,
+          followRedirect: true,
+          http2: http2,
+          headerGeneratorOptions: {
+            browsers: ['chrome'],
+            devices: ['desktop'],
+            operatingSystems: ['windows']
+          }
+        }).then(function (res) {
+          if (res.statusCode >= 400) throw new Error('HTTP ' + res.statusCode)
+          try { return JSON.parse(res.body) } catch (e) { throw new Error('JSON parse failed: ' + e.message) }
+        })
+      }
+      return attempt(true).catch(function () { return attempt(false) })
     }
     return fetch(url, {
       method: 'POST',

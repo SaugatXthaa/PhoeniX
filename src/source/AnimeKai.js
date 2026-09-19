@@ -27,6 +27,79 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 const OBF_KEY = OTAKU_XOR_KEY; // central registry — env OTAKU_XOR_KEY overrides (site-secrets.cjs)
 const REFERER = 'https://zokoanime.video/';
 
+// ---------------------------------------------------------------------------
+// Task 64: zokoanime.video DIRECT path (bypasses the animekai.at CF gate).
+// Production evidence: animekai.at hard-403s Render egress ("Just a moment",
+// both plain fetch and got-scraping), while zokoanime.video — the actual
+// stream host animekai embeds — serves its /stream/mal/… payloads to Render
+// (verified 200 + __P payload through /debug/rawfetch). The MAL id comes
+// from AniList GraphQL (reliable, season-aware, exposes idMal).
+// ---------------------------------------------------------------------------
+const ANILIST_QUERY = `query ($search: String) { Page(perPage: 8) { media(search: $search, type: ANIME) { idMal startDate { year } title { romaji english } } } }`;
+
+async function anilistSearchMalIds(search) {
+  try {
+    const res = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ query: ANILIST_QUERY, variables: { search } }),
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return [];
+    const j = await res.json();
+    const media = j?.data?.Page?.media || [];
+    return media.filter(m => m.idMal).map(m => ({
+      malId: m.idMal,
+      romaji: (m.title?.romaji || '').toString(),
+      english: (m.title?.english || '').toString(),
+      year: m.startDate?.year || null,
+    }));
+  } catch { return []; }
+}
+
+const ORDINALS = ['', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
+const norm = (s) => (s || '').toLowerCase().replace(/['\u2019]/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+// Pick the AniList entry whose title matches the TMDB name (+ season hints).
+function pickMalEntry(entries, name, season) {
+  const nameNorm = norm(name);
+  const seasonNum = Number(season) || 1;
+  let best = null;
+  let bestScore = 0;
+  for (const e of entries) {
+    for (const t of [e.romaji, e.english]) {
+      const tNorm = norm(t);
+      if (!tNorm) continue;
+      let score = 0;
+      if (tNorm === nameNorm) score = 100;
+      else if (tNorm.includes(nameNorm) || nameNorm.includes(tNorm)) {
+        score = Math.min(tNorm.length, nameNorm.length) / Math.max(tNorm.length, nameNorm.length) * 90;
+      }
+      if (score === 0) continue;
+      // Season alignment: the base entry (no season suffix) maps to season 1;
+      // "Nth season"/"Season N" titles map to season N.
+      const mNth = tNorm.match(/(\d+)(?:nd|rd|th|st) season/) || tNorm.match(/season (\d+)/);
+      const entrySeason = mNth ? Number(mNth[1]) : 1;
+      if (entrySeason === seasonNum) score += 25;
+      else if (seasonNum > 1) score -= 20; // prefer suffix-matching entries
+      if (score > bestScore) { bestScore = score; best = e; }
+    }
+  }
+  return bestScore >= 60 ? best : null;
+}
+
+// Fetch a zoko stream payload for one audio category. Returns {src, subtitles}.
+// Referer: animekai embeds zoko from its watch pages — both zoko and at
+// referers were accepted in live probes; the at one is what the site uses.
+async function zokoStream(malId, episode, category) {
+  const streamUrl = `${ZOKO}/stream/mal/${malId}/${episode}/${category}`;
+  const html = await gotPage(streamUrl, `${BASE}/`);
+  if (!html) return null;
+  const m = html.match(/window\.__P="([^"]+)"/);
+  if (!m) return null;
+  try { return deobfuscate(m[1]); } catch { return null; }
+}
+
 const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
 
 // Use system curl for CF-protected pages (animekai.at has CF JS Detection)
@@ -129,12 +202,75 @@ export class AnimeKai extends Source {
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const titleBase = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
+    const epNum = tmdbId.season ? (tmdbId.episode || 1) : 1;
 
-    // Task 41b: Step 1 — progressive search. animekai's site search is strict:
-    // the full TMDB title "Frieren: Beyond Journey's End" returns 0 hits while
-    // "Frieren" (before the colon) hits exactly; "Sousou no Frieren" (original
-    // title) also returns 0. Candidates: full title → pre-colon segment →
-    // first 2 words → first word. Each candidate tries curl, then got-scraping.
+    const buildResults = async (malId, sourceTag) => {
+      const results2 = [];
+      const seenUrls = new Set();
+      for (const category of ['sub', 'dub']) {
+        try {
+          const data = await zokoStream(malId, epNum, category);
+          if (!data?.src || seenUrls.has(data.src)) continue;
+          seenUrls.add(data.src);
+
+          let parsed;
+          try { parsed = new URL(data.src); } catch { continue; }
+
+          const audioLabel = category === 'dub' ? 'DUB' : 'SUB';
+          const countryCodes = category === 'dub'
+            ? [CountryCode.multi, CountryCode.en]
+            : [CountryCode.multi, CountryCode.ja];
+
+          const subs = Array.isArray(data.subtitles)
+            ? data.subtitles
+                .filter(s => s?.src && typeof s.src === 'string')
+                .map((s, i) => {
+                  const lang = (s.lang || s.label || 'en').toString().slice(0, 8);
+                  try {
+                    return { id: `${lang}${i}`.slice(0, 8), url: new URL(s.src).href, lang };
+                  } catch { return null; }
+                })
+                .filter(Boolean)
+            : [];
+
+          results2.push({
+            url: parsed,
+            format: Format.hls,
+            meta: {
+              countryCodes,
+              title: `${titleBase} (AnimeKai ${audioLabel}${sourceTag})`,
+              sourceId: this.id,
+              sourceLabel: this.label,
+              height: 1080,
+              ...(subs.length > 0 && { subtitles: subs }),
+            },
+          });
+        } catch { /* skip */ }
+      }
+      return results2;
+    };
+
+    // Task 64 DIRECT path: AniList idMal → zoko stream. Works from Render
+    // egress (zokoanime.video is not CF-gated) where the animekai.at search
+    // chain 403s. Season-aware via AniList "Nth Season" title alignment.
+    try {
+      const seasonNum = Number(tmdbId.season) || 1;
+      const queries = seasonNum > 1 ? [`${name} ${ORDINALS[seasonNum] || seasonNum + 'th'} season`, name] : [name];
+      for (const q of queries) {
+        const entries = await anilistSearchMalIds(q);
+        const picked = pickMalEntry(entries, name, seasonNum);
+        if (!picked) continue;
+        console.log(`[AnimeKai] direct path: mal=${picked.malId} ("${picked.romaji || picked.english}") via "${q}"`);
+        const direct = await buildResults(picked.malId, '');
+        if (direct.length > 0) {
+          console.log(`[AnimeKai] S${tmdbId.season || 1}E${epNum} mal=${picked.malId} → ${direct.length} stream(s) (direct)`);
+          return direct;
+        }
+      }
+    } catch { /* fall through to the site-search chain */ }
+
+    // Task 41b: Step 1 — progressive site search (fallback; works when
+    // animekai.at's CF relents, e.g. from residential/device egress).
     const candidates = [];
     const push = (t) => {
       const v = (t || '').trim();
@@ -214,7 +350,6 @@ export class AnimeKai extends Source {
     }
 
     // Step 3: Fetch streams for both sub and dub via zokoanime.video
-    const epNum = tmdbId.season ? (tmdbId.episode || 1) : 1;
     const results2 = [];
     const seenUrls = new Set();
 
