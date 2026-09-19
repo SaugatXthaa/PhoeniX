@@ -89,15 +89,33 @@ function pickMalEntry(entries, name, season) {
 }
 
 // Fetch a zoko stream payload for one audio category. Returns {src, subtitles}.
-// Referer: animekai embeds zoko from its watch pages — both zoko and at
-// referers were accepted in live probes; the at one is what the site uses.
+// Task 64: zoko serves a compact no-player variant to some transports —
+// production measured got(h2) 2714B vs plain-fetch 4107B for the same URL
+// (the short page lacks __P). Ladder: got h2 → got h1 → plain fetch.
 async function zokoStream(malId, episode, category) {
   const streamUrl = `${ZOKO}/stream/mal/${malId}/${episode}/${category}`;
-  const html = await gotPage(streamUrl, `${BASE}/`);
-  if (!html) return null;
-  const m = html.match(/window\.__P="([^"]+)"/);
-  if (!m) return null;
-  try { return deobfuscate(m[1]); } catch { return null; }
+  const extract = (html) => {
+    if (!html) return null;
+    const m = html.match(/window\.__P="([^"]+)"/);
+    if (!m) return null;
+    try { return deobfuscate(m[1]); } catch { return null; }
+  };
+  // got-scraping transports (browser TLS)
+  for (const http2 of [true, false]) {
+    const html = await gotPage(streamUrl, `${BASE}/`, http2);
+    const data = extract(html);
+    if (data) return data;
+  }
+  // plain fetch — the transport /debug/rawfetch proved lands the full Player page
+  try {
+    const res = await fetch(streamUrl, {
+      headers: { 'User-Agent': UA, Referer: `${BASE}/` },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12000),
+    });
+    if (res.ok) return extract(await res.text());
+  } catch { /* fallthrough */ }
+  return null;
 }
 
 const hg = new HeaderGenerator({ browsers: ['chrome'], devices: ['desktop'], operatingSystems: ['windows'], locales: ['en-US', 'en'] });
@@ -118,8 +136,9 @@ function curlGet(url, referer) {
 // evidence). h1 keeps the same browser JA3, which is what animekai.at's
 // passive CF actually gates on (plain node TLS 403s even locally; curl and
 // got-scraping pass).
-async function gotPage(url, referer) {
-  for (const http2 of [true, false]) {
+async function gotPage(url, referer, http2Override) {
+  const attempts = http2Override === undefined ? [true, false] : [http2Override];
+  for (const http2 of attempts) {
     try {
       const res = await gotScraping.get(url, {
         headers: { ...hg.getHeaders({ httpVersion: http2 ? '2' : '1' }), 'User-Agent': UA, 'Accept': 'text/html,*/*', ...(referer && { Referer: referer }) },
