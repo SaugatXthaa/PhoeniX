@@ -107,6 +107,7 @@ export class Source {
     }
 
     let results;
+    let failed = false;
     try {
       results = await this.handleInternal(ctx, type, id);
       Source.recordSuccess(this.domainKey);
@@ -115,7 +116,20 @@ export class Source {
         results = [];
       } else {
         Source.recordFailure(this.domainKey);
-        throw error;
+        // Task 69: failures now cache as an EMPTY result (flat 60s retry —
+        // see the caching block below) instead of being rethrown uncached.
+        // Previously a source that errored mid-chain under contention
+        // (cinewave/uhdmovies class, production-measured re-scraping fresh
+        // every round) re-ran on EVERY refresh, held a concurrency slot for
+        // its full runtime, and kept rounds at the early-ship floor (~20s)
+        // instead of settling into the fast all-cached path. A flat 60s —
+        // deliberately SHORTER than the honest-zero ladder's 5min rung —
+        // keeps flaky-but-valuable sources retrying once a minute while
+        // still eliminating the per-refresh re-scrape storm. /debug/source
+        // is unaffected (calls handleInternal directly, so real errors
+        // still surface there).
+        results = [];
+        failed = true;
       }
     }
 
@@ -152,6 +166,11 @@ export class Source {
     if (!isEmpty) {
       emptyStreaks.delete(cacheKey);
       effectiveTtl = Math.min(this.ttl || 15 * 60 * 1000, 15 * 60 * 1000);
+    } else if (failed) {
+      // Flat 60s error retry (see the catch block above) — no ladder climb,
+      // no streak mutation, so the honest-zero ladder state is preserved
+      // independently of transient failures.
+      effectiveTtl = 60_000;
     } else {
       const streak = (emptyStreaks.get(cacheKey) || 0) + 1;
       emptyStreaks.set(cacheKey, streak);
