@@ -14,7 +14,8 @@
 //   - s*.flixsix.com: direct MP4, no Referer needed → DirectStream
 //   - manifest.desitvhub.eu.org/api/rpmplay/hls: direct HLS (proxied m3u8) → DirectStream
 //   - manifest.desitvhub.eu.org/api/stream: proxied MP4 → DirectStream
-//   - vixsrc.to: FILTERED OUT (returns 403 Cloudflare-blocked even with Referer)
+//   - vixsrc.to: shipped DIRECT with Referer/Origin headers — player-IP
+//     delivery (Task 70; CF-blocks datacenter IPs, peraspera class)
 
 import { createRequire } from 'module';
 import path from 'path';
@@ -43,13 +44,22 @@ function getScraperModule() {
   return _scraperMod;
 }
 
-// Hosts that consistently fail and should be filtered out before returning
-// streams to the user. Keeping these would show broken/unplayable streams.
-//
-//   - vixsrc.to: returns 403 Forbidden (Cloudflare-blocked, even with
-//     Referer: https://vixsrc.to/). The token format from desiflix doesn't
-//     match what vixsrc.to expects, so all requests are rejected.
-const DEAD_HOSTS = /vixsrc\.to/i;
+// Hosts that must be routed differently. Task 70: vixsrc.to REMOVED from
+// the dead-filter — production regressed to ZERO desiflix cards because the
+// addon's ONLY remaining upstream deliverable class is vixsrc playlists, so
+// the filter guaranteed "1 stream(s) from API, 0 after dead-host filter" on
+// every title. The old 403 evidence conflated two things: vixsrc.to
+// Cloudflare-BLOCKS DATACENTER IPs (verified live: homepage 403 in 0.037s
+// from both Render and the sandbox — an edge ASN block, not a token
+// rejection), which kills SERVER-side /proxy but NOT the player. The
+// standalone VixSrc source has shipped vixsrc playlists since Task 51 via
+// meta.nuvioDirectWithHeaders (Task 48 peraspera precedent): the card goes
+// DIRECT to the player with Referer/Origin headers and the PLAYER's
+// residential IP makes the request — exactly what the real site's browser
+// does. desiflix's tokened /playlist/{id}?token=…&expires=… URLs are the
+// vixsrc native player format and ride the same path below.
+//   - vixsrc.to: NOT filtered — shipped DIRECT with player-IP delivery (see
+//     the Task 70 note above and the routing applied after buildStreamResults)
 
 export class DesiFlix extends Source {
   constructor(fetcher) {
@@ -93,28 +103,32 @@ export class DesiFlix extends Source {
 
     if (!Array.isArray(streams)) return [];
 
-    // Filter out streams from dead/unreliable CDN hosts that cause 403/522 errors.
-    // vixsrc.to is the main offender — it returns 403 for all desiflix tokens.
-    const filteredStreams = streams.filter(s => {
-      if (!s || !s.url) return false;
-      try {
-        const host = new URL(s.url).hostname;
-        return !DEAD_HOSTS.test(host);
-      } catch { return false; }
-    });
-
-    if (filteredStreams.length === 0) {
-      console.log(`[desiflix] ${streams.length} stream(s) from API, 0 after dead-host filter`);
-      return [];
-    }
-
-    return buildStreamResults({
-      streams: filteredStreams,
+    const built = buildStreamResults({
+      streams,
       title,
       sourceId: this.id,
       sourceLabel: this.label,
       countryCodes: this.countryCodes,
       ctx,
     });
+
+    // Task 70: vixsrc.to cards ship DIRECT with player-IP delivery.
+    // meta.nuvioDirectWithHeaders → NuvioExtractor returns the playlist URL
+    // unchanged with requestHeaders {Referer, Origin: vixsrc.to} →
+    // behaviorHints.proxyHeaders on the final card (identical to the
+    // standalone VixSrc source, Task 51 revival). Server-side /proxy can
+    // never work for vixsrc (CF datacenter block) — the player's residential
+    // IP is the viable path.
+    for (const r of built) {
+      if (r?.url && /(^|\.)vixsrc\.to$/i.test(r.url.hostname)) {
+        r.meta = {
+          ...r.meta,
+          nuvioReferer: 'https://vixsrc.to/',
+          nuvioOrigin: 'https://vixsrc.to',
+          nuvioDirectWithHeaders: true,
+        };
+      }
+    }
+    return built;
   }
 }

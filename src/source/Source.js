@@ -31,11 +31,13 @@ const evictionCallbacks = new Map();
 // ~30 zero-yield sources × 10-35s of slot time per round, holding every
 // response at the 40s budget and starving the sources that DO deliver.
 // Ladder per (source,title) consecutive-empty streak: 15s (transient blip —
-// retry fast once) → 60s (likely persistent) → 5min (honest zero; the source
-// will not suddenly grow the title). Any non-empty result resets the streak,
-// so recovery is immediate the moment a source starts delivering again.
+// retry fast once) → 60s (capped — Task 70 removed the 5min rung: soft-zeros
+// from CF soft-blocks/upstream flakes must never lock a source out for
+// minutes). Any non-empty result resets the streak, so recovery is immediate
+// the moment a source starts delivering again.
 const emptyStreaks = new Map();
-const EMPTY_TTL_LADDER_MS = [15_000, 60_000, 300_000];
+// Task 70: 5min rung REMOVED — see the caching block below. Cap = 60s.
+const EMPTY_TTL_LADDER_MS = [15_000, 60_000, 60_000];
 
 export class Source {
   constructor() {
@@ -107,7 +109,6 @@ export class Source {
     }
 
     let results;
-    let failed = false;
     try {
       results = await this.handleInternal(ctx, type, id);
       Source.recordSuccess(this.domainKey);
@@ -116,20 +117,22 @@ export class Source {
         results = [];
       } else {
         Source.recordFailure(this.domainKey);
-        // Task 69: failures now cache as an EMPTY result (flat 60s retry —
-        // see the caching block below) instead of being rethrown uncached.
-        // Previously a source that errored mid-chain under contention
-        // (cinewave/uhdmovies class, production-measured re-scraping fresh
-        // every round) re-ran on EVERY refresh, held a concurrency slot for
-        // its full runtime, and kept rounds at the early-ship floor (~20s)
-        // instead of settling into the fast all-cached path. A flat 60s —
-        // deliberately SHORTER than the honest-zero ladder's 5min rung —
-        // keeps flaky-but-valuable sources retrying once a minute while
-        // still eliminating the per-refresh re-scrape storm. /debug/source
-        // is unaffected (calls handleInternal directly, so real errors
-        // still surface there).
-        results = [];
-        failed = true;
+        // Task 70 REVERT of the Task 69 fix2 failure→empty cache — production
+        // regression, user verdict: "you broke 4khdhub, desiflix, 2peckle and
+        // other — not returning any 4K". Caching a FAILURE as an empty result
+        // (even flat-60s) hides a slow-but-real source from EVERY refresh
+        // within the window: under cold-title contention its scrape times out
+        // → cached empty → the user's next refreshes all serve the empty
+        // cache → the source looks dead while its upstream is fine (live
+        // proof: 4khdhub scrape works perfectly from a clean network — 5 URLs
+        // incl. 2×2160p in 2.5s — while production served cached empties).
+        // The ORIGINAL repo caches nothing and re-runs every source on every
+        // request; a transient failure there costs one round, never a
+        // lockout. Errors are again UNCACHED (rethrow) — the resolver's
+        // withTimeout catches them per-source, telemetry still records the
+        // error, and the NEXT refresh retries fresh. /debug/source is
+        // unaffected (calls handleInternal directly).
+        throw error;
       }
     }
 
@@ -166,14 +169,18 @@ export class Source {
     if (!isEmpty) {
       emptyStreaks.delete(cacheKey);
       effectiveTtl = Math.min(this.ttl || 15 * 60 * 1000, 15 * 60 * 1000);
-    } else if (failed) {
-      // Flat 60s error retry (see the catch block above) — no ladder climb,
-      // no streak mutation, so the honest-zero ladder state is preserved
-      // independently of transient failures.
-      effectiveTtl = 60_000;
     } else {
       const streak = (emptyStreaks.get(cacheKey) || 0) + 1;
       emptyStreaks.set(cacheKey, streak);
+      // Task 70: ladder capped at 60s (was 15s → 60s → 5min). The 5min rung
+      // turned soft-zeros into multi-minute lockouts: a CF soft-block page or
+      // an upstream flake parses as "0 results" (not an exception), climbs
+      // the ladder on the user's back-to-back refreshes, and then the source
+      // is skipped for 5 minutes — exactly the "you broke <source>" reports.
+      // A real honest-zero (source genuinely lacks the title) only costs a
+      // re-scrape once per minute of active refreshing — still 4× less churn
+      // than the fixed-15s pre-Task-69 behavior, and non-empty results reset
+      // the streak instantly.
       effectiveTtl = EMPTY_TTL_LADDER_MS[Math.min(streak - 1, EMPTY_TTL_LADDER_MS.length - 1)];
       // Bound the streak map (keys track sourceResultCache keys) — a full
       // reset just restarts the ladder at 15s, which is always safe.

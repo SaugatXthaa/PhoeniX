@@ -540,6 +540,24 @@ export class StreamResolver {
       'moviesdrivev2', // 4 @6.5s fresh (8-hop chain) — original MoviesDrive 25s
       'uhdmovies',     // 6.7s+ multi-hop — original UHDMOVIES 12s
       'movieshuntv2',  // 5 @10.1s (abhilinks→hubcloud/gdflix chains)
+      // Task 70: wave-2 → wave-0 promotions for the user-named regression
+      // class ("you broke 4khdhub, desiflix, 2peckle"). Wave-2 starts land
+      // at ~25-40s on cold resolves (27 wave-0 entries hold the 15 slots
+      // first) — structurally unable to finish inside the 40s budget, so
+      // these sources were invisible on every cold first round and only
+      // surfaced via warm caches. Measured fast/productive:
+      //   - vixsrc: constructs its playlist card instantly (no upstream
+      //     scrape; token empty for free titles) — 1 multi-language card
+      //     every round for free. Front position.
+      //   - peckle: 9 cards incl 4K @1.7s production-measured (FEBBOX).
+      //   - desiflix: 23-32s chain (Task 59) — starting at a ~2-5s slot
+      //     puts its finish INSIDE the 40s budget on cold r1; as wave-2 it
+      //     started at 25-40s and never landed. Upstream (desitvhub Azure)
+      //     is flaky — measured 30-95s with empty windows — the Task 70
+      //     uncached-failure retry contract plus the wave-0 start give it
+      //     the best possible delivery path.
+      'vixsrc',
+      'peckle',
       // proven cold landers in production 15s races (must not regress)
       '4khdhub',       // 6 @3.1s local fresh
       'fourkhdhubone', // 6
@@ -563,6 +581,8 @@ export class StreamResolver {
       // Measured 2.5-3.2s cold (Inception/Dune2 2160p, Frieren S1E1 1080p).
       // 4K-capable + fast → wave-0 4K group.
       'atlantic',      // 1-4 @2.5-3.2s cold incl 2160p (Orbit/Aphrodite)
+      // Task 70: desiflix wave-2 → wave-0 tail (see the Task 70 block above).
+      'desiflix',      // 23-32s chain — early start puts the finish in-budget
       'primeshows',    // 6 @4.0s
       'meinecloud',    // 4 @3.8s
       'raflix',        // 7 @2.1s production isolated
@@ -582,10 +602,12 @@ export class StreamResolver {
       // 40s client budget (Task 56) means it now lands IN-request on cold
       // resolves instead of only via the background tail (whose per-instance
       // cache a multi-instance Render deployment often never sees again).
-      'desiflix',
+      // Task 70: desiflix REPROMOTED to wave-0 (see WAVE1_SOURCE_ORDER) —
+      // wave-2 starts land at ~25-40s on cold resolves and never finish.
       'hindmoviez', 'cinebyrocks', 'nowhdtime', 'zxcstream',
       'imdbplay', 'framextv',
-      'vixsrc', 'kmmovies', 'vidzee', 'pantyflix', 'peckle',
+      // Task 70: 'vixsrc' and 'peckle' promoted to wave-0 (user-named class).
+      'kmmovies', 'vidzee', 'pantyflix',
       'netlio', 'rivestream', 'cinehdplus',
       // Task 61: persianstremio promoted BACKGROUND_ONLY → wave 2 — same
       // class and same evidence standard as desiflix above. Isolated fresh
@@ -785,7 +807,10 @@ export class StreamResolver {
     // Track how many sources have fully settled (scrape + extractor stage).
     let settledCount = 0;
     const allSourcePromises = sortedSources.map(s =>
-      handleSource(s).finally(() => { settledCount++; })
+      handleSource(s).finally(() => {
+        settledCount++;
+        if (wave0Ids.has(s.id)) wave0Settled++; // Task 70: gate early ship on wave-0 completion
+      })
     );
 
     // Task 69: EARLY SHIP. The response used to wait the FULL client budget
@@ -801,8 +826,26 @@ export class StreamResolver {
     // instant everything settles. Net effect: rounds drop from 40-45s to
     // ~20-25s and the full set converges in 1-2 fast refreshes instead of
     // 4-5 slow ones.
+    //
+    // Task 70 HARD GATE — production regression this trimmed: cold-title
+    // responses shipped at ~20s while wave-0 sources (4khdhub 17s, uhdmovies
+    // multi-hop, cinewave 25s — the 30+-stream base AND the 4K group) were
+    // still mid-scrape, and their background continuations then failed under
+    // tail contention (greenmotors 12s timeouts, upstream flake) → the new
+    // failure/empty caches locked them out of the NEXT refreshes too. User
+    // verdict: "you broke 4khdhub, desiflix, 2peckle — not returning any 4K".
+    // Invariant restored: the response NEVER ships while a wave-0 source is
+    // still resolving. Wave-0 = the measured deliverers (30+ stream base,
+    // 4K-capable group, Task 53/59 user-named sources). Early ship now only
+    // trims a SMALL, ALREADY-MEDIUM-class tail; on cold titles where wave-1/2
+    // outstanding >10 the 40s budget governs exactly like the original repo
+    // (which waits the full 40s every time — its responses are complete by
+    // construction). Warm resolves still return the instant everything
+    // settles.
     const EARLY_SHIP_AFTER_MS = Math.max(0, parseInt(process.env.STREAM_EARLY_SHIP_AFTER_MS, 10) || 20000);
     const EARLY_SHIP_MAX_REMAINING = Math.max(0, parseInt(process.env.STREAM_EARLY_SHIP_MAX_REMAINING, 10) || 10);
+    const wave0Ids = new Set(sortedSources.filter(s => WAVE1_SOURCE_ORDER.includes(s.id)).map(s => s.id));
+    let wave0Settled = 0;
     let earlyShipFired = false;
     const allSettled = await new Promise(resolve => {
       const raceT0 = Date.now();
@@ -813,7 +856,8 @@ export class StreamResolver {
         const elapsed = Date.now() - raceT0;
         if (elapsed >= CLIENT_BUDGET_MS) return finish(false);
         if (EARLY_SHIP_AFTER_MS > 0 && elapsed >= EARLY_SHIP_AFTER_MS &&
-            (sortedSources.length - settledCount) <= EARLY_SHIP_MAX_REMAINING) {
+            (sortedSources.length - settledCount) <= EARLY_SHIP_MAX_REMAINING &&
+            wave0Settled >= wave0Ids.size) {
           earlyShipFired = true;
           this.logger.info(`StreamResolver: early ship at ${elapsed}ms — ${sortedSources.length - settledCount} stragglers (≤${EARLY_SHIP_MAX_REMAINING}) keep resolving in background`);
           return finish(false);

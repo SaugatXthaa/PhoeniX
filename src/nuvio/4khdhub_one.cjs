@@ -303,34 +303,58 @@ function b64decode(s) {
 }
 
 // Resolve one greenmotors URL → { url, host } or null
+// Task 70: ONE inline retry on failure. Under 15-source contention on Render
+// 0.1-CPU the 12s fetch timeout fires far more often than on a clean network
+// (sandbox: same page resolves in 0.5-2.5s), and a failed block meant a lost
+// quality tier — or, when ALL blocks failed in the same window (measured on
+// production: "Resolved 0 file URLs" while the identical scrape succeeded
+// from the sandbox), a ZERO-count result that then got cached empty at the
+// source layer. One retry inside the same resolve recovers the transient
+// window without meaningfully extending the chain (retry only fires on
+// failure).
 async function resolveGreenmotors(href, fetcher, ctx) {
-  try {
-    const html = await fetchText(href, { timeout: 12000, headers: { Referer: BASE_URL + '/' }, fetcher, ctx });
-    const tokenMatch = html.match(/s\(\s*['"]o['"]\s*,\s*['"]([A-Za-z0-9+/=]+)['"]/);
-    if (!tokenMatch) { console.log('[4KHDHubOne] greenmotors: no token on ' + href.slice(0, 60)); return null; }
-    let s = b64decode(tokenMatch[1]);
-    s = b64decode(s);
-    s = rot13(s);
-    s = b64decode(s);
-    const json = JSON.parse(s);
-    if (!json || !json.o) return null;
-    const real = b64decode(json.o);
-    if (!/^https?:\/\//.test(real)) return null;
-    const host = new URL(real).hostname;
-    return { url: real, host };
-  } catch (e) {
-    console.log('[4KHDHubOne] greenmotors resolve failed: ' + (e?.message || e));
-    return null;
-  }
+  const attempt = () => new Promise(async (resolve) => {
+    try {
+      const html = await fetchText(href, { timeout: 12000, headers: { Referer: BASE_URL + '/' }, fetcher, ctx });
+      const tokenMatch = html.match(/s\(\s*['"]o['"]\s*,\s*['"]([A-Za-z0-9+/=]+)['"]/);
+      if (!tokenMatch) { console.log('[4KHDHubOne] greenmotors: no token on ' + href.slice(0, 60)); return resolve(null); }
+      let s = b64decode(tokenMatch[1]);
+      s = b64decode(s);
+      s = rot13(s);
+      s = b64decode(s);
+      const json = JSON.parse(s);
+      if (!json || !json.o) return resolve(null);
+      const real = b64decode(json.o);
+      if (!/^https?:\/\//.test(real)) return resolve(null);
+      const host = new URL(real).hostname;
+      resolve({ url: real, host });
+    } catch (e) {
+      console.log('[4KHDHubOne] greenmotors resolve failed: ' + (e?.message || e));
+      resolve(null);
+    }
+  });
+  const first = await attempt();
+  if (first) return first;
+  return attempt();
 }
 
-// 30-min in-module cache — the decoded URL is stable per 4khdhub post link
+// In-module cache — the decoded URL is stable per 4khdhub post link.
+// Task 70: NEGATIVE results no longer cache for 30 minutes. One transient
+// greenmotors timeout used to pin "Resolved 0 file URLs" for the FULL TTL —
+// every refresh for half an hour served the locked-out empty from the source
+// cache (user-visible: "4khdhub not returning any 4K movies"). Positives
+// keep the 30min TTL; negatives now expire after 90s so the next refresh
+// re-resolves fresh.
 const _gmCache = new Map();
 const GM_CACHE_TTL = 30 * 60 * 1000;
+const GM_NEG_CACHE_TTL = 90 * 1000;
 async function resolveGreenmotorsCached(href, fetcher, ctx) {
   const hit = _gmCache.get(href);
-  if (hit && Date.now() - hit.ts < GM_CACHE_TTL) return hit.val;
-  const val = await resolveGreenmotors(href);
+  if (hit) {
+    const ttl = hit.val ? GM_CACHE_TTL : GM_NEG_CACHE_TTL;
+    if (Date.now() - hit.ts < ttl) return hit.val;
+  }
+  const val = await resolveGreenmotors(href, fetcher, ctx);
   if (_gmCache.size > 400) _gmCache.clear();
   _gmCache.set(href, { ts: Date.now(), val });
   return val;
