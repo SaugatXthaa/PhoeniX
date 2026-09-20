@@ -39,3 +39,16 @@
 23. Client truth matters: the acceptance bar is Stremio/Nuvio on the user's device, not just API JSON.
 24. Append every task to `/home/z/my-project/worklog.md` (format fixed, append-only). Scripts persist under `scripts/` (taskNN_*.mjs) — they are the reproducible evidence chain; never delete past task scripts.
 25. Chat replies stay short; no report/file dumps unless the user asks.
+
+## E. STANDING RULE — every NEW source the user sends (Task 68, user-ordered)
+
+When the user sends a new source URL to add, apply the user's standing prompt to it, every time:
+
+26. **Reverse engineer the site properly and carefully before any code** — live-probe search, catalog pages, episode/movie pages, every player iframe and every server; decode packed JS (FirePlayer packers, base64 payload maps, aes/packed evals) rather than guessing; record every measured fact (endpoints, headers, referer gates, dead services) as comments at the code site.
+27. **Direct playable streams** — every card must be directly playable (`/proxy`, `/range-proxy`, or direct + `behaviorHints.proxyHeaders` for client-IP delivery when the CDN 403s datacenter egress / requires Referer). Zero html-url cards.
+28. **Correct enriched metadata** — real quality parsed from the source (never a hardcoded guess), audio-track languages surfaced through `audioTracks` → meta flags, honest sizes/labels.
+29. **Sub + dub, multi-language, all servers** — ship every language track the site offers (sub and dub) and every working server. For multi-audio HLS masters, surface the language list on the card; never drop a working server.
+30. **Up to 4K when the source has it** — report the real max (1080p sources ship 1080p — never fake 4K; 4K sources sort first per rule 3).
+31. **Subtitles from the source when it has them** — pass through when present; when absent, universal Atlantic subs attach at StreamResolver level. Never ship a guessed/dead subtitle URL (the old `/cdn/down/<hash>/Subtitle/subtitle_eng.srt` guess 404s — removed).
+32. **Only add if it works — and do everything to make it work** — exhaust the paths (direct, relay ladders, alternate TLDs/mirrors, player-domain shortcuts) with MEASUREMENTS before declaring an upstream class. If the upstream gates datacenter egress, document it as an honest-zero class (§C) and keep the source registered + correct so it self-heals if the upstream unblocks; device IPs may still stream.
+33. **Never break anything while adding** — the new source is additive: no edits to other sources, no infra changes unless a measured failure demands it, baseline guard 6/6 before and after.
