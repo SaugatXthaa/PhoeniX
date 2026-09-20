@@ -274,6 +274,19 @@ async function fetchHlsLevel(url, headers = {}) {
   if (status === 403 && ct.startsWith('image/') && /(^|\.)lh3\.googleusercontent\.com$/i.test(new URL(url).hostname)) {
     return { state: 'unknown', status, ct, note: 'lh3-hotlink-block' };
   }
+  // Task 67: fetch.nexabloom.top / *.vyrnex.top (megaplay.buzz anime CDN)
+  // hard-403 ALL datacenter IPs but serve the player's residential IP — that
+  // split is the DESIGN of nuvioHelpers' NO_REFERER_HOSTS direct routing
+  // (AniMoTVSlash/megaplay finals: "/proxy would fetch from THIS server and
+  // always 403; skipping Referer routes them as direct HLS so the PLAYER's
+  // residential IP fetches them"). A datacenter 403 here is therefore NOT
+  // definitive death — the whole catalog zero'd through exactly this path
+  // (AniMoTVSlash JJK S1E1: chain resolved 2 live 1080p nexabloom finals,
+  // gate verdicted them dead server-side). 'unknown' ships the card; the
+  // device IP decides (Task 65 lh3-hotlink-block precedent).
+  if (status === 403 && /(^|\.)nexabloom\.top$|(^|\.)vyrnex\.top$/i.test(new URL(url).hostname)) {
+    return { state: 'unknown', status, ct, note: 'nexabloom-ipclass-gate' };
+  }
   if (status === 403 || status === 410 || status === 404) return { state: 'dead', status, ct };
   if (status < 200 || status >= 400) return { state: 'unknown', status, ct };
   const head = body.trimStart().slice(0, 64).toLowerCase();

@@ -167,7 +167,10 @@ function rankSeries(results, tmdbTitle, tmdbYear, season) {
   // (slugs like "...-season-2-dub" defeat $-anchored regexes), treat dub
   // suffixes as neutral, and penalize the base slug when an S>1 post exists.
   for (const r of ranked) {
-    const slugSeasonM = r.slug.match(/-season-(\d+)(?:-|$)/i);
+    // Task 67: also match word-form ordinals — the site publishes "jujutsu-
+    // kaisen-2nd-season" style posts that -season-N alone never sees.
+    const slugSeasonM = r.slug.match(/-season-(\d+)(?:-|$)/i)
+      || r.slug.match(/-(\d+)(?:nd|rd|th)-season(?:-|$)/i);
     const slugSeason = slugSeasonM ? parseInt(slugSeasonM[1]) : null;
     if (season && season > 1) {
       if (slugSeason === season) r.score += 25;
@@ -224,6 +227,16 @@ async function findEpisodeUrl(detailUrl, episode) {
     // tolerate .html-less variants and %e2%98%86-style encodings by relaxing
     const epRe2 = new RegExp(`href="(https://animotvslash\\.org/[^"]*-episode-${esc}/?)"`, 'i');
     m = html.match(epRe2);
+  }
+  if (!m) {
+    // Task 67: the site REPUBLISHED episode pages under duplicate slugs —
+    // JJK S1 now links /jujutsu-kaisen-episode-1-2/ … -episode-24-2/ (the -N
+    // suffix is the re-upload counter). Both exact forms above require the
+    // episode number directly followed by '/' or '"', so every re-uploaded
+    // page was invisible → "episode N link not found" → honest zero for the
+    // whole catalog. Allow an optional -<digits> suffix after the number.
+    const epRe3 = new RegExp(`href="(https://animotvslash\\.org/[a-z0-9%-]*-episode-${esc}-\\d+/?)"`, 'i');
+    m = html.match(epRe3);
   }
   if (!m) {
     console.log(`[${PROVIDER_NAME}] episode ${episode} link not found on ${detailUrl.slice(0, 80)}`);

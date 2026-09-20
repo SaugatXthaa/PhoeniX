@@ -497,9 +497,10 @@ export class StreamResolver {
     // re-sorted by height/bytes/priority before the build loop).
     // ORDER WITHIN WAVE 0 MATTERS: only 10 slots exist; light sources (1-3s)
     // must start first so slots churn and the next sources start early.
-    // Heavy aggregators (cinewave 46 cards, watchseries 11) hold a slot 12s+
-    // fresh — they go LAST in the wave (their results cache for warm
-    // requests via background continuation).
+    // Task 66 A/B vs the original repo DISPROVED the "heavy aggregator holds
+    // a slot 12s+" label: cinewave measured cold 46 cards @1.5s isolated (its
+    // pixeldrain finals are instant HEADs). cinewave/watchseries/necro now sit
+    // at the FRONT (positions 7-9) — see the Task 66 comment at 'cinewave'.
     // This is an ORDERED array — the resolver starts these sources in exactly
     // this sequence (index becomes the sort rank; wave 1 = 100, wave 2 = 200).
     const WAVE1_SOURCE_ORDER = [
