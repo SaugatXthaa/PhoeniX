@@ -99,3 +99,12 @@ Findings: our CineWave/PlayImdb/uhdmovies code was byte-identical to orig all al
 
 - Short chat replies. Do NOT paste reports/files/logs into chat unless explicitly asked. No artificial "End of report" markers.
 - User needs streams that PLAY in Stremio/Nuvio on device — a datacenter-gated upstream is still "working" if device IPs play, but say so honestly and only with measurements.
+
+## 12. Task 70 invariants — cache/lockout class (regression "you broke 4khdhub/desiflix/2peckle")
+
+- A response must NEVER ship while a wave-0 source is still resolving: early ship is gated on wave0Settled >= wave0Total (StreamResolver.js). Early ship only trims a small, already-settled wave-1/2 tail.
+- Failures are NEVER cached as empty (Source.js rethrows; Task 69 fix2 reverted). One contention timeout must cost one round, never a lockout. /debug/source still surfaces real errors (handleInternal direct).
+- No empty-result cache exceeds 60s (ladder [15s,60s,60s]; the 5min rung turned CF soft-blocks into multi-minute source invisibility).
+- Per-source in-module negative caches must be SHORT (4khdhub_one greenmotors: 90s neg / 30min pos; the 30min null TTL pinned "Resolved 0 file URLs" per title for half an hour). Cached-path calls must still thread fetcher/ctx.
+- desiflix: upstream addon (desitvhub Azure) is flaky (30-95s chains, empty windows) and vixsrc.to playlists are its main deliverable — vixsrc.to CF-blocks datacenter IPs (403 in 0.037s = edge ASN block); cards ship DIRECT with nuvioDirectWithHeaders + Referer/Origin vixsrc.to (player-IP delivery, peraspera class). desiflix/vixsrc/peckle are wave-0 now.
+- Verification pattern that caught it: /debug/source isolation (server) + clean-network sandbox A/B + per-source count@durationMs from /debug/stream. "count 0 at ~100ms duration" = cached empty; same scrape 200-from-sandbox = contention transient, not source death.
