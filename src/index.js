@@ -103,11 +103,20 @@ app.get('/stream/:type/:id.json', async (req, res) => {
     // spike, upstream latency). Caching that starved result for 5 minutes
     // (previous behavior) locked the user out of the full set — by the time a
     // retry arrived, the per-source caches were warm but the app kept showing
-    // the cached starved response. A short TTL on starved responses only lets
-    // the next fetch pick up the now-warm per-source cached results. Fully
-    // populated responses keep the original 5-minute TTL (byte-identical).
-    const starved = streams.length < sources.length;
-    res.setHeader('Cache-Control', starved ? 'public, max-age=30' : 'public, max-age=300');
+    // the cached starved response.
+    // Task 69: partial responses are now NOT cached at all (no-store) —
+    // the 30s HTTP cache served the SAME starved set to refreshes arriving
+    // within its window, directly producing the "refresh shows the same few
+    // streams" loop. Every refresh must reach the resolver so it picks up the
+    // background-warmed per-source caches. Fully populated responses keep the
+    // 5-minute TTL (byte-identical behavior for the converged case). The
+    // decision uses the resolver's own partial flag (allSettled=false →
+    // no-store): a fully-settled movie response routinely carries fewer cards
+    // than the 72-source registry (20+ anime sources skipped by Task 69), so
+    // the old `streams.length < sources.length` heuristic wrongly no-stored
+    // converged responses.
+    const starved = streamResolver._lastResolveWasPartial === true;
+    res.setHeader('Cache-Control', starved ? 'no-store' : 'public, max-age=300');
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.json({ streams });
   } catch (err) {
@@ -1541,6 +1550,9 @@ app.get('/debug/stream', async (req, res) => {
       // whenever the env var was unset (real budget 40s since Task 56).
       partial: streamResolver._lastResolveWasPartial === true,
       clientBudgetMs: streamResolver._clientBudgetMs || 40000,
+      // Task 69 early-ship telemetry — fired=true means the response shipped
+      // before the budget because only ≤ maxRemaining stragglers were left.
+      earlyShip: streamResolver._lastEarlyShip || null,
       // Per-source timing (slowest first)
       sources: sortedTimings.map(t => ({
         id: t.id,

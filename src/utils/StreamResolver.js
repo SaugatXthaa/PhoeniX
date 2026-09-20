@@ -619,6 +619,17 @@ export class StreamResolver {
       // (anime movies on watchanimeworld.one) and resolves in ~5-8s measured
       // — unclassified placement (wave 100) lands both types in-request.
     ]);
+    // Task 69: anime-only sources are episode-scrapers — on MOVIE requests
+    // they are guaranteed zero-yield (production-measured: all 21 returned 0
+    // on every probed movie while queuing 26-39s behind the real sources).
+    // Each useless scrape burns a concurrency slot AND, after budget expiry,
+    // clogs the background tail that warms the cache for the NEXT title —
+    // the direct cause of "next movie opens with 3-5 streams". Skip them
+    // entirely for movies. Series behavior is unchanged (anime sources are
+    // the primary deliverers there). Env escape hatch kept for diagnostics.
+    const ANIME_SOURCES_ON_MOVIES = process.env.ANIME_SOURCES_ON_MOVIES === '1';
+    const isScheduled = (source, requestType) =>
+      ANIME_SOURCES_ON_MOVIES || requestType !== 'movie' || !ANIME_ONLY_SOURCE_IDS.has(source.id);
     const waveOf = (sourceId, requestType) => {
       const w1 = WAVE1_SOURCE_ORDER.indexOf(sourceId);
       if (w1 !== -1) return w1; // 0..19 — exact start order within wave 0
@@ -629,7 +640,11 @@ export class StreamResolver {
     };
     const sortedSources = [...sources].sort(
       (a, b) => waveOf(a.id, type) - waveOf(b.id, type)
-    );
+    ).filter(s => isScheduled(s, type));
+    const skippedAnimeCount = sources.length - sortedSources.length;
+    if (skippedAnimeCount > 0) {
+      this.logger.info(`StreamResolver: skipped ${skippedAnimeCount} anime-only sources (movie request)`);
+    }
 
     let activeCount = 0;
     const waitQueue = [];
@@ -652,7 +667,13 @@ export class StreamResolver {
     //      starts are held back.
     // In-budget (client-facing) resolves are NEVER gated.
     let budgetExpired = false;
-    const BACKGROUND_MAX_CONCURRENT = Math.max(1, parseInt(process.env.STREAM_BACKGROUND_MAX_CONCURRENT, 10) || 2);
+    // Task 69: default 2 → 4. The tail is what fills the per-source caches
+    // between refreshes; at 2 concurrent a 25-source tail needed 3-4 minutes,
+    // so refreshes kept surfacing partially-warm sets ("need 4-5 refreshes")
+    // and a tail still draining from the PREVIOUS title starved the next
+    // title's resolve. The Task 54 playback gate is untouched — starts still
+    // yield to /proxy + /range-proxy traffic — so playback stays protected.
+    const BACKGROUND_MAX_CONCURRENT = Math.max(1, parseInt(process.env.STREAM_BACKGROUND_MAX_CONCURRENT, 10) || 4);
     const BACKGROUND_PLAYBACK_MAX_WAIT_MS = Math.max(10000, parseInt(process.env.STREAM_BACKGROUND_PLAYBACK_MAX_WAIT_MS, 10) || 45000);
     const effectiveCap = () => (budgetExpired ? Math.min(BACKGROUND_MAX_CONCURRENT, MAX_CONCURRENT_SOURCES) : MAX_CONCURRENT_SOURCES);
 
@@ -767,10 +788,39 @@ export class StreamResolver {
       handleSource(s).finally(() => { settledCount++; })
     );
 
-    const allSettled = await Promise.race([
-      Promise.all(allSourcePromises).then(() => true),
-      new Promise(resolve => setTimeout(() => resolve(false), CLIENT_BUDGET_MS)),
-    ]);
+    // Task 69: EARLY SHIP. The response used to wait the FULL client budget
+    // (40s) whenever even 1-3 stragglers were still resolving — production
+    // measured 40.3s, 42.8s, 43.8s, 45.4s per round, every round, because
+    // slow chains (uhdmovies 36s timeout class) held the resolve to the wire
+    // while the user stared at a loading screen. New contract: after
+    // STREAM_EARLY_SHIP_AFTER_MS (20s), if only ≤ STREAM_EARLY_SHIP_MAX_REMAINING
+    // sources are still outstanding, ship what we have NOW; the stragglers
+    // keep resolving in the background (existing machinery) and land in the
+    // per-source caches for the next refresh. The 40s budget stays as the
+    // absolute cap (original-parity), and warm resolves still return the
+    // instant everything settles. Net effect: rounds drop from 40-45s to
+    // ~20-25s and the full set converges in 1-2 fast refreshes instead of
+    // 4-5 slow ones.
+    const EARLY_SHIP_AFTER_MS = Math.max(0, parseInt(process.env.STREAM_EARLY_SHIP_AFTER_MS, 10) || 20000);
+    const EARLY_SHIP_MAX_REMAINING = Math.max(0, parseInt(process.env.STREAM_EARLY_SHIP_MAX_REMAINING, 10) || 10);
+    let earlyShipFired = false;
+    const allSettled = await new Promise(resolve => {
+      const raceT0 = Date.now();
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; clearInterval(poll); resolve(v); } };
+      const poll = setInterval(() => {
+        if (settledCount >= sortedSources.length) return finish(true);
+        const elapsed = Date.now() - raceT0;
+        if (elapsed >= CLIENT_BUDGET_MS) return finish(false);
+        if (EARLY_SHIP_AFTER_MS > 0 && elapsed >= EARLY_SHIP_AFTER_MS &&
+            (sortedSources.length - settledCount) <= EARLY_SHIP_MAX_REMAINING) {
+          earlyShipFired = true;
+          this.logger.info(`StreamResolver: early ship at ${elapsed}ms — ${sortedSources.length - settledCount} stragglers (≤${EARLY_SHIP_MAX_REMAINING}) keep resolving in background`);
+          return finish(false);
+        }
+      }, 250);
+    });
+    this._lastEarlyShip = { fired: earlyShipFired, afterMs: EARLY_SHIP_AFTER_MS, maxRemaining: EARLY_SHIP_MAX_REMAINING };
 
     // Task 54: flip the background-tail switch the moment the budget expires —
     // queued sources now start at BACKGROUND_MAX_CONCURRENT and only between
@@ -790,7 +840,7 @@ export class StreamResolver {
     this._lastResolveWasPartial = !allSettled;
     this._clientBudgetMs = CLIENT_BUDGET_MS;
     if (!allSettled) {
-      this.logger.info(`StreamResolver: client budget ${CLIENT_BUDGET_MS}ms hit (${settledCount}/${sortedSources.length} sources settled, ${urlResults.length} urlResults) — returning partial results; remaining sources complete in background and will be cached for the next request`);
+      this.logger.info(`StreamResolver: ${earlyShipFired ? 'early ship' : `client budget ${CLIENT_BUDGET_MS}ms hit`} (${settledCount}/${sortedSources.length} sources settled, ${urlResults.length} urlResults) — returning partial results; remaining sources complete in background and will be cached for the next request`);
     }
 
     // Task 42: give fire-and-forget gated-host probes a short settle window.

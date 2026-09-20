@@ -25,6 +25,18 @@ const firstFailureAt = new Map();
 const FAILURE_EVICTION_WINDOW = 5 * 60 * 1000;
 const evictionCallbacks = new Map();
 
+// Task 69: adaptive empty-result TTL. The fixed 15s empty TTL meant every
+// source that honestly has nothing for a title (dead upstreams, wrong-content
+// sources, NotFoundErrors) re-scraped on EVERY refresh — production-measured
+// ~30 zero-yield sources × 10-35s of slot time per round, holding every
+// response at the 40s budget and starving the sources that DO deliver.
+// Ladder per (source,title) consecutive-empty streak: 15s (transient blip —
+// retry fast once) → 60s (likely persistent) → 5min (honest zero; the source
+// will not suddenly grow the title). Any non-empty result resets the streak,
+// so recovery is immediate the moment a source starts delivering again.
+const emptyStreaks = new Map();
+const EMPTY_TTL_LADDER_MS = [15_000, 60_000, 300_000];
+
 export class Source {
   constructor() {
     this.ttl = 43200000; // 12h
@@ -127,7 +139,8 @@ export class Source {
     // (stream definitions are KB-scale; the >40-entry sweep still bounds the
     // map, and prewarm-relevant titles stay valid between 10min rotations).
     const isEmpty = !Array.isArray(results) || results.length === 0;
-    // Short TTL for empty results (15s) — retry quickly after transient failures.
+    // Task 69: adaptive empty TTL ladder (15s → 60s → 5min on consecutive
+    // empty results for the same source+title; non-empty resets the streak).
     // Non-empty results: 15min cap — BUT a source may declare a SHORTER this.ttl
     // when its stream URLs die faster (AniKage 3min, the 5min token families,
     // MovieLinkBD ~5min CDN token rotation — Task 58). The hardcoded 15min
@@ -135,7 +148,18 @@ export class Source {
     // cache for up to 15min (measured live: movielinkbd "FILE DELETED" 403s on
     // cards older than the rotation window). Math.min keeps every source with
     // ttl >= 15min exactly as before.
-    const effectiveTtl = isEmpty ? 15_000 : Math.min(this.ttl || 15 * 60 * 1000, 15 * 60 * 1000);
+    let effectiveTtl;
+    if (!isEmpty) {
+      emptyStreaks.delete(cacheKey);
+      effectiveTtl = Math.min(this.ttl || 15 * 60 * 1000, 15 * 60 * 1000);
+    } else {
+      const streak = (emptyStreaks.get(cacheKey) || 0) + 1;
+      emptyStreaks.set(cacheKey, streak);
+      effectiveTtl = EMPTY_TTL_LADDER_MS[Math.min(streak - 1, EMPTY_TTL_LADDER_MS.length - 1)];
+      // Bound the streak map (keys track sourceResultCache keys) — a full
+      // reset just restarts the ladder at 15s, which is always safe.
+      if (emptyStreaks.size > 2000) emptyStreaks.clear();
+    }
     sourceResultCache.set(cacheKey, { data: results, ts: Date.now(), ttl: effectiveTtl });
     return results;
   }
