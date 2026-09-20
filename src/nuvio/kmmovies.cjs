@@ -256,6 +256,16 @@ function extractMagiclinks(html) {
 // the URL is a direct playable stream (no captcha/auth needed).
 async function resolveMagiclinks(magiclinksUrl) {
   const html = await fetchText(magiclinksUrl, { headers: { Referer: KMMOVIES_BASE + '/' } });
+  // Task 65: CF verdict propagation. magiclinks.lol answers datacenter egress
+  // (Render) with the "Just a moment..." challenge page — HTTP 200/403 HTML
+  // with zero link matches. Throwing a flagged error lets getStreams abort the
+  // WHOLE batch loop on the first verdict instead of burning 20+ fetches ×
+  // the got h2→h1 ladder on links that will all be challenged identically.
+  if (/Just a moment|challenge-platform|cf-browser-verification|cf_chl_/i.test(html)) {
+    const err = new Error('CF_CHALLENGE');
+    err.cfGated = true;
+    throw err;
+  }
 
   // Collect all host match data first
   const watchOnlineMatch = html.match(/href="(https:\/\/z1\.kmphotos\.cv\/online\.php\?file=[^"]+)"/);
@@ -636,9 +646,16 @@ async function getStreams(tmdbId, type, season, episode) {
   const allStreams = [];
   const seenUrls = new Set();
   const batchSize = 5;
-  for (let i = 0; i < magiclinks.length; i += batchSize) {
+  // Task 65: first CF verdict ends the loop — every magiclinks fetch from a
+  // challenged egress returns the same challenge page (measured: 142ms 403).
+  let cfGated = false;
+  for (let i = 0; i < magiclinks.length && !cfGated; i += batchSize) {
     const batch = magiclinks.slice(i, i + batchSize);
     const results = await Promise.allSettled(batch.map(ml => resolveMagiclinks(ml.url)));
+    if (results.some(r => r.status === 'rejected' && r.reason?.cfGated)) {
+      cfGated = true;
+      console.log('[KMMovies] magiclinks.lol CF-gated from this egress — honest zero (source works device-side)');
+    }
     for (let j = 0; j < results.length; j++) {
       const ml = batch[j];
       const result = results[j];

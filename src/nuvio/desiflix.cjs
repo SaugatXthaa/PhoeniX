@@ -77,7 +77,7 @@ const BASE_URLS = [
 // (Azure Container App behind Cloudflare) has cold-start delays: the first
 // request after idle returns 504 in ~10s, but subsequent requests are fast
 // (~0.6s). Without retries, the scraper fails on every cold start.
-function fetchJsonOnce(url, { ua = STREMIO_UA, timeout = 12000 } = {}) {
+function fetchJsonOnce(url, { ua = STREMIO_UA, timeout = 30000 } = {}) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, {
       headers: {

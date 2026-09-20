@@ -68,13 +68,17 @@ export class PersianStremio extends Source {
       streams = await Promise.race([
         // Task 52: the vercel upstream flaps (intermittent 503 / cold-boot
         // timeouts — measured both directions). One bounded retry-on-empty
-        // (same pattern as StellarRip) doubles the success odds during flap
-        // windows without extending the 25s race.
+        // doubles the success odds during flap windows.
+        // Task 65 re-measure: the upstream is ALIVE but a fresh-tt lookup now
+        // answers in 17-20s (their TMDB/external_ids cold path; warm tt hits
+        // 1-3s). The old 14s budget expired BEFORE the upstream ever answered
+        // → production honest-zero on every cold title. Widened to 26s (fits
+        // the wave scheduler's 40s client budget) with the race at 33s.
         withRetryOnEmpty(
           () => mod.getStreams(String(tmdbId.id), mediaType, tmdbId.season || null, tmdbId.episode || null),
-          { maxTotalMs: 14000, tag: 'persianstremio' }
+          { maxTotalMs: 26000, tag: 'persianstremio' }
         ),
-        new Promise(r => setTimeout(() => r(null), 25000)),
+        new Promise(r => setTimeout(() => r(null), 33000)),
       ]);
     } catch (e) {
       console.error(`[persianstremio] error: ${e?.message || e}`);

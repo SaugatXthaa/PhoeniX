@@ -53,11 +53,15 @@ export class HindMoviez extends Source {
       timeoutMs: 30000,
     });
 
-    // Liveness gate — these streams play through the server /proxy, so a
-    // server-side probe accurately predicts playability. Dead/gated URLs
-    // (403 hotlink, 401 JS-cookie challenge, CF challenge HTML) are dropped
-    // instead of being shipped as guaranteed playback errors.
-    const liveStreams = await filterDeadStreams(streams);
+    // Liveness gate — definitive 4xx/5xx/HTML responses still drop. Task 65:
+    // network-timeouts no longer do. Live evidence: the hindmoviez worker CDN
+    // (my.mainone0hindmoviezday.workers.dev) serves 200 video/x-matroska in
+    // 1.8s from device-class IPs but TARPITS the Render datacenter IP (no
+    // headers in >12s) — the old probe read that as death and dropped every
+    // card → production honest-zero while the chain itself was healthy. The
+    // player fetches the worker URL directly (device IP, no /proxy hop), so a
+    // Render-side stall says nothing about user-side playability.
+    const liveStreams = await filterDeadStreams(streams, { dropOnNetworkError: false });
 
     return buildStreamResults({
       streams: liveStreams,

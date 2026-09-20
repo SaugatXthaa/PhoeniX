@@ -250,6 +250,16 @@ async function fetchHlsLevel(url, headers = {}) {
   }
   const status = res.status;
   const ct = (res.headers.get('content-type') || '').toLowerCase();
+  // Task 65: lh3.googleusercontent.com/pw/ (Google Photos class — MoviesHunt
+  // abhilinks chains) answers DATACENTER probes with 403 + image/png (the
+  // 818B identity pixel) for files that are REAL for the user's device IP —
+  // the same hotlink-block class Task 62 routed around with the google-family
+  // 302-to-direct in /range-proxy. Verdict 'unknown' keeps the card alive for
+  // the player (only 'dead' drops). The Task 54 THUMBNAIL class (200 +
+  // image/* body) stays definitively dead below, and hard 404/410 stay dead.
+  if (status === 403 && ct.startsWith('image/') && /(^|\.)lh3\.googleusercontent\.com$/i.test(new URL(url).hostname)) {
+    return { state: 'unknown', status, ct, note: 'lh3-hotlink-block' };
+  }
   if (status === 403 || status === 410 || status === 404) return { state: 'dead', status, ct };
   if (status < 200 || status >= 400) return { state: 'unknown', status, ct };
   const head = body.trimStart().slice(0, 64).toLowerCase();

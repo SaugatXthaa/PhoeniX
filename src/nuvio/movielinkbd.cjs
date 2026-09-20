@@ -74,7 +74,7 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 const SEARCH_TIMEOUT = 12000;
 const PAGE_TIMEOUT = 12000;
 const PROBE_TIMEOUT = 8000;
-const PAGE_CAP = 4;        // max content pages fetched in parallel (TV seasons live in different posts)
+const PAGE_CAP = 6;        // max content pages fetched in parallel (TV seasons live in different posts)
 const MOVIE_PAGE_CAP = 2;  // movies live in one post; 2 covers split editions
 const BASE_CACHE_TTL = 10 * 60 * 1000;
 let _baseCache = { url: null, ts: 0 };
@@ -404,6 +404,28 @@ async function getStreams(tmdbId, type, season, episode, preloaded) {
   if (!candidates.length) {
     console.log('[MovieLinkBD] no candidates after title ranking');
     return [];
+  }
+
+  // Task 65: season-aware post ordering. The site publishes ONE POST PER
+  // SEASON ("Game Of Thrones S08 Hindi [ORG] - Complete" ... "Season 1") and
+  // relevance ranking alone left the requested season's post OUTSIDE PAGE_CAP
+  // (GoT S1 ranked last of 8 → its page never fetched → honest zero for every
+  // season-1 episode). Posts matching the requested season (and null-season
+  // posts when the request IS season 1) now sort to the front; relevance
+  // stays the tiebreaker inside each group.
+  if (isTv) {
+    const reqSeason = Number(season) || 1;
+    const seasonMatch = t => {
+      const s = titleSeason(t);
+      return s === reqSeason || (s === null && reqSeason === 1);
+    };
+    candidates.sort((a, b) => {
+      const ma = seasonMatch(a.title) ? 0 : 1;
+      const mb = seasonMatch(b.title) ? 0 : 1;
+      if (ma !== mb) return ma - mb;
+      return (b.score || 0) - (a.score || 0);
+    });
+    console.log(`[MovieLinkBD] season ${reqSeason}: top post now "${candidates[0].title}"`);
   }
   console.log(`[MovieLinkBD] ${candidates.length} candidate post(s), top: ${candidates[0].title}`);
 

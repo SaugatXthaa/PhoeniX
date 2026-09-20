@@ -319,6 +319,28 @@ async function headOk(url) {
   } catch (e) { return false; }
 }
 
+// Task 65: lh3.googleusercontent.com/pw/ hotlink-block classifier. Google
+// answers datacenter egress with 403 + image/png (818B identity pixel) for
+// links that are REAL files for the user's device IP — the MoviesDrive/
+// UHDMovies class (Task 62) ships them and plays via the google-family
+// 302-to-direct path. Only a hard miss (404/410/net-error) means dead.
+async function lh3Playable(url) {
+  try {
+    const gs = await loadGotScraping();
+    if (!gs) return true; // no probe transport → don't kill the card
+    const res = await gs(url, {
+      method: 'HEAD',
+      headers: { 'User-Agent': UA },
+      timeout: { request: 4000 },
+      throwHttpErrors: false,
+      followRedirect: true,
+    });
+    if (res.statusCode >= 200 && res.statusCode < 400) return true;
+    if (res.statusCode === 403 && /image\//i.test(String(res.headers['content-type'] || ''))) return true;
+    return false;
+  } catch (e) { return false; }
+}
+
 // ---------------------------------------------------------------------------
 // Follow pixel.hubcloud.cx redirect chain to the direct video URL.
 // Chain: pixel.hubcloud.cx → 302 → pixel.<name>.workers.dev → 302 →
@@ -376,10 +398,10 @@ async function resolveHubcloudDrive(driveUrl) {
         let url = gdMatch[0].split('#')[0].split('=m')[0];
         const lh3Url = url + '=d';
         // lh3.googleusercontent.com/pw/ links are Google-hotlink-blocked from
-        // many IPs (403 image/png identity pixel) — only emit when provably
-        // reachable, otherwise fall through to the pixel chain which yields
-        // video-downloads URLs that play everywhere
-        if (await headOk(lh3Url)) return lh3Url;
+        // many IPs (403 image/png identity pixel) — Task 65: the 403-image
+        // verdict now SHIPS the card (real file for device IPs, played via
+        // google-family 302-to-direct); only 404/410/net-dead drops it.
+        if (await lh3Playable(lh3Url)) return lh3Url;
       }
       const pdMatch = gxHtml.match(/https:\/\/pixeldrain\.[a-z]+\/u\/([A-Za-z0-9]+)/);
       if (pdMatch) {
@@ -401,7 +423,7 @@ async function resolveHubcloudDrive(driveUrl) {
       if (gdMatch2) {
         let url = gdMatch2[0].split('#')[0].split('=m')[0];
         const lh3Url = url + '=d';
-        if (await headOk(lh3Url)) return lh3Url;
+        if (await lh3Playable(lh3Url)) return lh3Url;
       }
       // Find video-downloads URL
       const vdMatch = svHtml.match(/https:\/\/video-downloads\.googleusercontent\.com\/[^\s"'<>]+/);
@@ -639,10 +661,23 @@ async function getStreams(tmdbId, type, season, episode) {
     } catch (e) { /* skip */ }
   };
 
-  await Promise.race([
-    mapPool(linksToProcess, 6, resolveOneLink),
-    new Promise(r => setTimeout(r, 30000)),
-  ]);
+  // Task 65: early-exit poll instead of a fixed 30s race. On Render the
+  // season-pack chains (abhilinks page → matching-episode sub → hubcloud
+  // resolve) can run 25-35s for the LAST link while the FIRST lands at
+  // 12-18s — the fixed race discarded everything at 30s whenever the pool
+  // was still mid-flight on a slow egress (production honest-zero for
+  // series despite working chains). Now: return as soon as ≥2 streams are
+  // in, when the pool settles, or at a 36s hard cap. The pool keeps running
+  // in the background and extra late streams simply miss this snapshot.
+  await new Promise((resolve) => {
+    const t0 = Date.now();
+    let settled = false;
+    const done = () => { if (!settled) { settled = true; clearInterval(iv); resolve(); } };
+    const iv = setInterval(() => {
+      if (allStreams.length >= 2 || Date.now() - t0 > 36000) done();
+    }, 500);
+    mapPool(linksToProcess, 6, resolveOneLink).then(done, done);
+  });
 
   // Dedupe identical final URLs (season-pack pages list the same file behind
   // many buttons — one playable entry is what the player wants)

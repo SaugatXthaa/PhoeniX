@@ -101,15 +101,33 @@ async function getGs() {
 // are retried with a short backoff. Throws on hard failure (the sweep loop
 // treats per-provider failures as non-fatal via Promise.allSettled).
 async function fetchJson(url, timeout = REQUEST_TIMEOUT_MS, retries = REQUEST_RETRIES) {
-  const gs = await getGs();
   const headers = {
     'User-Agent': UA,
     'Accept': 'application/json',
   };
   let lastErr;
+  // Task 65: transport order FLIPPED — plain fetch first. api.framextv.tech
+  // sits behind NO CF challenge (measured from Render egress: native undici
+  // 200 in 357ms), while the got-scraping Chrome-JA3 batch gets tarpit-hung
+  // there (5 parallel requests > 7s ×2 attempts each → the whole 14s deadline
+  // burned on batch 1 → "stopping after 5 provider(s)" → 0 streams). Same
+  // lesson as zokoanime in Task 64: the browser-grade transport is the one
+  // failing on datacenter egress for un-protected APIs.
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      if (gs) {
+      const r = await fetch(url, { headers, signal: AbortSignal.timeout(timeout) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      lastErr = e;
+      if (attempt < retries) await sleep(1500 * (attempt + 1));
+    }
+  }
+  // Fallback: got-scraping (browser TLS fingerprint class)
+  const gs = await getGs();
+  if (gs) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
         const res = await gs.get(url, {
           headers,
           timeout: { request: timeout },
@@ -118,14 +136,10 @@ async function fetchJson(url, timeout = REQUEST_TIMEOUT_MS, retries = REQUEST_RE
         });
         if (res.statusCode !== 200) throw new Error(`HTTP ${res.statusCode}`);
         return JSON.parse(res.body);
+      } catch (e) {
+        lastErr = e;
+        if (attempt < retries) await sleep(1500 * (attempt + 1));
       }
-      // Fallback: plain fetch (no got-scraping available)
-      const r = await fetch(url, { headers, signal: AbortSignal.timeout(timeout) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return await r.json();
-    } catch (e) {
-      lastErr = e;
-      if (attempt < retries) await sleep(1500 * (attempt + 1));
     }
   }
   throw lastErr;
