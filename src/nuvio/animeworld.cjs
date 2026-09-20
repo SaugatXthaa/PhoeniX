@@ -4,10 +4,27 @@
 
 var TMDB_KEY = 'd80ba92bc7cefe3359668d30d06f3305'
 // Updated 2024-09: site moved from watchanimeworld.top → watchanimeworld.one.
-// The .top domain still serves the search page but its result links now point
-// to the .one domain. Using .one directly avoids the extra redirect.
-// Also: the player iframe domain moved from play.zephyrix.top → play.zephyrix.org.
-// We support BOTH TLDs in the regex below so the fix is forward-compatible.
+// Task 68 live re-verification (sandbox, plain fetch + got-scraping):
+//   - the .one domain answers 200 to datacenter egress with NO CF challenge
+//     (search /?s=, /series/<slug>/, /movies/<slug>/, /episode/<slug>-<S>x<E>/,
+//     admin-ajax action_select_season all OK) — the old "hard-CF-blocks Render"
+//     class no longer applies to the site pages.
+//   - player iframe: play.zephyrix.org (FirePlayer/jwplayer wrapper).
+//     POST /player/index.php?data=<hash>&do=getVideo (body hash=<hash>&r=<site>)
+//     → { securedLink: master.m3u8?md5=..&expires=.., videoSource: master.txt, ck }.
+//   - master.m3u8 = MULTI-AUDIO: 5 #EXT-X-MEDIA AUDIO tracks (jpn/eng/tel/tam/hin)
+//     + video variants 240p→1080p. The per-language "player1.php" iframes point
+//     to short.icu which is DEAD upstream (NXDOMAIN 2026-09) — do not use.
+//   - DELIVERY HEADERS: master + variant playlists + grid segments
+//     (s11.zn-gridNN.top/f/*.js) REQUIRE Referer: https://play.zephyrix.org/
+//     (segments: 3/3 403 without it, 3/3 200 with it) + a browser UA. The CDN
+//     also 403s datacenter IPs in temporal windows, so the card ships DIRECT
+//     with behaviorHints.proxyHeaders (client-IP delivery, workers.dev class)
+//     — see AnimeWorldIN.js which sets meta.nuvioDirectWithHeaders.
+//   - No SUBTITLES entries in the master and /cdn/down/<hash>/Subtitle/* is
+//     404 for this content; getVideo has no captions field. Universal
+//     Atlantic subs attach at StreamResolver level instead.
+//   - Content = anime + cartoons (series posts) + anime movies (movies posts).
 var BASE     = 'https://watchanimeworld.one'
 var PLAYER   = 'https://play.zephyrix.org'
 var UA       = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -181,13 +198,24 @@ function getEpisodeUrl(seriesUrl, season, episode) {
 
       return httpGet(ajaxUrl, { 'Referer': seriesUrl })
         .then(function(epHtml) {
-          var suffix = season + 'x' + episode + '/'
+          // Task 68: parse season/episode NUMERICALLY out of the trailing
+          // <S>x<E> slug segment instead of a bare string-suffix match.
+          // The old `indexOf(season + 'x' + episode + '/')` matched S11E1
+          // for an S1E1 request ('...-11x1/' ends with '1x1/').
           var re = /href="(https:\/\/watchanimeworld\.(?:top|one)\/episode\/([^"]+))"/g
           var m
+          var fallback = null
           while ((m = re.exec(epHtml)) !== null) {
-            if (m[1].indexOf(suffix) !== -1) return m[1]
+            var tailM = m[1].match(/-(\d+)x(\d+)\/?(?:$|\?)/)
+            if (!tailM) continue
+            var s = parseInt(tailM[1], 10)
+            var e = parseInt(tailM[2], 10)
+            if (s === season && e === episode) return m[1]
+            // tolerate posts whose slug numbering drifts off the requested
+            // season label — keep the first same-episode link as fallback
+            if (fallback === null && e === episode) fallback = m[1]
           }
-          return null
+          return fallback
         })
     })
 }
@@ -217,20 +245,65 @@ function getStreamFromPage(pageUrl) {
           var m3u8 = data.securedLink || data.videoSource
           if (!m3u8) throw new Error('getVideo returned no link (rate-limited?)')
 
-          var contentHashM = m3u8.match(/\/cdn\/hls\/([a-f0-9]+)\//)
-          var contentHash  = contentHashM ? contentHashM[1] : videoHash
-          var subtitleUrl = PLAYER + '/cdn/down/' + contentHash + '/Subtitle/subtitle_eng.srt'
+          // Task 68: parse the master playlist for the REAL max video
+          // resolution and the multi-audio language list instead of
+          // hardcoding '1080p'. Signed-URL fetch, browser UA only.
+          return httpGet(m3u8, { 'Referer': PLAYER + '/' }).then(function(master) {
+            var maxH = 0
+            var resM
+            var resRe = /RESOLUTION=(\d+)x(\d+)/g
+            while ((resM = resRe.exec(master)) !== null) {
+              var h = parseInt(resM[2], 10)
+              if (h > maxH) maxH = h
+            }
+            var quality = maxH >= 2160 ? '4K' : (maxH ? maxH + 'p' : '1080p')
 
-          return { url: m3u8, subtitle: subtitleUrl }
+            // audio languages from #EXT-X-MEDIA:TYPE=AUDIO (NAME is the
+            // display name, LANGUAGE the ISO code — prefer NAME)
+            var audioTracks = []
+            var seenLang = {}
+            var aRe = /#EXT-X-MEDIA:TYPE=AUDIO[^\n]*/g
+            var am
+            while ((am = aRe.exec(master)) !== null) {
+              var nameM = am[0].match(/NAME="([^"]+)"/)
+              var langM = am[0].match(/LANGUAGE="([^"]+)"/)
+              var label = (nameM && nameM[1]) || (langM && langM[1]) || ''
+              label = label.trim()
+              if (label && !seenLang[label.toLowerCase()]) {
+                seenLang[label.toLowerCase()] = true
+                audioTracks.push(label)
+              }
+            }
+
+            // FirePlayer captions (when the upload carries them) arrive as
+            // gv.captions / data.captions — pass honest through when present.
+            var subtitles = []
+            var caps = data.captions || data.tracks
+            if (Array.isArray(caps)) {
+              caps.forEach(function(c) {
+                var u = c && (c.file || c.url || c.link)
+                if (u && /^https?:\/\//.test(u)) {
+                  subtitles.push({
+                    url: u,
+                    lang: (c.language || c.lang || c.srclang || 'en').slice(0, 5),
+                    name: c.label || c.name || c.language || 'English',
+                  })
+                }
+              })
+            }
+
+            return { url: m3u8, subtitle: null, subtitles: subtitles, quality: quality, audioTracks: audioTracks }
+          })
         })
       }, 3, 1200)
     })
 }
 
-// Liveness gate — AnimeWorld streams ship through /proxy (Referer/UA headers
-// set on the stream object), so a server-side probe sees exactly what the
-// player will see. Upstream 4xx/5xx or an HTML challenge = guaranteed mpv
-// error; drop the stream instead of shipping a dead card.
+// Liveness gate — AnimeWorld streams ship DIRECT with requestHeaders
+// (Referer/UA, client-IP delivery — see AnimeWorldIN.js), so a server-side
+// probe with the SAME header set sees what the player will see. Upstream
+// 4xx/5xx or an HTML challenge = guaranteed mpv error; drop the stream
+// instead of shipping a dead card.
 // 5 attempts spread over ~10s — zephyrix CDN 403s arrive in TEMPORAL windows
 // (live-measured: same signed URL 403s for a stretch, then 200s 8/8 once the
 // window clears). Rapid retries land inside the same window and die with it;
@@ -286,20 +359,26 @@ function getStreams(tmdbId, mediaType, season, episode) {
         }).then(function(alive) {
           if (!alive) { resolve([]); return }
 
+          var label = streamData.audioTracks && streamData.audioTracks.length >= 2
+            ? 'Multi-Audio (' + streamData.audioTracks.slice(0, 5).join(' + ') + ')'
+            : 'Multi-Audio'
+
           resolve([{
           name: '🗡️ AnimeWorld',
-          title: 'AnimeWorld • Multi-Audio 1080p',
+          title: 'AnimeWorld • ' + label + ' • ' + streamData.quality,
           url: streamData.url,
-          quality: '1080p',
+          quality: streamData.quality,
+          // real audio-track list → buildStreamResults maps it to
+          // meta.countryCodes → StreamResolver renders the language flags
+          // + the MULTI audio tag on the card
+          audioTracks: streamData.audioTracks,
+          hasMultipleAudio: streamData.audioTracks.length >= 2,
           headers: {
             'Referer': PLAYER + '/',
-            'Origin': PLAYER,
             'User-Agent': UA,
             'Connection': 'keep-alive'
           },
-          subtitles: streamData.subtitle
-            ? [{ url: streamData.subtitle, lang: 'en', name: 'English' }]
-            : []
+          subtitles: streamData.subtitles || []
           }])
         })
       })

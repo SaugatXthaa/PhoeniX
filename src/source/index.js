@@ -210,7 +210,8 @@ export const createSources = (fetcher) => {
     new VidEasy(fetcher),
     // anikototv — anime-only sub+dub (megap.akirax.buzz, Referer: megaplay.buzz)
     new AnikotoTV(fetcher),
-    // animeworldindia — anime-only (play.zephyrix.top, 1080p, watchanimeworld.top)
+    // animeworldindia — anime+cartoon series & anime movies (watchanimeworld.one,
+    // play.zephyrix.org multi-audio HLS 240p→1080p; Task 68 re-RE)
     new AnimeWorldIN(fetcher),
     // animesdigital — anime-only (cdn.imagesskill.com, Portuguese sub/dub)
     new AnimesDigital(fetcher),

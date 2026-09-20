@@ -613,8 +613,11 @@ export class StreamResolver {
     const ANIME_ONLY_SOURCE_IDS = new Set([
       'animeflix', 'anineko', 'anikoto', 'anikage', 'anibd', '2dhive',
       'anidoor', 'animegg', 'hianime', 'animekai', 'animesdigital',
-      'itachi', 'anikototv', 'animeworldindia', 'animezey', 'animotvslash',
+      'itachi', 'anikototv', 'animezey', 'animotvslash',
       'allwish', 'animesuge', 'reanime', 'nikastream', 'anichan',
+      // animeworldindia REMOVED Task 68: source now serves movies too
+      // (anime movies on watchanimeworld.one) and resolves in ~5-8s measured
+      // — unclassified placement (wave 100) lands both types in-request.
     ]);
     const waveOf = (sourceId, requestType) => {
       const w1 = WAVE1_SOURCE_ORDER.indexOf(sourceId);
