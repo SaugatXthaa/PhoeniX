@@ -97,6 +97,20 @@ const hostLocks = new Map(); // inner host -> promise chain (serialize probes pe
 // (nexabloom: EVERY url 403-html; vidbolt: whole trees dead), stop re-probing
 // every new per-URL token — verdict 'dead' instantly. Self-heals after the
 // window; a single alive verdict resets the counter.
+// Task 66: FILE-LEVEL hosts are EXEMPT from the circuit. On pixeldrain the
+// unit of death is the FILE (individual 404 / zip upload), never the host —
+// 3 dead files among a 44-link batch is NORMAL (cinewave ships 44-64
+// pixeldrain files per title; a few zips/dead ids are routine). Feeding those
+// file deaths into the host circuit opened it mid-request and then
+// verdict-deaded every OTHER live pixeldrain file of the SAME resolve
+// without probing (verified: a circuit-dropped bHfvUQQA answers 206
+// video/x-matroska) — cinewave/hdhub4u/uhdmovies/movieshunt/vegamovies/
+// bollyflix all funnel into pixeldrain finals, so one title's 3 zip files
+// zero'd those sources on the NEXT titles for 5 minutes. This was the
+// systemic "only ~10 sources return streams" regression (production A/B
+// vs the original repo measured it). HLS hosts KEEP the circuit: their
+// deaths ARE host-class (same tree backend flips for every token).
+const FILE_LEVEL_HOST_RE = /(^|\.)pixeldrain\.(com|dev)$/i;
 const circuits = new Map(); // host -> { deaths, lastAt, openUntil }
 const CIRCUIT_DEATHS = 3;
 const CIRCUIT_WINDOW_MS = 10 * 60 * 1000;
@@ -367,9 +381,11 @@ async function probe(url) {
 }
 
 // Feed the host circuit breaker: dead → deaths++, ≥3 in window → open;
-// alive → reset.
+// alive → reset. File-level hosts (pixeldrain) never feed the circuit —
+// their dead verdicts are per-URL truths that must not poison the host.
 function record(host, state) {
   if (state === 'unknown') return state;
+  if (FILE_LEVEL_HOST_RE.test(host)) return state;
   const now = Date.now();
   const circ = circuits.get(host) || { deaths: 0, lastAt: 0, openUntil: 0 };
   if (state === 'dead') {

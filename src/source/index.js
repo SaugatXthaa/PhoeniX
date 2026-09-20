@@ -70,6 +70,9 @@ import { Cineby } from './Cineby.js';
 // hindmoviez — movies/TV MKV (hshare.ink → workers.dev, 4K/1080p)
 import { HindMoviez } from './HindMoviez.js';
 import { PlayImdb } from './PlayImdb.js';
+// Task 66: ported from the original repo (phoenix-hgs3 parity) — app.cloud-mb.xyz
+// signed-URL API, 1080p HLS; delivered 4 cards in the orig-vs-mine A/B.
+import { MovieBlast } from './MovieBlast.js';
 // Re-added sources (from uploaded Nuvio scrapers — each with dedicated source file)
 import { ZXCStream } from './ZXCStream.js';
 import { AnimeZeY } from './AnimeZeY.js';
@@ -193,6 +196,8 @@ export const createSources = (fetcher) => {
     new HindMoviez(fetcher),
     // playimdb — movies/TV HLS (scalableimpactgroup.site, 1080p)
     new PlayImdb(fetcher),
+    // movieblast — movies/TV HLS (app.cloud-mb.xyz, 1080p) — Task 66 orig parity
+    new MovieBlast(fetcher),
     // ─── Re-added sources (from uploaded Nuvio scrapers) ───
     // zxcstream — movies/series/anime via player.zxcstream.xyz embed URLs
     new ZXCStream(fetcher),
