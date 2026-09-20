@@ -67,9 +67,15 @@ const STREMIO_UA = 'Stremio/4.4.137 (Windows; x64)';
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 // Multiple base URLs to try (in priority order)
+// Task 65 re-measure from the Render egress: manifest.desitvhub.eu.org
+// TARPITS datacenter IPs (no headers in >12s rawfetch; sandbox gets 5 streams
+// in 21.6s) while desiflix.stremioaddon.workers.dev is ALIVE and fast
+// (manifest 200/3207B in 111ms; stream path ~20s from sandbox, 18.1s). The
+// tarpitting endpoint must NOT be first — the 3×retry ladder burned the
+// whole 35s budget on it before ever reaching the healthy fallback.
 const BASE_URLS = [
-  'https://manifest.desitvhub.eu.org',          // ✅ NEW official endpoint (no rate limit)
-  'https://desiflix.stremioaddon.workers.dev',  // ⚠️ OLD endpoint (rate-limited)
+  'https://desiflix.stremioaddon.workers.dev',  // ✅ first from datacenter egress (fast, alive)
+  'https://manifest.desitvhub.eu.org',          // ✅ official endpoint — healthy from device/residential IPs
 ];
 
 // ─── HTTP fetch with HTTP/1.1 (fast) + Stremio UA ──────────────────────────
@@ -122,7 +128,7 @@ function fetchJsonOnce(url, { ua = STREMIO_UA, timeout = 30000 } = {}) {
 // after idle, then warms up and serves fast 200s. We retry up to 3 times
 // with a 2s backoff, which is enough to outlast the cold-start window.
 async function fetchJson(url, opts = {}) {
-  const maxRetries = 3;
+  const maxRetries = 2;
   const backoffMs = 2000;
   let lastErr;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {

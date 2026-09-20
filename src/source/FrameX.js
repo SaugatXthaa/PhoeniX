@@ -93,9 +93,12 @@ export class FrameX extends Source {
       season: tmdbId.season || null,
       episode: tmdbId.episode || null,
       // 20-provider sweep: ~10-16s typical, 22s internal deadline (same
-      // strategy as streamxtv.cjs). Must stay under StreamResolver's 35s
-      // SOURCE_TIMEOUT with TMDB lookups included.
-      timeoutMs: 25000,
+      // strategy as streamxtv.cjs). Task 65 re-measure: with the working
+      // transport the FULL 20-provider sweep lands at ~26.4s on Render —
+      // the old 25s race discarded the completed result 1.4s before it
+      // returned (debug probe: "6 stream(s) total in 26433ms" but count=0).
+      // 33s keeps the whole chain under the 35s source timeout.
+      timeoutMs: 33000,
     });
 
     // Enrich streams with metadata markers for StreamResolver.enrichMeta
