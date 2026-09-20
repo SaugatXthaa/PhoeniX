@@ -510,6 +510,18 @@ export class StreamResolver {
       'vidking',       // 4 @~2s
       'vidsrcsbs',     // 3 @~2s
       'vegamovies',    // 4 @~2s
+      // Task 66: cinewave/watchseries/necro moved UP from the wave-0 tail.
+      // The "heavy aggregator" label was wrong for cinewave — measured cold
+      // 46 cards @1.5s isolated (its pixeldrain finals are instant HEADs; the
+      // 12s+ slot-hold claim came from warm-cache A/B noise). Production
+      // proof (Render 0.1-CPU cold boot, Dune tt1160419): wave-0-last start
+      // queued it behind 25 sources and it MISSED the 40s budget (10-card r1)
+      // while the original repo — which starts it 3rd in registry order —
+      // lands it on one refresh. r2 it delivered 28@17.8s. Fast-productive
+      // sources belong at the FRONT of the wave on a starved CPU.
+      'cinewave',      // 28-46 @1.5-17.8s — orig starts it ~3rd
+      'watchseries',   // 11 @3.1s production-measured
+      'necro',         // 5
       // Task 59: bollyflix promoted (index 16 → 7). Measured fast + 4K-
       // capable (5 cards @3.6-7.5s isolated incl 2160p), but its gdflix
       // mfile chain runs 26-32s under merged contention — starting it
@@ -554,10 +566,9 @@ export class StreamResolver {
       'meinecloud',    // 4 @3.8s
       'raflix',        // 7 @2.1s production isolated
       'videasy',       // 6 (proven cold lander, slower fresh)
-      // heavy multi-server aggregators — last in wave, warm via cache
-      'necro',         // 5
-      'watchseries',   // 11
-      'cinewave',      // 46
+      // Task 66: cinewave/watchseries/necro PROMOTED to the wave-0 front
+      // (see comment at vegamovies) — the tail slot starved them on cold
+      // 0.1-CPU resolves. Entries kept here as documentation anchors only.
     ];
     const WAVE2_SOURCE_IDS = new Set([
       // measured 8-16s solo — partial cold landing, rest cached in background
