@@ -52,6 +52,50 @@ function clearInFlight(key) {
   inflight.delete(String(key));
 }
 
+// ─── Task 73: upstream-down fast-fail (scoped, self-recovering) ───
+//
+// When the speedracelight API itself is down (Cloudflare 5xx edge class —
+// measured CONSTANT 10/10 probes across 2.5min during the Sep 2026 vidking
+// outage, while www.vidking.net's authoritative NS refused globally), the
+// per-source empty-retry ladders (Cineby/VidEasy: initial + 2 retries each)
+// burn 7-11s of a wave-0 slot per request for guaranteed-zero results — on
+// the 0.1-CPU free tier that slot time directly subtracts from healthy
+// deliverers in the 40s cold window. A DEFINITIVE edge status (>=500) on a
+// fresh /seed probe marks the API down for 120s: both consumers then skip
+// their ladders instantly. Timeouts / network errors / honest empties from a
+// live seed NEVER mark down (Task 70's failures-never-cached invariant is
+// untouched — this caches only a confirmed edge answer, and it self-heals
+// within 2 minutes of upstream recovery via TTL expiry).
+const SRL_DOWN_TTL_MS = 120_000;
+let srlDownUntil = 0;
+
+function isSrlDown() {
+  return Date.now() < srlDownUntil;
+}
+
+function markSrlDown() {
+  srlDownUntil = Date.now() + SRL_DOWN_TTL_MS;
+}
+
+// One cheap probe — definitive 5xx from the edge proves the API is down for
+// everyone (not a per-IP block, not a flaky server, not an empty window).
+async function probeSeedDown(mediaId) {
+  try {
+    const r = await fetch(`https://api.speedracelight.com/seed?mediaId=${mediaId}`, {
+      headers: {
+        'Origin': 'https://www.vidking.net',
+        'Referer': 'https://www.vidking.net/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(6000),
+    });
+    return r.status >= 500;
+  } catch {
+    return false; // network error ≠ proven down — never mark
+  }
+}
+
 module.exports = {
   SEED_TTL,
   getCached,
@@ -60,4 +104,7 @@ module.exports = {
   getInFlight,
   setInFlight,
   clearInFlight,
+  isSrlDown,
+  markSrlDown,
+  probeSeedDown,
 };

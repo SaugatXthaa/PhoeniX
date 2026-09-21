@@ -26,6 +26,7 @@ import { CountryCode } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 import { buildStreamResults } from './nuvioHelpers.js';
+import srlSeed from '../utils/srlSeed.cjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROVIDER_PATH = path.join(__dirname, '..', 'nuvio', 'videasy.cjs');
@@ -73,6 +74,12 @@ export class VidEasy extends Source {
   }
 
   async handleInternal(ctx, _type, id) {
+    // Task 73: confirmed-down speedracelight API — instant honest zero, skip
+    // even the TMDB lookups (self-heals within 120s of upstream recovery).
+    if (srlSeed.isSrlDown()) {
+      console.log('[VidEasy] speedracelight down (cached edge 5xx) — fast-fail');
+      return [];
+    }
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
@@ -127,6 +134,15 @@ export class VidEasy extends Source {
         (async () => {
           let out = await mod.getStreams(tmdbId.id, mediaType, tmdbId.season || null, tmdbId.episode || null);
           for (let attempt = 0; Array.isArray(out) && out.length === 0 && attempt < EMPTY_RETRY_MAX; attempt++) {
+            // Task 73: an empty sweep with a definitive edge 5xx on /seed =
+            // whole-API outage — mark down and stop retrying (the ladder
+            // cannot conjure streams from a dead origin, it only burns a
+            // wave-0 slot every refresh).
+            if (await srlSeed.probeSeedDown(tmdbId.id)) {
+              srlSeed.markSrlDown();
+              console.log('[VidEasy] speedracelight edge 5xx — marked down 120s, skipping retries');
+              break;
+            }
             await new Promise(r => setTimeout(r, EMPTY_RETRY_DELAY_MS));
             out = await mod.getStreams(tmdbId.id, mediaType, tmdbId.season || null, tmdbId.episode || null);
           }

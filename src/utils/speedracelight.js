@@ -162,6 +162,13 @@ import srlSeed from './srlSeed.cjs';
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 export async function fetchSeed(fetcher, ctx, tmdbId) {
+  // Task 73: confirmed-down API (definitive edge 5xx cached by the shared
+  // store) — fail instantly without a doomed HTTP call. Consumers' existing
+  // error paths turn this into their normal honest-zero handling; the mark
+  // self-heals within 120s of upstream recovery.
+  if (srlSeed.isSrlDown()) {
+    throw new Error('speedracelight down (cached edge 5xx) — fast-fail');
+  }
   const key = String(tmdbId);
   const cached = srlSeed.getCached(key);
   if (cached) return cached;
