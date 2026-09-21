@@ -213,13 +213,21 @@ function gateSignHeaders(sess, path) {
 
 // Signed GET — one renew/401/403-triggered session reset + retry (mirrors the
 // client's renew flow; the wasm-less sibling of cinejoy's 404→refresh-retry).
+// Task 71 (2026-09-21): the site DISABLED/removed the aphrodite.a.v1 gate —
+// POST /content/index (bootstrap) now answers 403 {"error":"forbidden"}
+// (verified 3/3 from sandbox) while the content endpoints answer PLAIN
+// unsigned GETs with {found:true,...} (verified 200 from sandbox AND from
+// Render egress via the addon /proxy). When the signed path fails at the
+// bootstrap stage, fall back to the unsigned GET so Aphrodite keeps
+// delivering through their gate migration instead of honest-zeroing.
 async function gateGet(path, fetcher, ctx) {
   for (let attempt = 0; attempt < 2; attempt++) {
     let sess;
     try {
       sess = await gateGetSession();
-    } catch {
-      return { ok: false, status: 0, data: '' }; // bootstrap down — nothing this source can do
+    } catch (e) {
+      console.log(`[Atlantic] gate bootstrap unavailable (${e?.message || e}) — unsigned fallback`);
+      return unsignedGateGet(path, fetcher, ctx); // gate gone — plain GET still serves content
     }
     const r = await ftext(`${CDN}${path}`, {
       headers: { ...gateSignHeaders(sess, path), ...HEADERS }, fetcher, ctx, attempts: 1, tag: 'gate',
@@ -240,6 +248,17 @@ async function gateGet(path, fetcher, ctx) {
     return { ok: true, status: r.status, json: j };
   }
   return { ok: false, status: 0, data: '' };
+}
+
+// Unsigned GET of a gate-path — Task 71 fallback (see gateGet above).
+function unsignedGateGet(path, fetcher, ctx) {
+  return ftext(`${CDN}${path}`, { headers: HEADERS, fetcher, ctx, attempts: 1, tag: 'aph-plain' })
+    .then((r) => {
+      if (!r.ok) return r;
+      if (!r.data || r.data[0] !== '{') return { ok: false, status: r.status, data: '' };
+      try { return { ok: true, status: r.status, json: JSON.parse(r.data) }; }
+      catch { return { ok: false, status: r.status, data: '' }; }
+    });
 }
 
 // ─── Stream servers ───
@@ -426,7 +445,8 @@ async function getStreams(tmdbId, mediaType, season, episode, preloaded) {
       if (!a) return null;
       const r = await ftext(a.url, { headers: HEADERS, fetcher, ctx, attempts: 1, tag: 'artemis-master' });
       if (r.ok && r.data.startsWith('#EXTM3U')) {
-        return { ...a, parsed: parseMaster(r.data), masterOk: true };
+        // flatBody: raw master kept for the Task 71 flat-media-playlist branch
+        return { ...a, parsed: parseMaster(r.data), masterOk: true, flatBody: r.data };
       }
       // Master fetch failed from OUR IP. Task 60: the old "advisory" card
       // (direct + requestHeaders) is now known-broken — headerless player
@@ -524,6 +544,26 @@ async function getStreams(tmdbId, mediaType, season, episode, preloaded) {
             top.forEach((v, i) => {
               if (verdicts[i]) push(v.uri, qualityLabel(v.h), `${artemisMaster.server} — ${qualityLabel(v.h)}`, ipGated);
             });
+          }
+        } else if (/#EXTINF/.test(artemisMaster.flatBody || '')) {
+          // Task 71: FLAT media playlist (no #EXT-X-STREAM-INF) — the edge
+          // serving format the upstream migrated to (verified live: Dune 2
+          // resolves to atlantic.st/edge-*/index.m3u8, 345-byte 8-segment VOD
+          // whose segments answer 206 video/mp2t headerless). The variant-only
+          // branch above silently skipped this class → artemis honest-zeroed
+          // production-wide. Validate the first segment's magic bytes exactly
+          // like the aphrodite flat path below, then ship the master (players
+          // resolve the relative segment URLs against the master URL; the edge
+          // host answers headerless so no /proxy wrap is needed).
+          const flatBody = artemisMaster.flatBody || '';
+          const firstSeg = flatBody.split('\n')
+            .map(l => l.trim()).find(l => l && !l.startsWith('#'));
+          let segUrl = null;
+          try { if (firstSeg) segUrl = new URL(firstSeg, artemisMaster.url).href; } catch { segUrl = null; }
+          const segOk = segUrl ? await withDeadline(probeSegmentMagic(segUrl)) : false;
+          console.log(`[Atlantic] artemis media-playlist validation: ${segOk ? 'ok' : 'FAIL'} +${Date.now() - t0}ms`);
+          if (segOk) {
+            push(artemisMaster.url, 'Auto', `${artemisMaster.server} — Auto`);
           }
         }
       }

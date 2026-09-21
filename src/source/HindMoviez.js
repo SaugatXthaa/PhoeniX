@@ -61,7 +61,13 @@ export class HindMoviez extends Source {
     // card → production honest-zero while the chain itself was healthy. The
     // player fetches the worker URL directly (device IP, no /proxy hop), so a
     // Render-side stall says nothing about user-side playability.
-    const liveStreams = await filterDeadStreams(streams, { dropOnNetworkError: false });
+    // Task 71 (2026-09-21): the worker family upgraded the datacenter gate
+    // from tarpit to FAIL-FAST 401 (15/15 URLs answered 401 in ~1s from
+    // Render while the chain resolved real files). Same IP-class design as
+    // Task 65 measured — device IPs still serve the files. 401/403 from these
+    // workers are declared ip-class so the cards keep shipping; everything
+    // else (404/5xx/html) still drops definitively.
+    const liveStreams = await filterDeadStreams(streams, { dropOnNetworkError: false, ipClassStatuses: [401, 403] });
 
     return buildStreamResults({
       streams: liveStreams,

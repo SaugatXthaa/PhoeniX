@@ -6,11 +6,18 @@
 //   embeds are now served by the "Byse" platform on mfw09.org with a
 //   fingerprint-gated, PoW-protected, AES-GCM-encrypted playback API.
 //
+// Task 71 (2026-09-21): token route rotated AGAIN — /backend/bugok 404s on
+// zxcprime.xyz; the deployed chunk (0uktzs59zudq..js, module 55790) now POSTs
+// /backend/burat. FIELD_MAP + SECRET ("23423653") + sentinel route are
+// byte-identical. ROUTES below tries the new route first and keeps the old
+// ones as fallbacks (the route has rotated 3× in 2 weeks; the older names
+// sometimes come back behind their origin proxy).
+//
 // CURRENT PROTOCOL (recovered live 2026-09-19 from the deployed bundles —
 // zxcprime chunk 0b5xgdf8vcttb.js + module 55790, mfw09 Byse SPA):
 //   1. fToken = sha512(`${ts}:${SECRET}:${tmdbId}`).slice(0,64)  ts=Date.now()
 //      SECRET = "23423653" (UNCHANGED across migrations, chunk 55790)
-//   2. POST /backend/bugok  body (obfuscated FIELD_MAP, verbatim from chunk):
+//   2. POST /backend/<route>  body (obfuscated FIELD_MAP, verbatim from chunk):
 //        {id, fToken, ts, path, mediaType}          ← backend requires the
 //      path (full player page URL) and mediaType ("movie"|"tv") — the site's
 //      OWN frontend omits them and gets 400 "Invalid request" (their bundle
@@ -68,6 +75,9 @@ var FIELD_MAP = {
 };
 
 var PLAYER_BASES = ["https://player.zxcprime.xyz", "https://player.zxcstream.xyz"];
+// Task 71: token route rotation — burat is CURRENT (chunk 0uktzs59zudq..js);
+// bugok/abaygagoka kept as fallbacks for their origin-proxy rotation pattern.
+var TOKEN_ROUTES = ["/backend/burat", "/backend/bugok", "/backend/abaygagoka"];
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
 
@@ -122,21 +132,24 @@ async function resolveEmbed(tmdbId, type, season, episode, imdbId) {
 
   for (var b = 0; b < PLAYER_BASES.length; b++) {
     var base = PLAYER_BASES[b];
-    var tokRes = await fetchRaw(base + "/backend/bugok", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/plain, */*",
-        "Origin": base,
-        "Referer": base + pagePath,
-      },
-      body: JSON.stringify(body),
-      timeout: 12000,
-    });
-    if (tokRes.status !== 200) {
-      console.log("[ZXCStream] token POST " + tokRes.status + " on " + base);
-      continue;
+    var tokRes = null;
+    for (var ri = 0; ri < TOKEN_ROUTES.length; ri++) {
+      tokRes = await fetchRaw(base + TOKEN_ROUTES[ri], {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json, text/plain, */*",
+          "Origin": base,
+          "Referer": base + pagePath,
+        },
+        body: JSON.stringify(body),
+        timeout: 12000,
+      });
+      if (tokRes.status === 200) break;
+      console.log("[ZXCStream] token POST " + tokRes.status + " on " + base + TOKEN_ROUTES[ri]);
+      tokRes = null;
     }
+    if (!tokRes) continue;
     var j = null;
     try { j = JSON.parse(tokRes.body); } catch (e) { /* not json */ }
     if (!j) continue;

@@ -484,7 +484,7 @@ export async function callNuvioProvider(providerPath, { tmdbId, mediaType, seaso
  * @param {Object} opts    — { timeoutMs = 8000 }
  * @returns {Promise<Array>} — the subset of streams that answered with real content
  */
-export async function filterDeadStreams(streams, { timeoutMs = 8000, dropOnNetworkError = true } = {}) {
+export async function filterDeadStreams(streams, { timeoutMs = 8000, dropOnNetworkError = true, ipClassStatuses = [] } = {}) {
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
   const checked = await Promise.all((streams || []).map(async (s) => {
     if (!s?.url || typeof s.url !== 'string' || !s.url.startsWith('http')) return null;
@@ -498,6 +498,15 @@ export async function filterDeadStreams(streams, { timeoutMs = 8000, dropOnNetwo
       });
       const ct = res.headers.get('content-type') || '';
       if (!res.ok) {
+        // ipClassStatuses (Task 71): caller-declared "this upstream gates
+        // datacenter probes with these statuses but serves device IPs" —
+        // same doctrine as the Task 65 tarpit exemption (dropOnNetworkError
+        // false) and the gate's lh3/nexabloom 'unknown' verdicts. A 401/403
+        // from an IP-class CDN is NOT proof the player cannot play it.
+        if (ipClassStatuses.includes(res.status)) {
+          console.log(`[liveness] keep ${res.status} (ip-class) ${host}${new URL(s.url).pathname.slice(0, 30)}`);
+          return s;
+        }
         console.log(`[liveness] drop ${res.status} ${host}${new URL(s.url).pathname.slice(0, 30)}`);
         return null;
       }

@@ -381,10 +381,26 @@ export class Raflix extends Source {
       }
     } else {
       // Fetch movie/TV sources
+      // Task 71: the three resolution stages are INDEPENDENT (raflixx API,
+      // CinePro worker, VidStorm worker) — they used to run SEQUENTIALLY
+      // (12s timeout each + 6s per-server validations) which under Render
+      // 0.1-CPU contention stretched past the resolver's 35s cutoff →
+      // status:timeout, count:0 in every merged resolve (measured
+      // production 2026-09-21) even though each stage is healthy isolated
+      // (11.4s total). Parallel fan-out caps wall time at the slowest stage
+      // instead of the sum. Results are pushed in the original stage order
+      // so card ordering is unchanged.
       console.log(`[raflix] Fetching media sources for ${name}...`);
-      const sources = await fetchMediaSources(mediaType, tmdbId.id, season, episode);
+      const [sources, cinepro, vidstorm] = await Promise.allSettled([
+        fetchMediaSources(mediaType, tmdbId.id, season, episode),
+        resolveCinePro(mediaType, tmdbId.id, season, episode),
+        resolveVidStorm(ctx, mediaType, tmdbId.id, season, episode),
+      ]);
+      const sourcesArr = sources.status === 'fulfilled' ? (sources.value || []) : (console.log(`[raflix] media sources failed: ${sources.reason?.message?.slice(0, 80)}`), []);
+      const cineproArr = cinepro.status === 'fulfilled' ? (cinepro.value || []) : (console.log(`[raflix] cinepro failed: ${cinepro.reason?.message?.slice(0, 80)}`), []);
+      const vidstormArr = vidstorm.status === 'fulfilled' ? (vidstorm.value || []) : (console.log(`[raflix] vidstorm failed: ${vidstorm.reason?.message?.slice(0, 80)}`), []);
 
-      for (const src of sources) {
+      for (const src of sourcesArr) {
         if (!src.url || typeof src.url !== 'string') continue;
         if (!src.url.startsWith('http')) continue;
 
@@ -415,8 +431,7 @@ export class Raflix extends Source {
       // and routes them through /proxy with whole-tree Referer rewriting;
       // the raw embed results above keep flowing through the normal
       // extractor registry untouched.
-      const cinepro = await resolveCinePro(mediaType, tmdbId.id, season, episode);
-      for (const cp of cinepro) {
+      for (const cp of cineproArr) {
         let url;
         try { url = new URL(cp.url); } catch { continue; }
 
@@ -437,8 +452,8 @@ export class Raflix extends Source {
 
         results.push({ url, format: Format.hls, meta });
       }
-      if (cinepro.length > 0) {
-        console.log(`[raflix] +${cinepro.length} CinePro stream(s) (server-resolved)`);
+      if (cineproArr.length > 0) {
+        console.log(`[raflix] +${cineproArr.length} CinePro stream(s) (server-resolved)`);
       }
 
       // VidStorm server-side resolution (Task 63) — the only raflixx upstream
@@ -448,8 +463,7 @@ export class Raflix extends Source {
       // NuvioExtractor's already-proxied passthrough ships them unchanged —
       // under the plain 'raflix' id they matched NO extractor and were
       // silently dropped at the extraction stage (0 VidStorm cards in /stream).
-      const vidstorm = await resolveVidStorm(ctx, mediaType, tmdbId.id, season, episode);
-      for (const vs of vidstorm) {
+      for (const vs of vidstormArr) {
         results.push({
           url: vs.url,
           format: vs.format,
@@ -466,8 +480,8 @@ export class Raflix extends Source {
           },
         });
       }
-      if (vidstorm.length > 0) {
-        console.log(`[raflix] +${vidstorm.length} VidStorm stream(s) (server-resolved)`);
+      if (vidstormArr.length > 0) {
+        console.log(`[raflix] +${vidstormArr.length} VidStorm stream(s) (server-resolved)`);
       }
     }
 
