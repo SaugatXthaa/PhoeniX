@@ -213,7 +213,8 @@ async function runChecks(child, logFile, bootLines) {
   // Task 50: 72 → 70 — dahmermovies + dahmermovies4k removed (user request)
   // Task 58: 70 → 71 — MovieLinkBD (movielinkbd.net RE: WP API + KiteCloud)
   // Task 66: 71 → 72 — MovieBlast re-port (orig parity; Task 19 had deleted it)
-  check('boot source count = 72', srcM && srcM[1] === '72', `got ${srcM?.[1]}`);
+  // Task 77: 72 → 73 — Antarctica (comet.feels.legal + TorBox debrid cache)
+  check('boot source count = 73', srcM && srcM[1] === '73', `got ${srcM?.[1]}`);
   // Task 25: 30 → 31 — VidZee extractor registered (ported file existed but
   // was never wired into createExtractors; vidzee source shipped 0 streams).
   // Task 28: 31 → 32 — MixDrop extractor (verhdlink mixdrop mirrors → direct MP4)
@@ -225,7 +226,7 @@ async function runChecks(child, logFile, bootLines) {
   // only anidb/flystream must stay absent.
   const srcLine = bootLines.match(/Sources: \d+ \(([^)]*)\)/)?.[1] || '';
   const ids = srcLine.split(',').map(s => s.trim());
-  check('movieblast re-ported (Task 66) + no anidb/flystream in registry', ids.includes('movieblast') && !ids.includes('anidb') && !ids.includes('flystream'));
+  check('movieblast re-ported (Task 66) + antarctica (Task 77) + no anidb/flystream in registry', ids.includes('movieblast') && ids.includes('antarctica') && !ids.includes('anidb') && !ids.includes('flystream'));
   // Task 50: dahmermovies + dahmermovies4k removed (user request) — must not
   // appear in the registry NOR leak into any catalog stream title/url.
   check('no dahmermovies/dahmermovies4k in registry', !ids.includes('dahmermovies') && !ids.includes('dahmermovies4k'));
@@ -333,7 +334,14 @@ async function runChecks(child, logFile, bootLines) {
       signal: AbortSignal.timeout(8000),
     });
     srlDown = seedR.status >= 500;
-  } catch { srlDown = false; }
+  } catch {
+    // Task 77: a probe TIMEOUT is the same outage class as a 5xx — the seed
+    // currently answers 522 (CF origin timeout) only after ~20s, so the old
+    // catch→false misclassified the outage as "alive" and failed the >=2
+    // check against an honest zero (measured: seed 522 @19.8s, vidking DNS
+    // still dead). Timeout/abort ⇒ down.
+    srlDown = true;
+  }
   if (srlDown) {
     check('cineby honest-zero fast-fail while speedracelight down (Task 73)', cbCount === 0, `count=${cbCount} (upstream edge 5xx — outage class)`);
   } else {

@@ -20,10 +20,14 @@ const sandbox = spawn('node', ['scripts/render_sandbox.cjs'], {
   env: { ...process.env, PORT: String(PORT), THROTTLE_CPU: '0.1', HEAP_MB: '448' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
-sandbox.stdout.on('data', () => {});
-sandbox.stderr.on('data', () => {});
 const sandboxLog = [];
-sandbox.stdout.on('data', d => sandboxLog.push(d.toString()));
+let serverPid = null;
+sandbox.stdout.on('data', d => {
+  const s = d.toString();
+  sandboxLog.push(s);
+  const m = s.match(/\[sandbox\] pid=(\d+)/);
+  if (m && !serverPid) serverPid = parseInt(m[1], 10);
+});
 sandbox.stderr.on('data', d => sandboxLog.push(d.toString()));
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -76,6 +80,11 @@ try {
   console.log(`[verify] ❌ ${e.message}`);
   failures++;
 } finally {
+  if (serverPid) {
+    try { process.kill(serverPid, 'SIGCONT'); } catch {}
+    try { process.kill(serverPid, 'SIGKILL'); } catch {}
+  }
+  try { sandbox.kill('SIGCONT'); } catch {}
   try { sandbox.kill('SIGKILL'); } catch {}
 }
 
