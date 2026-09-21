@@ -137,18 +137,21 @@ app.get('/stream/:type/:id.json', async (req, res) => {
     // the old `streams.length < sources.length` heuristic wrongly no-stored
     // converged responses.
     const starved = streamResolver._lastResolveWasPartial === true;
-    // Task 75 — token-age window on the HTTP cache. Converged responses were
-    // cached for 5 minutes, but the SHORTEST-lived families re-resolve far
-    // faster than that (movielinkbd 3min CDN rotation — Task 58 measured
+    // Task 75/76 — token-age window on the HTTP cache. Converged responses
+    // were cached for 5 minutes, but the SHORTEST-lived families re-resolve
+    // far faster than that (movielinkbd 3min CDN rotation — Task 58 measured
     // "FILE DELETED" 403s on cards older than the rotation window; anikage
     // megg tokens; the 5min token families). A client re-serving a 5-min-old
     // converged JSON could embed a URL up to ttl+5min old — already past its
     // upstream death for the 3min families → playback error with zero chance
     // of recovery (the list the player holds simply contains a dead token).
-    // max-age=60 keeps the rapid-re-open shielding (warm rounds answer in
-    // 1-2s anyway) while bounding the worst case at ttl+1min. Partial
-    // responses stay no-store (Task 69) — every refresh reaches the resolver.
-    res.setHeader('Cache-Control', starved ? 'no-store' : 'public, max-age=60');
+    // USER REQUEST (Task 76): cap raised from 60s into the 2-3min range —
+    // 150s (2.5min, midpoint). Worst-case URL age at play = ttl+2.5min
+    // (≈5.5min for the 3min families, still around the measured movielinkbd
+    // rotation edge); re-opens within the window are served instantly by the
+    // client without a server round. Partial responses stay no-store
+    // (Task 69) — every refresh reaches the resolver.
+    res.setHeader('Cache-Control', starved ? 'no-store' : 'public, max-age=150');
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.json({ streams });
   } catch (err) {

@@ -1,10 +1,10 @@
-// Task 75 — verify the /stream token-age window fix under RENDER FREE TIER
+// Task 75/76 — verify the /stream token-age window fix under RENDER FREE TIER
 // throttle (0.1 CPU / 448MB heap), per the standing sandbox requirement.
 //
 // Asserts on live responses (Dune 2 = tmdb:693134, Task 72/73/74 baseline):
 //   1. header is ALWAYS either 'no-store' (partial/starved — Task 69) or
-//      'public, max-age=60' (converged — Task 75 fix);
-//   2. the old 'public, max-age=300' NEVER reappears;
+//      'public, max-age=150' (converged — Task 76, user-requested 2-3min cap);
+//   2. the old 'public, max-age=300' / 'max-age=60' NEVER reappear;
 //   3. card counts stay in the healthy band (warm convergence unchanged).
 //
 // Usage: node scripts/task75_ttl_header_verify.mjs [--rounds 3]
@@ -57,7 +57,7 @@ try {
     results.push({ round: i, cc, n, ms });
     console.log(`[verify] r${i}: cards=${n} cache-control="${cc}" ${ms}ms`);
 
-    if (cc !== 'no-store' && cc !== 'public, max-age=60') {
+    if (cc !== 'no-store' && cc !== 'public, max-age=150') {
       console.log(`[verify] ❌ r${i}: unexpected header "${cc}" (expected no-store or public, max-age=60)`);
       failures++;
     } else {
@@ -66,7 +66,7 @@ try {
     if (i < ROUNDS) await sleep(45000); // let warm caches deepen, keeper-style
   }
 
-  const converged = results.find(r => r.cc === 'public, max-age=60');
+  const converged = results.find(r => r.cc === 'public, max-age=150');
   if (converged) {
     console.log(`[verify] ✅ converged branch observed: r${converged.round} ${converged.n} cards @${converged.ms}ms`);
   } else {
