@@ -583,6 +583,15 @@ export class StreamResolver {
       'atlantic',      // 1-4 @2.5-3.2s cold incl 2160p (Orbit/Aphrodite)
       // Task 70: desiflix wave-2 → wave-0 tail (see the Task 70 block above).
       'desiflix',      // 23-32s chain — early start puts the finish in-budget
+      // Task 71: hindmoviez promoted medium → wave-0 tail. Isolated 16 cards
+      // @15.3s (4K/1080p direct MKV via the hshare→hcloud→workers.dev chain)
+      // but as a medium-group source it started at ~25-40s under merged
+      // contention, missed the 40s budget EVERY round (production-measured
+      // hindmoviez=0 in all merged rounds while /debug/source returned 16)
+      // and its results were discarded at budget expiry before the straggler
+      // cache could take them. Early start = the same fix pattern as
+      // desiflix (Task 70) and cinewave (Task 66).
+      'hindmoviez',    // 16 @15.3s isolated — chain too long for a late start
       'primeshows',    // 6 @4.0s
       'meinecloud',    // 4 @3.8s
       'raflix',        // 7 @2.1s production isolated
