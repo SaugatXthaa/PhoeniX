@@ -338,6 +338,230 @@ export function enrichMeta(urlResult) {
   return urlResult;
 }
 
+// ─── THREE-WAVE SOURCE ORDER (Task 43 — data-driven, production-measured) ───
+// Task 74: moved to MODULE scope (was function-scoped inside resolve()) so the
+// idle Cache-Keeper can import the exact same ordering — single source of
+// truth, zero drift. resolve() calls orderSourcesForRequest() below.
+//
+// Symptom (user report): "only 7-8 sources show streams, others show
+// none". Root cause measured on production (isolated /debug/source runs,
+// Sep 2026): the old single PRIORITY set held 23 sources — many of them
+// slow or zero-yield (stellarrip content drought 22s/0, cinejoyaio
+// crypto 0, anineko DB outage, nikastream 20-30s) — while genuinely fast
+// productive sources (raflix 7@2.1s, cinewave 46@1.5s, hdhub4uv2 6@4.1s,
+// movieshuntv2 5@10.1s) queued BEHIND all of them and never started
+// within the 15s client budget. Cold request settled only ~11 sources,
+// half of them 0-yield.
+//
+// Fix: three waves, ordered by MEASURED cold productivity:
+//   wave 0 (race-critical): fast (<8s) + productive — occupy the 10 slots
+//     first, settle 3-12s, land in the cold response.
+//   wave 1 (medium): 8-16s sources — start as wave-0 slots free; some
+//     land cold, the rest complete in background and cache (5min TTL).
+//   wave 2 (background-only): slow (>budget), Playwright, PoW-heavy, or
+//     known-dead upstreams — they never landed cold anyway; starting them
+//     last frees race slots. Results still cache for warm requests.
+// Anime-only sources are type-aware: wave 1 for series (primary anime
+// deliverers), wave 2 for movies (anime movies are covered by the
+// general wave-0/1 sources — 4khdhub/cineby/streamxtv/hdhub4u verified).
+//
+// NOTE: final card order is independent of this sort (urlResults are
+// re-sorted by height/bytes/priority before the build loop).
+// ORDER WITHIN WAVE 0 MATTERS: only 10 slots exist; light sources (1-3s)
+// must start first so slots churn and the next sources start early.
+// Task 66 A/B vs the original repo DISPROVED the "heavy aggregator holds
+// a slot 12s+" label: cinewave measured cold 46 cards @1.5s isolated (its
+// pixeldrain finals are instant HEADs). cinewave/watchseries/necro now sit
+// at the FRONT (positions 7-9) — see the Task 66 comment at 'cinewave'.
+// This is an ORDERED array — the resolver starts these sources in exactly
+// this sequence (index becomes the sort rank; wave 1 = 100, wave 2 = 200).
+const WAVE1_SOURCE_ORDER = [
+  // light embed/API sources — measured 1-3s fresh, free slots fast
+  'moviebox',      // 1 @2.7s local fresh
+  'vidlink2',      // 3 @3.1s local fresh
+  'vidfast',       // 4 @~2s
+  'vidking',       // 4 @~2s
+  'vidsrcsbs',     // 3 @~2s
+  'vegamovies',    // 4 @~2s
+  // Task 66: cinewave/watchseries/necro moved UP from the wave-0 tail.
+  // The "heavy aggregator" label was wrong for cinewave — measured cold
+  // 46 cards @1.5s isolated (its pixeldrain finals are instant HEADs; the
+  // 12s+ slot-hold claim came from warm-cache A/B noise). Production
+  // proof (Render 0.1-CPU cold boot, Dune tt1160419): wave-0-last start
+  // queued it behind 25 sources and it MISSED the 40s budget (10-card r1)
+  // while the original repo — which starts it 3rd in registry order —
+  // lands it on one refresh. r2 it delivered 28@17.8s. Fast-productive
+  // sources belong at the FRONT of the wave on a starved CPU.
+  'cinewave',      // 28-46 @1.5-17.8s — orig starts it ~3rd
+  'watchseries',   // 11 @3.1s production-measured
+  'necro',         // 5
+  // Task 59: bollyflix promoted (index 16 → 7). Measured fast + 4K-
+  // capable (5 cards @3.6-7.5s isolated incl 2160p), but its gdflix
+  // mfile chain runs 26-32s under merged contention — starting it
+  // behind 15 earlier wave-0 entries queued it 6.9s and pushed the
+  // chain past the 35s per-source cap on true-cold r1 (zero cards).
+  // Early start = full 35s headroom, and satisfies the up-to-4K
+  // start-priority requirement.
+  'bollyflix',     // 5-6 @3.6-7.5s fresh, chain 26-32s under load
+  // Task 53: user-reported missing sources — promoted from wave-2 to the
+  // FRONT of the medium group (right after the 0-3s embed/API sources so
+  // their slots free immediately). Isolated fresh: moviesdrivev2 4 @6.5s,
+  // uhdmovies 1 @6.7s, movieshuntv2 5 @10.1s — starting at ~2-4s lands
+  // them ~9-14s, INSIDE the 15s budget, for movies AND series (series
+  // slots are held 9-15s by slow chains, so late positions never started).
+  'moviesdrivev2', // 4 @6.5s fresh (8-hop chain) — original MoviesDrive 25s
+  'uhdmovies',     // 6.7s+ multi-hop — original UHDMOVIES 12s
+  'movieshuntv2',  // 5 @10.1s (abhilinks→hubcloud/gdflix chains)
+  // Task 70: wave-2 → wave-0 promotions for the user-named regression
+  // class ("you broke 4khdhub, desiflix, 2peckle"). Wave-2 starts land
+  // at ~25-40s on cold resolves (27 wave-0 entries hold the 15 slots
+  // first) — structurally unable to finish inside the 40s budget, so
+  // these sources were invisible on every cold first round and only
+  // surfaced via warm caches. Measured fast/productive:
+  //   - vixsrc: constructs its playlist card instantly (no upstream
+  //     scrape; token empty for free titles) — 1 multi-language card
+  //     every round for free. Front position.
+  //   - peckle: 9 cards incl 4K @1.7s production-measured (FEBBOX).
+  //   - desiflix: 23-32s chain (Task 59) — starting at a ~2-5s slot
+  //     puts its finish INSIDE the 40s budget on cold r1; as wave-2 it
+  //     started at 25-40s and never landed. Upstream (desitvhub Azure)
+  //     is flaky — measured 30-95s with empty windows — the Task 70
+  //     uncached-failure retry contract plus the wave-0 start give it
+  //     the best possible delivery path.
+  'vixsrc',
+  'peckle',
+  // proven cold landers in production 15s races (must not regress)
+  '4khdhub',       // 6 @3.1s local fresh
+  'fourkhdhubone', // 6
+  'playimdb',      // 3 @1.6s local fresh
+  'cineby',        // 11 @7.2s local fresh
+  'hdhub4uv2',     // 6 @4.1s production isolated (user-reported source)
+  'acermovies',    // 3 @2.1s local fresh
+  'hindmovie',     // 1 @4.4s
+  // Task 46: 4K-capable cold landers (both ship 2160p; movies + series)
+  // get wave-0 start priority per user requirement "prioritize up-to-4K
+  // sources" — cinefreak measured fresh 6 @3.3-4.6s (2160p after the
+  // 4K-first resolve fix); bollyflix MOVED UP to index 7 (Task 59).
+  'cinefreak',     // 6 @3.3-4.6s cold incl 2160p
+  // Task 47: cinejoyaio FIXED (api.shegu.st→api.wing.st + rotated-wasm
+  // refresh + payload contract) — now ~2s cold with Lisbon 2160p (4K) on
+  // movies AND series ( Breaking Bad S1E1 verified), 3/3 cards probe
+  // alive. 4K-capable + fast → wave-0 per the up-to-4K priority.
+  'cinejoyaio',    // 3 @2.0s cold incl 2160p (Lisbon)
+  // Task 48: atlantic.st — Aphrodite (signed 4K) + Artemis (Orbit 2160p
+  // multi-audio / Nova muxed) + granite/natsuki subs, cards live-validated.
+  // Measured 2.5-3.2s cold (Inception/Dune2 2160p, Frieren S1E1 1080p).
+  // 4K-capable + fast → wave-0 4K group.
+  'atlantic',      // 1-4 @2.5-3.2s cold incl 2160p (Orbit/Aphrodite)
+  // Task 70: desiflix wave-2 → wave-0 tail (see the Task 70 block above).
+  'desiflix',      // 23-32s chain — early start puts the finish in-budget
+  // Task 71: hindmoviez promoted medium → wave-0 tail. Isolated 16 cards
+  // @15.3s (4K/1080p direct MKV via the hshare→hcloud→workers.dev chain)
+  // but as a medium-group source it started at ~25-40s under merged
+  // contention, missed the 40s budget EVERY round (production-measured
+  // hindmoviez=0 in all merged rounds while /debug/source returned 16)
+  // and its results were discarded at budget expiry before the straggler
+  // cache could take them. Early start = the same fix pattern as
+  // desiflix (Task 70) and cinewave (Task 66).
+  'hindmoviez',    // 16 @15.3s isolated — chain too long for a late start
+  'primeshows',    // 6 @4.0s
+  'meinecloud',    // 4 @3.8s
+  'raflix',        // 7 @2.1s production isolated
+  'videasy',       // 6 (proven cold lander, slower fresh)
+  // Task 66: cinewave/watchseries/necro PROMOTED to the wave-0 front
+  // (see comment at vegamovies) — the tail slot starved them on cold
+  // 0.1-CPU resolves. Entries kept here as documentation anchors only.
+];
+const WAVE2_SOURCE_IDS = new Set([
+  // measured 8-16s solo — partial cold landing, rest cached in background
+  // (Task 53: movieshuntv2/moviesdrivev2/uhdmovies PROMOTED to wave-0 —
+  // user-reported missing; see WAVE1_SOURCE_ORDER)
+  'streamxtv',     // 4-5
+  'stellar', 'vegamovies2',   // uhdmovies: promoted (6.7s+ multi-hop, 4K group)
+  // Task 59: desiflix promoted BACKGROUND_ONLY → wave 2 (medium). Its
+  // manifest.desitvhub aggregation chain measures 23-32s — the restored
+  // 40s client budget (Task 56) means it now lands IN-request on cold
+  // resolves instead of only via the background tail (whose per-instance
+  // cache a multi-instance Render deployment often never sees again).
+  // Task 70: desiflix REPROMOTED to wave-0 (see WAVE1_SOURCE_ORDER) —
+  // wave-2 starts land at ~25-40s on cold resolves and never finish.
+  'hindmoviez', 'cinebyrocks', 'nowhdtime', 'zxcstream',
+  'imdbplay', 'framextv',
+  // Task 70: 'vixsrc' and 'peckle' promoted to wave-0 (user-named class).
+  'kmmovies', 'vidzee', 'pantyflix',
+  'netlio', 'rivestream', 'cinehdplus',
+  // Task 61: persianstremio promoted BACKGROUND_ONLY → wave 2 — same
+  // class and same evidence standard as desiflix above. Isolated fresh
+  // measurement: 21 cards @11.3s for Inception (persianstremio.vercel.app
+  // aggregation chain) — comfortably inside the 40s client budget, but as
+  // a background-only source it ran AFTER the budget expired, so on the
+  // multi-instance Render deployment its background cache was routinely
+  // invisible to the next request → registered yet never visible. Wave-2
+  // start (~13s queue) + 11.3s chain lands it IN-request.
+  'persianstremio',
+]);
+const BACKGROUND_ONLY_SOURCE_IDS = new Set([
+  // never land within the 15s budget (measured) or known-dead upstreams;
+  // run last so their slots don't starve the race — results still cache
+  'stellarrip',     // PoW 22.8s + upstream content drought
+  // cinejoyaio REMOVED Task 47: fixed upstream migration (api.wing.st),
+  // measured ~2s cold with 2160p — promoted to wave-0 (WAVE1_SOURCE_ORDER)
+  // desiflix REMOVED Task 59: promoted to wave-2 (measured 23-32s, lands
+  // in-request under the 40s client budget)
+  // persianstremio REMOVED Task 61: promoted to wave-2 (measured 21 cards
+  // @11.3s isolated — inside the 40s budget, was invisible as background-only)
+  'videasyto',      // Playwright headless 30-60s
+  'verhdlink', 'movix',
+]);
+const ANIME_ONLY_SOURCE_IDS = new Set([
+  'animeflix', 'anineko', 'anikoto', 'anikage', 'anibd', '2dhive',
+  'anidoor', 'animegg', 'hianime', 'animekai', 'animesdigital',
+  'itachi', 'anikototv', 'animezey', 'animotvslash',
+  'allwish', 'animesuge', 'reanime', 'nikastream', 'anichan',
+  // animeworldindia REMOVED Task 68: source now serves movies too
+  // (anime movies on watchanimeworld.one) and resolves in ~5-8s measured
+  // — unclassified placement (wave 100) lands both types in-request.
+]);
+// Task 69: anime-only sources are episode-scrapers — on MOVIE requests
+// they are guaranteed zero-yield (production-measured: all 21 returned 0
+// on every probed movie while queuing 26-39s behind the real sources).
+// Each useless scrape burns a concurrency slot AND, after budget expiry,
+// clogs the background tail that warms the cache for the NEXT title —
+// the direct cause of "next movie opens with 3-5 streams". Skip them
+// entirely for movies. Series behavior is unchanged (anime sources are
+// the primary deliverers there). Env escape hatch kept for diagnostics.
+const ANIME_SOURCES_ON_MOVIES = process.env.ANIME_SOURCES_ON_MOVIES === '1';
+const isScheduled = (source, requestType) =>
+  ANIME_SOURCES_ON_MOVIES || requestType !== 'movie' || !ANIME_ONLY_SOURCE_IDS.has(source.id);
+const waveOf = (sourceId, requestType) => {
+  const w1 = WAVE1_SOURCE_ORDER.indexOf(sourceId);
+  if (w1 !== -1) return w1; // 0..19 — exact start order within wave 0
+  if (ANIME_ONLY_SOURCE_IDS.has(sourceId)) return requestType === 'series' ? 100 : 200;
+  if (WAVE2_SOURCE_IDS.has(sourceId)) return 100;
+  if (BACKGROUND_ONLY_SOURCE_IDS.has(sourceId)) return 200;
+  return 100; // unclassified future sources: medium — get a chance, never starve wave-0
+};
+
+// Task 74 export: the idle Cache-Keeper warms sources through THIS function so
+// a keeper pass populates exactly the sources resolve() would schedule for the
+// same request type (same movie anime-skip, same wave priority). Pure reorder
+// + filter — identical behavior to the previous function-scoped code.
+export function orderSourcesForRequest(sources, requestType) {
+  const isScheduled = (source, type) =>
+    ANIME_SOURCES_ON_MOVIES || type !== 'movie' || !ANIME_ONLY_SOURCE_IDS.has(source.id);
+  const waveOf = (sourceId, type) => {
+    const w1 = WAVE1_SOURCE_ORDER.indexOf(sourceId);
+    if (w1 !== -1) return w1; // 0..19 — exact start order within wave 0
+    if (ANIME_ONLY_SOURCE_IDS.has(sourceId)) return requestType === 'series' ? 100 : 200;
+    if (WAVE2_SOURCE_IDS.has(sourceId)) return 100;
+    if (BACKGROUND_ONLY_SOURCE_IDS.has(sourceId)) return 200;
+    return 100; // unclassified future sources: medium — get a chance, never starve wave-0
+  };
+  return [...sources].sort(
+    (a, b) => waveOf(a.id, requestType) - waveOf(b.id, requestType)
+  ).filter(s => isScheduled(s, requestType));
+}
+
 export class StreamResolver {
   constructor(logger, extractorRegistry, fetcher) {
     this.logger = logger;
@@ -469,209 +693,12 @@ export class StreamResolver {
     // the real root cause of "source shows nothing until refresh 4-5").
     const MAX_CONCURRENT_SOURCES = 15;
 
-    // ─── THREE-WAVE SCHEDULING (Task 43 — data-driven, production-measured)
-    //
-    // Symptom (user report): "only 7-8 sources show streams, others show
-    // none". Root cause measured on production (isolated /debug/source runs,
-    // Sep 2026): the old single PRIORITY set held 23 sources — many of them
-    // slow or zero-yield (stellarrip content drought 22s/0, cinejoyaio
-    // crypto 0, anineko DB outage, nikastream 20-30s) — while genuinely fast
-    // productive sources (raflix 7@2.1s, cinewave 46@1.5s, hdhub4uv2 6@4.1s,
-    // movieshuntv2 5@10.1s) queued BEHIND all of them and never started
-    // within the 15s client budget. Cold request settled only ~11 sources,
-    // half of them 0-yield.
-    //
-    // Fix: three waves, ordered by MEASURED cold productivity:
-    //   wave 0 (race-critical): fast (<8s) + productive — occupy the 10 slots
-    //     first, settle 3-12s, land in the cold response.
-    //   wave 1 (medium): 8-16s sources — start as wave-0 slots free; some
-    //     land cold, the rest complete in background and cache (5min TTL).
-    //   wave 2 (background-only): slow (>budget), Playwright, PoW-heavy, or
-    //     known-dead upstreams — they never landed cold anyway; starting them
-    //     last frees race slots. Results still cache for warm requests.
-    // Anime-only sources are type-aware: wave 1 for series (primary anime
-    // deliverers), wave 2 for movies (anime movies are covered by the
-    // general wave-0/1 sources — 4khdhub/cineby/streamxtv/hdhub4u verified).
-    //
-    // NOTE: final card order is independent of this sort (urlResults are
-    // re-sorted by height/bytes/priority before the build loop).
-    // ORDER WITHIN WAVE 0 MATTERS: only 10 slots exist; light sources (1-3s)
-    // must start first so slots churn and the next sources start early.
-    // Task 66 A/B vs the original repo DISPROVED the "heavy aggregator holds
-    // a slot 12s+" label: cinewave measured cold 46 cards @1.5s isolated (its
-    // pixeldrain finals are instant HEADs). cinewave/watchseries/necro now sit
-    // at the FRONT (positions 7-9) — see the Task 66 comment at 'cinewave'.
-    // This is an ORDERED array — the resolver starts these sources in exactly
-    // this sequence (index becomes the sort rank; wave 1 = 100, wave 2 = 200).
-    const WAVE1_SOURCE_ORDER = [
-      // light embed/API sources — measured 1-3s fresh, free slots fast
-      'moviebox',      // 1 @2.7s local fresh
-      'vidlink2',      // 3 @3.1s local fresh
-      'vidfast',       // 4 @~2s
-      'vidking',       // 4 @~2s
-      'vidsrcsbs',     // 3 @~2s
-      'vegamovies',    // 4 @~2s
-      // Task 66: cinewave/watchseries/necro moved UP from the wave-0 tail.
-      // The "heavy aggregator" label was wrong for cinewave — measured cold
-      // 46 cards @1.5s isolated (its pixeldrain finals are instant HEADs; the
-      // 12s+ slot-hold claim came from warm-cache A/B noise). Production
-      // proof (Render 0.1-CPU cold boot, Dune tt1160419): wave-0-last start
-      // queued it behind 25 sources and it MISSED the 40s budget (10-card r1)
-      // while the original repo — which starts it 3rd in registry order —
-      // lands it on one refresh. r2 it delivered 28@17.8s. Fast-productive
-      // sources belong at the FRONT of the wave on a starved CPU.
-      'cinewave',      // 28-46 @1.5-17.8s — orig starts it ~3rd
-      'watchseries',   // 11 @3.1s production-measured
-      'necro',         // 5
-      // Task 59: bollyflix promoted (index 16 → 7). Measured fast + 4K-
-      // capable (5 cards @3.6-7.5s isolated incl 2160p), but its gdflix
-      // mfile chain runs 26-32s under merged contention — starting it
-      // behind 15 earlier wave-0 entries queued it 6.9s and pushed the
-      // chain past the 35s per-source cap on true-cold r1 (zero cards).
-      // Early start = full 35s headroom, and satisfies the up-to-4K
-      // start-priority requirement.
-      'bollyflix',     // 5-6 @3.6-7.5s fresh, chain 26-32s under load
-      // Task 53: user-reported missing sources — promoted from wave-2 to the
-      // FRONT of the medium group (right after the 0-3s embed/API sources so
-      // their slots free immediately). Isolated fresh: moviesdrivev2 4 @6.5s,
-      // uhdmovies 1 @6.7s, movieshuntv2 5 @10.1s — starting at ~2-4s lands
-      // them ~9-14s, INSIDE the 15s budget, for movies AND series (series
-      // slots are held 9-15s by slow chains, so late positions never started).
-      'moviesdrivev2', // 4 @6.5s fresh (8-hop chain) — original MoviesDrive 25s
-      'uhdmovies',     // 6.7s+ multi-hop — original UHDMOVIES 12s
-      'movieshuntv2',  // 5 @10.1s (abhilinks→hubcloud/gdflix chains)
-      // Task 70: wave-2 → wave-0 promotions for the user-named regression
-      // class ("you broke 4khdhub, desiflix, 2peckle"). Wave-2 starts land
-      // at ~25-40s on cold resolves (27 wave-0 entries hold the 15 slots
-      // first) — structurally unable to finish inside the 40s budget, so
-      // these sources were invisible on every cold first round and only
-      // surfaced via warm caches. Measured fast/productive:
-      //   - vixsrc: constructs its playlist card instantly (no upstream
-      //     scrape; token empty for free titles) — 1 multi-language card
-      //     every round for free. Front position.
-      //   - peckle: 9 cards incl 4K @1.7s production-measured (FEBBOX).
-      //   - desiflix: 23-32s chain (Task 59) — starting at a ~2-5s slot
-      //     puts its finish INSIDE the 40s budget on cold r1; as wave-2 it
-      //     started at 25-40s and never landed. Upstream (desitvhub Azure)
-      //     is flaky — measured 30-95s with empty windows — the Task 70
-      //     uncached-failure retry contract plus the wave-0 start give it
-      //     the best possible delivery path.
-      'vixsrc',
-      'peckle',
-      // proven cold landers in production 15s races (must not regress)
-      '4khdhub',       // 6 @3.1s local fresh
-      'fourkhdhubone', // 6
-      'playimdb',      // 3 @1.6s local fresh
-      'cineby',        // 11 @7.2s local fresh
-      'hdhub4uv2',     // 6 @4.1s production isolated (user-reported source)
-      'acermovies',    // 3 @2.1s local fresh
-      'hindmovie',     // 1 @4.4s
-      // Task 46: 4K-capable cold landers (both ship 2160p; movies + series)
-      // get wave-0 start priority per user requirement "prioritize up-to-4K
-      // sources" — cinefreak measured fresh 6 @3.3-4.6s (2160p after the
-      // 4K-first resolve fix); bollyflix MOVED UP to index 7 (Task 59).
-      'cinefreak',     // 6 @3.3-4.6s cold incl 2160p
-      // Task 47: cinejoyaio FIXED (api.shegu.st→api.wing.st + rotated-wasm
-      // refresh + payload contract) — now ~2s cold with Lisbon 2160p (4K) on
-      // movies AND series ( Breaking Bad S1E1 verified), 3/3 cards probe
-      // alive. 4K-capable + fast → wave-0 per the up-to-4K priority.
-      'cinejoyaio',    // 3 @2.0s cold incl 2160p (Lisbon)
-      // Task 48: atlantic.st — Aphrodite (signed 4K) + Artemis (Orbit 2160p
-      // multi-audio / Nova muxed) + granite/natsuki subs, cards live-validated.
-      // Measured 2.5-3.2s cold (Inception/Dune2 2160p, Frieren S1E1 1080p).
-      // 4K-capable + fast → wave-0 4K group.
-      'atlantic',      // 1-4 @2.5-3.2s cold incl 2160p (Orbit/Aphrodite)
-      // Task 70: desiflix wave-2 → wave-0 tail (see the Task 70 block above).
-      'desiflix',      // 23-32s chain — early start puts the finish in-budget
-      // Task 71: hindmoviez promoted medium → wave-0 tail. Isolated 16 cards
-      // @15.3s (4K/1080p direct MKV via the hshare→hcloud→workers.dev chain)
-      // but as a medium-group source it started at ~25-40s under merged
-      // contention, missed the 40s budget EVERY round (production-measured
-      // hindmoviez=0 in all merged rounds while /debug/source returned 16)
-      // and its results were discarded at budget expiry before the straggler
-      // cache could take them. Early start = the same fix pattern as
-      // desiflix (Task 70) and cinewave (Task 66).
-      'hindmoviez',    // 16 @15.3s isolated — chain too long for a late start
-      'primeshows',    // 6 @4.0s
-      'meinecloud',    // 4 @3.8s
-      'raflix',        // 7 @2.1s production isolated
-      'videasy',       // 6 (proven cold lander, slower fresh)
-      // Task 66: cinewave/watchseries/necro PROMOTED to the wave-0 front
-      // (see comment at vegamovies) — the tail slot starved them on cold
-      // 0.1-CPU resolves. Entries kept here as documentation anchors only.
-    ];
-    const WAVE2_SOURCE_IDS = new Set([
-      // measured 8-16s solo — partial cold landing, rest cached in background
-      // (Task 53: movieshuntv2/moviesdrivev2/uhdmovies PROMOTED to wave-0 —
-      // user-reported missing; see WAVE1_SOURCE_ORDER)
-      'streamxtv',     // 4-5
-      'stellar', 'vegamovies2',   // uhdmovies: promoted (6.7s+ multi-hop, 4K group)
-      // Task 59: desiflix promoted BACKGROUND_ONLY → wave 2 (medium). Its
-      // manifest.desitvhub aggregation chain measures 23-32s — the restored
-      // 40s client budget (Task 56) means it now lands IN-request on cold
-      // resolves instead of only via the background tail (whose per-instance
-      // cache a multi-instance Render deployment often never sees again).
-      // Task 70: desiflix REPROMOTED to wave-0 (see WAVE1_SOURCE_ORDER) —
-      // wave-2 starts land at ~25-40s on cold resolves and never finish.
-      'hindmoviez', 'cinebyrocks', 'nowhdtime', 'zxcstream',
-      'imdbplay', 'framextv',
-      // Task 70: 'vixsrc' and 'peckle' promoted to wave-0 (user-named class).
-      'kmmovies', 'vidzee', 'pantyflix',
-      'netlio', 'rivestream', 'cinehdplus',
-      // Task 61: persianstremio promoted BACKGROUND_ONLY → wave 2 — same
-      // class and same evidence standard as desiflix above. Isolated fresh
-      // measurement: 21 cards @11.3s for Inception (persianstremio.vercel.app
-      // aggregation chain) — comfortably inside the 40s client budget, but as
-      // a background-only source it ran AFTER the budget expired, so on the
-      // multi-instance Render deployment its background cache was routinely
-      // invisible to the next request → registered yet never visible. Wave-2
-      // start (~13s queue) + 11.3s chain lands it IN-request.
-      'persianstremio',
-    ]);
-    const BACKGROUND_ONLY_SOURCE_IDS = new Set([
-      // never land within the 15s budget (measured) or known-dead upstreams;
-      // run last so their slots don't starve the race — results still cache
-      'stellarrip',     // PoW 22.8s + upstream content drought
-      // cinejoyaio REMOVED Task 47: fixed upstream migration (api.wing.st),
-      // measured ~2s cold with 2160p — promoted to wave-0 (WAVE1_SOURCE_ORDER)
-      // desiflix REMOVED Task 59: promoted to wave-2 (measured 23-32s, lands
-      // in-request under the 40s client budget)
-      // persianstremio REMOVED Task 61: promoted to wave-2 (measured 21 cards
-      // @11.3s isolated — inside the 40s budget, was invisible as background-only)
-      'videasyto',      // Playwright headless 30-60s
-      'verhdlink', 'movix',
-    ]);
-    const ANIME_ONLY_SOURCE_IDS = new Set([
-      'animeflix', 'anineko', 'anikoto', 'anikage', 'anibd', '2dhive',
-      'anidoor', 'animegg', 'hianime', 'animekai', 'animesdigital',
-      'itachi', 'anikototv', 'animezey', 'animotvslash',
-      'allwish', 'animesuge', 'reanime', 'nikastream', 'anichan',
-      // animeworldindia REMOVED Task 68: source now serves movies too
-      // (anime movies on watchanimeworld.one) and resolves in ~5-8s measured
-      // — unclassified placement (wave 100) lands both types in-request.
-    ]);
-    // Task 69: anime-only sources are episode-scrapers — on MOVIE requests
-    // they are guaranteed zero-yield (production-measured: all 21 returned 0
-    // on every probed movie while queuing 26-39s behind the real sources).
-    // Each useless scrape burns a concurrency slot AND, after budget expiry,
-    // clogs the background tail that warms the cache for the NEXT title —
-    // the direct cause of "next movie opens with 3-5 streams". Skip them
-    // entirely for movies. Series behavior is unchanged (anime sources are
-    // the primary deliverers there). Env escape hatch kept for diagnostics.
-    const ANIME_SOURCES_ON_MOVIES = process.env.ANIME_SOURCES_ON_MOVIES === '1';
-    const isScheduled = (source, requestType) =>
-      ANIME_SOURCES_ON_MOVIES || requestType !== 'movie' || !ANIME_ONLY_SOURCE_IDS.has(source.id);
-    const waveOf = (sourceId, requestType) => {
-      const w1 = WAVE1_SOURCE_ORDER.indexOf(sourceId);
-      if (w1 !== -1) return w1; // 0..19 — exact start order within wave 0
-      if (ANIME_ONLY_SOURCE_IDS.has(sourceId)) return requestType === 'series' ? 100 : 200;
-      if (WAVE2_SOURCE_IDS.has(sourceId)) return 100;
-      if (BACKGROUND_ONLY_SOURCE_IDS.has(sourceId)) return 200;
-      return 100; // unclassified future sources: medium — get a chance, never starve wave-0
-    };
-    const sortedSources = [...sources].sort(
-      (a, b) => waveOf(a.id, type) - waveOf(b.id, type)
-    ).filter(s => isScheduled(s, type));
+    // ─── THREE-WAVE SCHEDULING (Task 43 — data-driven, production-measured) ───
+    // Task 74: the wave tables + ordering logic live at MODULE scope as the
+    // exported orderSourcesForRequest() — identical tables, identical order,
+    // zero behavior change. The idle Cache-Keeper imports the same function so
+    // a keeper-warmed cache matches exactly what this resolve would schedule.
+    const sortedSources = orderSourcesForRequest(sources, type);
     const skippedAnimeCount = sources.length - sortedSources.length;
     if (skippedAnimeCount > 0) {
       this.logger.info(`StreamResolver: skipped ${skippedAnimeCount} anime-only sources (movie request)`);

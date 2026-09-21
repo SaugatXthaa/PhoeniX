@@ -17,6 +17,10 @@ import { reanimeSegmentKey } from './utils/site-secrets.cjs';
 // Task 54: playback-priority gate — /proxy + /range-proxy raise it while
 // serving so the resolver's post-budget background work can yield to playback.
 import playbackGate from './utils/playbackGate.cjs';
+// Task 74: idle cache keeper — see utils/cacheKeeper.js. Keeps the per-source
+// caches of user-opened titles warm while the instance is idle, so an
+// UptimeRobot-kept-alive instance delivers warm-round card sets on round 1.
+import { startCacheKeeper, recordUserRequest, getCacheKeeperInfo } from './utils/cacheKeeper.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -25,6 +29,21 @@ const PORT = process.env.PORT || 7000;
 const HOST = process.env.HOST || '0.0.0.0';
 const ADDON_NAME = process.env.ADDON_NAME || 'PhoeniX';
 const VERSION = '1.3.0';
+
+// Task 74: reliable boot telemetry. /debug/env reads globalThis.__phoenixBootAt
+// but it was never SET anywhere, so startedAt silently fell back to a
+// per-request Date.now() — set it once at module load instead.
+globalThis.__phoenixBootAt = Date.now();
+// Task 74: instance identity for the /health watcher. Distinguishes
+// multi-instance deployments (each instance gets its own RENDER_INSTANCE_ID)
+// and boot recycles — the objective answer to "UptimeRobot keeps it awake,
+// why is it still cold?".
+const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || `local-${process.pid}`;
+// Task 74: keepalive probe visibility — UptimeRobot pings `/` every few
+// minutes; if rootHits does not climb, the monitor is NOT pointed at this
+// deployment (that alone explains spin-downs "despite UptimeRobot").
+let rootHits = 0;
+let lastRootHitAt = null;
 
 const logger = console;
 
@@ -88,6 +107,8 @@ app.get('/stream/:type/:id.json', async (req, res) => {
     config: { multi: 'on', en: 'on' },
   };
 
+  // Task 74: feed the idle cache keeper (records hot titles; no-op when disabled)
+  recordUserRequest(type, id);
   logger.log(`[${ADDON_NAME}] stream ${type} ${id}`);
 
   try {
@@ -1419,12 +1440,28 @@ function rewriteM3u8Urls(m3u8Text, baseUrl, referer, req, extraParams) {
 }
 
 // ============== HEALTH ==============
+// Task 74: additive telemetry for the keep-alive investigation — every
+// original field is preserved. memoryMB/watch boot recycles + OOM pressure;
+// instanceId exposes multi-instance deployments (an UptimeRobot ping keeps
+// only ONE instance warm — a sleeping second instance is a cold boot for the
+// next user); keepalive.rootHits proves whether the monitor actually reaches
+// THIS deployment; cacheKeeper shows the idle-warm passes live.
 app.get('/health', (req, res) => {
+  const mem = process.memoryUsage();
   res.json({
     status: 'ok',
     name: ADDON_NAME,
     version: VERSION,
     uptime: process.uptime(),
+    bootAt: new Date(globalThis.__phoenixBootAt).toISOString(),
+    instanceId: INSTANCE_ID,
+    memoryMB: {
+      rss: +(mem.rss / 1048576).toFixed(1),
+      heapUsed: +(mem.heapUsed / 1048576).toFixed(1),
+      heapTotal: +(mem.heapTotal / 1048576).toFixed(1),
+    },
+    keepalive: { rootHits, lastRootHitAt },
+    cacheKeeper: getCacheKeeperInfo(),
     sources: sources.map(s => s.id),
     extractors: extractors.map(e => e.id),
   });
@@ -1708,6 +1745,9 @@ app.get('/debug/rawfetch', async (req, res) => {
 
 // ============== LANDING PAGE ==============
 app.get('/', (req, res) => {
+  // Task 74: keepalive probe counter — makes UptimeRobot pings observable.
+  rootHits++;
+  lastRootHitAt = new Date().toISOString();
   const hostUrl = `https://${req.headers.host}`;
   const manifestUrl = `${hostUrl}/manifest.json`;
   res.setHeader('Content-Type', 'text/html');
@@ -1809,6 +1849,23 @@ app.listen(PORT, HOST, () => {
   // handshakes raced exactly the requests that follow a scale-from-zero boot
   // (first /stream + playback) and contributed to the degraded-instance class.
   // The Task 45 idle-time prewarm loop was already removed earlier.
+  //
+  // Task 74: the idle CACHE KEEPER is a different contract, not a prewarm
+  // revival: nothing runs at boot, nothing runs before a USER request
+  // existed, and passes fire only ≥3 min after the last user /stream activity
+  // (yielding instantly when the user returns). It warms ONLY titles the user
+  // actually opened, through the resolver's own scheduling — so the
+  // always-awake instance the user pays UptimeRobot for stays warm where it
+  // matters (the caches their next open will hit). CACHE_KEEPER=off reverts
+  // to the exact pre-Task-74 behavior.
+  startCacheKeeper({
+    sources,
+    parseId: (type, rawId) => rawId.startsWith('tmdb:')
+      ? TmdbId.fromString(rawId.replace('tmdb:', ''))
+      : ImdbId.fromString(rawId),
+    logger,
+    hostUrl: process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`,
+  });
 });
 
 process.on('SIGTERM', () => process.exit(0));
