@@ -33,6 +33,15 @@ const HEADERS = {
   'Accept': 'application/json, text/javascript, */*; q=0.01',
   'Origin': ORIGIN,
   'Referer': `${ORIGIN}/`,
+  // Task 79: the hls.lol family lesson — header-based WAFs soft-block requests
+  // lacking the browser's own fetch headers (429/empty instead of a hard 403).
+  // api2 rate-limits Render egress intermittently (Task 71 delivered 3@2.1s,
+  // Task 78 all-zero with 429/conn-fail signatures); these are what a real
+  // browser POST from the site sends. Harmless if the gate is purely IP-based.
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Sec-Fetch-Dest': 'empty',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Site': 'same-site',
 };
 
 // Parse quality string ("480p", "720p", "1080p", "1080p 10Bit HEVC") → height
