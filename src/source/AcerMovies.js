@@ -23,9 +23,29 @@ import { CountryCode, Format } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 import { withRetryOnEmpty } from './nuvioHelpers.js';
+import { TooManyRequestsError } from '../error/index.js';
 
 const API_BASE = 'https://api2.acermovies.fun';
 const ORIGIN = 'https://acermovies.fun';
+
+// Task 81: api2 rate-limits by IP with a LONG window (the site's own UI says
+// "rate limited ... up to 24 hours"). Render's shared egress IP trips it
+// regularly (Task 71 delivered, Task 78 429/conn-fail, Task 81 measured live:
+// POST /api/search → 429 {"message":"Too many requests..."} from prod egress
+// while the same POST from a residential IP 200s in 1.7s — API + protocol
+// UNCHANGED, the site's bundle still calls the same /api/search,
+// /api/sourceQuality, /api/sourceUrl on api2).
+// Strategy: never fight the ban.
+//   - 429 → 10min cooldown circuit: ZERO upstream calls during it (retrying
+//     into a 429 extends bans and wastes the client budget).
+//   - 24h in-memory fallback cache of the last good results per title —
+//     during cooldowns we serve those instead of an honest zero (the final
+//     googleusercontent URLs are signed CDN links; dead ones fail fast at
+//     play time via the Task 75 proxies, player moves to the next card).
+//   - normal path unchanged: fresh resolve, 3-attempt empty-retry.
+const RATE_LIMIT_COOLDOWN_MS = 10 * 60 * 1000;
+const RESULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const RESULT_CACHE_MAX = 200;
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -77,17 +97,53 @@ export class AcerMovies extends Source {
     this.baseUrl = ORIGIN;
     this.fetcher = fetcher;
     this.ttl = 3600000; // 1h — sourceUrl is short-lived but Stremio caches the resolved URL
+    this._cooldownUntil = 0;   // rate-limit circuit: no upstream calls before this ts
+    this._resultCache = new Map(); // cacheKey -> { results, at } — 429 fallback
+  }
+
+  // Task 81: the Fetcher throws TooManyRequestsError on 429; the previous
+  // catch-all swallowed it, so rate-limits looked like ordinary empty
+  // resolves and withRetryOnEmpty hammered the API 3× per request.
+  _noteRateLimit(where) {
+    this._cooldownUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+    console.log(`[acermovies] 429 rate-limited at ${where} — cooldown ${RATE_LIMIT_COOLDOWN_MS / 60000}min, will serve cached results`);
   }
 
   async handleInternal(ctx, _type, id) {
+    const now = Date.now();
+    const hit = this._resultCache.get(id);
+
+    // Cooldown circuit — no upstream calls, cached results instead of zero.
+    if (now < this._cooldownUntil) {
+      if (hit && now - hit.at < RESULT_CACHE_TTL_MS) {
+        console.log(`[acermovies] rate-limit cooldown — serving ${hit.results.length} cached cards (age ${Math.round((now - hit.at) / 60000)}min)`);
+        return hit.results;
+      }
+      console.log('[acermovies] rate-limit cooldown — no cached results, honest zero (upstream untouched)');
+      return [];
+    }
+
     // Task 63: the modpro.blog upstream rate-limits intermittently (production
     // evidence: 1-of-3 probes delivered, failures @~700ms → silent [] and the
     // 60s negative cache then hid the recovery). Bounded empty-retry rides out
     // the bad windows like the stellarrip/uhdmovies wrappers.
-    return withRetryOnEmpty(() => this._resolve(ctx, id), { attempts: 3, maxTotalMs: 14000, tag: 'acermovies' });
+    const results = await withRetryOnEmpty(() => this._resolve(ctx, id), { attempts: 3, maxTotalMs: 14000, tag: 'acermovies' });
+
+    if (results.length > 0) {
+      // Bounded 24h fallback cache (429 survival)
+      if (this._resultCache.size >= RESULT_CACHE_MAX) {
+        const oldest = this._resultCache.keys().next().value;
+        this._resultCache.delete(oldest);
+      }
+      this._resultCache.set(id, { results, at: Date.now() });
+    }
+    return results;
   }
 
   async _resolve(ctx, id) {
+    // 429 landed mid-retry (attempt N of the empty-retry ladder): bail instead
+    // of POSTing again — each extra call into the rate limiter extends the ban.
+    if (Date.now() < this._cooldownUntil) return [];
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
 
@@ -102,12 +158,15 @@ export class AcerMovies extends Source {
     let searchJson;
     try {
       searchJson = await this.fetcher.textPost(ctx, searchUrl, JSON.stringify({ searchQuery }), { headers: HEADERS });
-    } catch { return []; }
+    } catch (e) {
+      if (e instanceof TooManyRequestsError) { this._noteRateLimit('search'); return []; }
+      return [];
+    }
 
     let searchResult;
     try { searchResult = JSON.parse(searchJson); } catch { return []; }
     const searchResults = Array.isArray(searchResult?.searchResult) ? searchResult.searchResult : [];
-    if (searchResults.length === 0) return [];
+    if (searchResults.length === 0 || Date.now() < this._cooldownUntil) return [];
 
     // Find best match — prefer one whose title contains the name (case-insensitive)
     const nameLower = name.toLowerCase();
@@ -120,7 +179,10 @@ export class AcerMovies extends Source {
     let qualityJson;
     try {
       qualityJson = await this.fetcher.textPost(ctx, qualityUrl, JSON.stringify({ url: bestMatch.url }), { headers: HEADERS });
-    } catch { return []; }
+    } catch (e) {
+      if (e instanceof TooManyRequestsError) { this._noteRateLimit('sourceQuality'); return []; }
+      return [];
+    }
 
     let qualityResult;
     try { qualityResult = JSON.parse(qualityJson); } catch { return []; }
@@ -128,7 +190,7 @@ export class AcerMovies extends Source {
 
     // Filter to movie entries (url is non-empty; series entries only have episodesUrl)
     const movieQualities = qualityList.filter(q => q?.url && !q.episodesUrl);
-    if (movieQualities.length === 0) return [];
+    if (movieQualities.length === 0 || Date.now() < this._cooldownUntil) return [];
 
     // Step 3: resolve each quality to a direct GDrive URL (in parallel, bounded)
     // Deduplicate by quality string to avoid redundant calls
@@ -142,6 +204,9 @@ export class AcerMovies extends Source {
 
     const results = [];
     const resolveOne = async (q) => {
+      // A 429 mid-batch (attempt N of M qualities) must stop the remaining
+      // calls immediately — each extra POST into the rate limiter extends it.
+      if (Date.now() < this._cooldownUntil) return null;
       try {
         const srcUrl = new URL('/api/sourceUrl', API_BASE);
         const body = JSON.stringify({ url: q.url, seriesType: 'movie' });
@@ -167,7 +232,10 @@ export class AcerMovies extends Source {
             sourceLabel: this.label,
           },
         };
-      } catch { return null; }
+      } catch (e) {
+        if (e instanceof TooManyRequestsError) this._noteRateLimit('sourceUrl');
+        return null;
+      }
     };
 
     // Resolve in parallel — Promise.all with bounded concurrency
