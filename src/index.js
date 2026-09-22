@@ -1738,15 +1738,28 @@ app.get('/debug/source/:sourceId', async (req, res) => {
 // identical code + got-scraping /proxy probes succeed; this endpoint isolates
 // the native undici fetch path each scraper actually uses.
 // Usage: /debug/rawfetch?url=https://stellar.rip/en/watch/embed/movie/27205
+//   Optional POST support (Task 81): &method=POST&body=<raw body>&ct=application/json
+//   — diagnosing POST-class APIs (acer api2, animekai POST search) needs the
+//   exact status/body from production egress; GET-only rawfetch reported
+//   misleading "Cannot GET /api/search" signatures.
 app.get('/debug/rawfetch', async (req, res) => {
   const rawUrl = req.query.url;
   if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
     return res.status(400).json({ error: 'query param url required (http/https)' });
   }
+  const method = String(req.query.method || 'GET').toUpperCase();
+  const body = req.query.body;
+  const ct = req.query.ct;
+  const extraHeaders = {};
+  if (ct) extraHeaders['Content-Type'] = ct;
+  if (req.query.origin) extraHeaders['Origin'] = req.query.origin;
+  if (req.query.referer) extraHeaders['Referer'] = req.query.referer;
   const t0 = Date.now();
   try {
     const r = await fetch(rawUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', 'Accept': 'text/html,*/*' },
+      method: method === 'GET' ? 'GET' : method,
+      ...(method !== 'GET' && body ? { body } : {}),
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', 'Accept': 'text/html,*/*', ...extraHeaders },
       signal: AbortSignal.timeout(12000),
       redirect: 'follow',
     });
@@ -1758,6 +1771,7 @@ app.get('/debug/rawfetch', async (req, res) => {
       finalUrl: r.url,
       durationMs: Date.now() - t0,
       bytes: text.length,
+      ct: r.headers.get('content-type') || undefined,
       head: text.slice(0, 300),
     });
   } catch (e) {
