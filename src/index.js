@@ -329,6 +329,20 @@ app.get('/proxy', async (req, res) => {
       if (req.headers.range) proxyHeaders['Range'] = req.headers.range;
       else proxyHeaders['Range'] = 'bytes=0-';
     }
+    // Task 79: atlantic.st payload workers (peraspera/totallyacdn) soft-decoy
+    // requests lacking the browser's fetch headers — 200 text/html SPA shell
+    // instead of the playlist. The source now validates cards with the full
+    // browser header set (src/nuvio/atlantic.cjs HEADERS); the proxy must send
+    // the SAME set at play time or validated cards still fail in the player.
+    const atlHost = targetUrl.hostname.toLowerCase();
+    const isAtlanticPayload = /(^|\.)totallyacdn\.org$/i.test(atlHost) ||
+                              atlHost === 'peraspera.nbsycfzrpa4.workers.dev';
+    if (isAtlanticPayload) {
+      proxyHeaders['Accept-Language'] = 'en-US,en;q=0.9';
+      proxyHeaders['Sec-Fetch-Dest'] = 'empty';
+      proxyHeaders['Sec-Fetch-Mode'] = 'cors';
+      proxyHeaders['Sec-Fetch-Site'] = 'cross-site';
+    }
 
     // Check if this is an HLS playlist by URL extension OR by content.
     // Some CDNs (Netlio, AniNeko) disguise HLS playlists with .txt

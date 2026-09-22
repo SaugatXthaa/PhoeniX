@@ -28,6 +28,28 @@
 //                  X-A-Sig = HMAC-SHA256(skey, sid|path|ts|nonce)   (path ONLY)
 //     client resets the session on response renew:true (mirror: also on 401/403)
 //
+// Task 79 (2026-09-22) — the gates CAME BACK and multiplied:
+//   • gate a's seed ROTATED (old M/X tables → bootstrap 403 {"error":"forbidden"}
+//     3/3 = the Task 78 "gate bootstrap HTTP 403" root cause). New seed extracted
+//     from the live bundle (aphrodite-gate-DNDGgaS1.js) via WebCrypto key-logging
+//     (digest input = version||seed captured byte-exact; masterKey verified against
+//     the browser's importKey bytes). The M/X derivation no longer matches —
+//     seeds are embedded directly below.
+//   • gate b (stellar.b.v1) is NEW: POST stellar.hls.lol/gate/handshake, session
+//     headers X-S-* on /resolve GETs. UNSIGNED resolve still answers 200 but with
+//     a DECOY entry: {source:"manual", url:"atlantic.st/edge-<hash>/index.m3u8"}
+//     — an SPA-route placeholder that serves the React shell, not a playlist
+//     (the Task 78 "artemis master failed (200)" root cause). SIGNED resolve
+//     returns the real Orbit/Nova/Astra payload masters (peraspera workers.dev).
+//   • the payload workers (peraspera/totallyacdn) now also soft-decoy requests
+//     lacking browser headers: UA+Origin+Referer alone → 200 text/html SPA shell
+//     (was: trailer 302 in Task 60). Adding Accept/Accept-Language/Sec-Fetch-*
+//     (exactly what the site's own hls.js XHR sends) restored real playlists in
+//     node replication. HEADERS below carries the full browser set.
+//   • unsigned content fallback returns DECOY CATALOG entries (verified: 693134
+//     → title "Coyote vs. Acme") — a wrong-title guard now drops any aphrodite
+//     entry whose title does not match the requested title.
+//
 //   CDN hotlink gates (verified live): both peraspera.nbsycfzrpa4.workers.dev
 //   (Artemis) and totallyacdn.org (Aphrodite) answer 200 text/html decoys to
 //   UA-only requests — they require Origin/Referer https://atlantic.st. Cards
@@ -68,13 +90,23 @@ const ATLANTIC_ORIGIN = 'https://atlantic.st';
 // verified 200 live with sources Orbit/Nova/Astra). Gate scheme unchanged —
 // same aphrodite.a.v1 HMAC/AES-GCM bootstrap, verified against the new host.
 const CDN = 'https://cdn.hls.lol';
-const ARTEMIS = 'https://stellar.hls.lol/resolve';
+const STELLAR_BASE = 'https://stellar.hls.lol';
+const ARTEMIS = `${STELLAR_BASE}/resolve`;
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 const HEADERS = {
   'User-Agent': UA,
   'Origin': ATLANTIC_ORIGIN,
   'Referer': `${ATLANTIC_ORIGIN}/`,
+  // Task 79: the payload workers (peraspera/totallyacdn) soft-decoy requests
+  // that lack the browser's own fetch headers (200 + SPA shell instead of the
+  // playlist/trailer-302 of Task 60). This is exactly what the site's hls.js
+  // cross-origin XHR sends. Harmless for gate/TMDB endpoints.
+  'Accept': '*/*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Sec-Fetch-Dest': 'empty',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Site': 'cross-site',
 };
 
 // Task 55: per-fetch cap. Warm measurements: resolve ~0.5-1.1s, master ~0.3-0.6s,
@@ -140,37 +172,48 @@ async function ftext(url, { headers = {}, timeoutMs = MASTER_TIMEOUT_MS, fetcher
   return { ok: false, status: 0, data: '' };
 }
 
-// ─── Aphrodite gate (aphrodite.a.v1) ───
-const GATE_M = new Uint8Array([152, 159, 215, 12, 139, 229, 103, 92, 79, 156, 87, 240, 161, 70, 97, 40, 218, 79, 171, 72, 9, 177, 171, 147, 62, 249, 164, 146, 201, 90, 184, 204, 237, 159, 162, 35, 55, 32, 234, 114, 164, 188, 27, 63, 151, 213, 4, 92, 117, 56, 136, 58, 252, 220, 222, 69, 186, 144, 227, 223, 214, 102, 114, 251]);
-const GATE_X = new Uint8Array([223, 178, 166, 138, 172, 171, 123, 225, 225, 38, 113, 78, 41, 179, 108, 148, 174, 227, 135, 224, 100, 253, 252, 79, 116, 151, 43, 67, 103, 203, 90, 249]);
-const GATE_LABEL = 'a';
-const GATE_UA_STRING = 'aphrodite.a.v1';
+// ─── HLS.LOL gates (two gates, identical protocol, Task 79) ───
+//   a = aphrodite.a.v1  — cdn.hls.lol/content/index    → /content/* GETs (X-A-*)
+//   b = stellar.b.v1    — stellar.hls.lol/gate/handshake → /resolve GETs (X-S-*)
+const GATES = {
+  a: {
+    cLabel: 'a',
+    version: 'aphrodite.a.v1',
+    seedHex: 'e85b060a65626b661c66fb09b143f7218dbe9285441890158a1703b3677172b9',
+    bootstrapUrl: 'https://cdn.hls.lol/content/index',
+    prefix: 'X-A',
+  },
+  b: {
+    cLabel: 'b',
+    version: 'stellar.b.v1',
+    seedHex: '9a9080abdc4d5d7331b3514cfe4000731d53c9ed6e797970e17964cd6bef2ab6',
+    bootstrapUrl: 'https://stellar.hls.lol/gate/handshake',
+    prefix: 'X-S',
+  },
+};
+for (const g of Object.values(GATES)) {
+  g.masterKey = crypto.createHash('sha256')
+    .update(Buffer.concat([Buffer.from(g.version, 'utf8'), Buffer.from(g.seedHex, 'hex')]))
+    .digest();
+}
 
-const gateSeed = (() => {
-  const out = Buffer.alloc(32);
-  for (let i = 0; i < 32; i++) out[i] = GATE_M[1 + i * 2] ^ GATE_X[i];
-  return out;
-})();
-const gateMasterKey = crypto.createHash('sha256')
-  .update(Buffer.concat([Buffer.from(GATE_UA_STRING, 'utf8'), gateSeed]))
-  .digest();
+const gateSessions = new Map();   // label → { sid, skey:<Buffer>, exp }
+const gateInflights = new Map();  // label → Promise<session>
 
-let gateSession = null;       // { sid, skey:<Buffer>, exp }
-let gateInFlight = null;      // single-flight bootstrap
-
-function gateReset() {
-  gateSession = null;
+function gateReset(label) {
+  if (label) { gateSessions.delete(label); return; }
+  gateSessions.clear();
 }
 
 // POST is not supported by the addon Fetcher (no body option) — bare fetch.
-async function gateBootstrap() {
+async function gateBootstrap(g) {
   const ts = Math.floor(Date.now() / 1000);
   const nonce = crypto.randomBytes(8).toString('hex');
-  const sig = crypto.createHmac('sha256', gateMasterKey).update(`${GATE_LABEL}|${ts}|${nonce}`).digest('hex');
-  const res = await fetch(`${CDN}/content/index`, {
+  const sig = crypto.createHmac('sha256', g.masterKey).update(`${g.cLabel}|${ts}|${nonce}`).digest('hex');
+  const res = await fetch(g.bootstrapUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...HEADERS },
-    body: JSON.stringify({ c: GATE_LABEL, ts, n: nonce, s: sig }),
+    body: JSON.stringify({ c: g.cLabel, ts, n: nonce, s: sig }),
     signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) throw new Error(`gate bootstrap HTTP ${res.status}`);
@@ -180,7 +223,7 @@ async function gateBootstrap() {
   if (blob.length < 28) throw new Error('gate payload too short');
   const iv = blob.subarray(0, 12);
   const tag = blob.subarray(blob.length - 16);
-  const d = crypto.createDecipheriv('aes-256-gcm', gateMasterKey, iv);
+  const d = crypto.createDecipheriv('aes-256-gcm', g.masterKey, iv);
   d.setAuthTag(tag);
   const plain = Buffer.concat([d.update(blob.subarray(12, blob.length - 16)), d.final()]);
   const obj = JSON.parse(plain.toString('utf8'));
@@ -188,60 +231,59 @@ async function gateBootstrap() {
   return { sid: String(obj.sid), skey: Buffer.from(String(obj.skey), 'hex'), exp: Number(obj.exp) || 0 };
 }
 
-async function gateGetSession() {
+async function gateGetSession(g) {
   const now = Math.floor(Date.now() / 1000);
-  if (gateSession && gateSession.exp - now > 60 && gateSession.skey.length === 32) return gateSession;
-  if (!gateInFlight) {
-    gateInFlight = gateBootstrap()
-      .then((s) => { gateSession = s; return s; })
-      .finally(() => { gateInFlight = null; });
+  const cur = gateSessions.get(g.cLabel);
+  if (cur && cur.exp - now > 60 && cur.skey.length === 32) return cur;
+  if (!gateInflights.get(g.cLabel)) {
+    const p = gateBootstrap(g)
+      .then((s) => { gateSessions.set(g.cLabel, s); return s; })
+      .finally(() => gateInflights.delete(g.cLabel));
+    gateInflights.set(g.cLabel, p);
   }
-  return gateInFlight;
+  return gateInflights.get(g.cLabel);
 }
 
-function gateSignHeaders(sess, path) {
+function gateSignHeaders(g, sess, path) {
   const ts = Math.floor(Date.now() / 1000);
   const nonce = crypto.randomBytes(8).toString('hex');
   const sig = crypto.createHmac('sha256', sess.skey).update(`${sess.sid}|${path}|${ts}|${nonce}`).digest('hex');
   return {
-    'X-A-Sid': sess.sid,
-    'X-A-Ts': String(ts),
-    'X-A-Nonce': nonce,
-    'X-A-Sig': sig,
+    [`${g.prefix}-Sid`]: sess.sid,
+    [`${g.prefix}-Ts`]: String(ts),
+    [`${g.prefix}-Nonce`]: nonce,
+    [`${g.prefix}-Sig`]: sig,
   };
 }
 
 // Signed GET — one renew/401/403-triggered session reset + retry (mirrors the
 // client's renew flow; the wasm-less sibling of cinejoy's 404→refresh-retry).
-// Task 71 (2026-09-21): the site DISABLED/removed the aphrodite.a.v1 gate —
-// POST /content/index (bootstrap) now answers 403 {"error":"forbidden"}
-// (verified 3/3 from sandbox) while the content endpoints answer PLAIN
-// unsigned GETs with {found:true,...} (verified 200 from sandbox AND from
-// Render egress via the addon /proxy). When the signed path fails at the
-// bootstrap stage, fall back to the unsigned GET so Aphrodite keeps
-// delivering through their gate migration instead of honest-zeroing.
-async function gateGet(path, fetcher, ctx) {
+// Task 79: when the bootstrap stage fails (gate rotated/disabled again), the
+// callers fall back to the UNSIGNED path — which now carries decoy classes
+// (SPA-shell "edge" urls for resolve, wrong-title catalog entries for content)
+// that the callers' validation + title guard drop honestly.
+async function gateGet(g, url, path, fetcher, ctx) {
   for (let attempt = 0; attempt < 2; attempt++) {
     let sess;
     try {
-      sess = await gateGetSession();
+      sess = await gateGetSession(g);
     } catch (e) {
-      console.log(`[Atlantic] gate bootstrap unavailable (${e?.message || e}) — unsigned fallback`);
-      return unsignedGateGet(path, fetcher, ctx); // gate gone — plain GET still serves content
+      console.log(`[Atlantic] gate[${g.cLabel}] bootstrap unavailable (${e?.message || e}) — unsigned fallback`);
+      return unsignedGateGet(url, fetcher, ctx); // gate gone — plain GET fallback (decoy-guarded by callers)
     }
-    const r = await ftext(`${CDN}${path}`, {
-      headers: { ...gateSignHeaders(sess, path), ...HEADERS }, fetcher, ctx, attempts: 1, tag: 'gate',
+    const r = await ftext(url, {
+      headers: { ...gateSignHeaders(g, sess, path), ...HEADERS }, fetcher, ctx, attempts: 1, tag: `gate-${g.cLabel}`,
     });
     if (r.status === 401 || r.status === 403) {
-      gateReset();
+      gateReset(g.cLabel);
       continue; // fresh session, retry once
     }
-    if (!r.ok) return r; // 404 = not on Aphrodite (curated catalog)
+    if (!r.ok) return r; // 404 = not on this server (curated catalog)
     if (!r.data || r.data[0] !== '{') return { ok: false, status: r.status, data: '' };
     let j;
     try { j = JSON.parse(r.data); } catch { return { ok: false, status: r.status, data: '' }; }
     if (j.renew === true) {
-      gateReset();
+      gateReset(g.cLabel);
       if (attempt === 0) continue;
       return { ok: false, status: r.status, data: '' };
     }
@@ -250,9 +292,10 @@ async function gateGet(path, fetcher, ctx) {
   return { ok: false, status: 0, data: '' };
 }
 
-// Unsigned GET of a gate-path — Task 71 fallback (see gateGet above).
-function unsignedGateGet(path, fetcher, ctx) {
-  return ftext(`${CDN}${path}`, { headers: HEADERS, fetcher, ctx, attempts: 1, tag: 'aph-plain' })
+// Unsigned GET of a gate-path — fallback when the gate is down/rotated.
+// Decoy classes on this path are guarded by the callers (m3u8 sniff + title match).
+function unsignedGateGet(url, fetcher, ctx) {
+  return ftext(url, { headers: HEADERS, fetcher, ctx, attempts: 1, tag: 'gate-plain' })
     .then((r) => {
       if (!r.ok) return r;
       if (!r.data || r.data[0] !== '{') return { ok: false, status: r.status, data: '' };
@@ -271,22 +314,50 @@ async function resolveArtemis(tmdbId, type, season, episode, fetcher, ctx) {
     q.set('season', String(season || 1));
     q.set('episode', String(episode || 1));
   }
-  const r = await ftext(`${ARTEMIS}?${q.toString()}`, { headers: HEADERS, timeoutMs: RESOLVE_TIMEOUT_MS, fetcher, ctx, attempts: 2, tag: 'artemis' });
+  const path = `/resolve?${q.toString()}`;
+  // Task 79: /resolve is behind gate b (stellar.b.v1). Signed → real
+  // Orbit/Nova/Astra payload masters; unsigned → "manual" + SPA-shell edge
+  // placeholder (the decoy the Task 78 audit caught). The m3u8 sniff below
+  // drops the placeholder honestly if the gate is down.
+  const r = await gateGet(GATES.b, `${STELLAR_BASE}${path}`, path, fetcher, ctx);
   if (!r.ok) return null;
-  let j;
-  try { j = JSON.parse(r.data); } catch { return null; }
+  const j = r.json;
   if (!j || j.found !== true || typeof j.url !== 'string' || !/^https?:\/\//.test(j.url)) return null;
+  // Decoy guard: the unsigned placeholder points at the SPA (atlantic.st/edge-*)
+  try { if (new URL(j.url).hostname === 'atlantic.st') return null; } catch { return null; }
   return { url: j.url, server: String(j.source || 'Artemis') };
 }
 
-async function resolveAphrodite(tmdbId, type, season, episode, fetcher, ctx) {
+// Title guard (Task 79): the unsigned content path serves DECOY catalog
+// entries (verified live: tmdb 693134 → "Coyote vs. Acme"). Require the
+// returned title to match the requested one (token-overlap, order-free).
+function titleMatches(returned, expected) {
+  if (!returned || !expected) return true; // nothing to compare — don't block
+  const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const a = norm(returned), b = norm(expected);
+  if (!a || !b) return true;
+  if (a === b || a.includes(b) || b.includes(a)) return true;
+  const at = new Set(a.split(' ')), bt = b.split(' ');
+  const hits = bt.filter(t => at.has(t)).length;
+  return bt.length > 0 && hits / bt.length >= 0.6;
+}
+
+async function resolveAphrodite(tmdbId, type, season, episode, fetcher, ctx, expectedTitle) {
   const path = type === 'tv'
     ? `/content/tv/${tmdbId}/${season || 1}/${episode || 1}`
     : `/content/movie/${tmdbId}`;
-  const r = await gateGet(path, fetcher, ctx);
+  const r = await gateGet(GATES.a, `${CDN}${path}`, path, fetcher, ctx);
   if (!r.ok || !r.json || r.json.found !== true) return null;
   const j = r.json;
-  const url = (typeof j.hls === 'string' && j.hls) || (j.type === 'hls' && typeof j.url === 'string' ? j.url : '');
+  if (!titleMatches(j.title, expectedTitle)) {
+    console.log(`[Atlantic] aphrodite title mismatch: "${String(j.title).slice(0, 60)}" ≠ "${String(expectedTitle).slice(0, 60)}" — dropping (decoy guard)`);
+    return null;
+  }
+  // Task 79: accept j.hls OR any http(s) j.url — upstream dropped the
+  // type:"hls" marker in the gate-b era response; downstream validation
+  // (m3u8 sniff + child/segment probes) is the real gate.
+  const url = (typeof j.hls === 'string' && j.hls) ||
+    (typeof j.url === 'string' && /^https?:\/\//.test(j.url) ? j.url : '');
   if (!url || !/^https?:\/\//.test(url)) return null;
   return { url, server: 'Aphrodite', title: typeof j.title === 'string' ? j.title : '' };
 }
@@ -460,7 +531,7 @@ async function getStreams(tmdbId, mediaType, season, episode, preloaded) {
 
     // — Aphrodite: gate-signed resolve → master parse, deadline-raced —
     const aphroditeChain = (async () => {
-      const a = await resolveAphrodite(id, type, season, episode, fetcher, ctx);
+      const a = await resolveAphrodite(id, type, season, episode, fetcher, ctx, preloaded?.title || '');
       if (!a) return null;
       const r = await ftext(a.url, { headers: HEADERS, fetcher, ctx, attempts: 1, tag: 'aphrodite-master' });
       if (!r.ok || !r.data.startsWith('#EXTM3U')) return null;
