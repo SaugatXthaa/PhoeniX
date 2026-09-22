@@ -71,9 +71,11 @@ export class Atlantic extends Source {
     this.baseUrl = 'https://atlantic.st';
     this.fetcher = fetcher;
     // Payload URLs are opaque signed blobs upstream; the site refetches every
-    // play. 10min (cineby parity) keeps cached cards playable without serving
-    // stale payloads indefinitely.
-    this.ttl = 10 * 60 * 1000;
+    // play. Task 79: the payload workers now rotate payloads every ~30-60s
+    // (verified live — a minutes-old card URL decoys to the SPA shell), so the
+    // old 10min TTL served guaranteed-dead URLs from cache. 60s keeps cached
+    // cards inside the payload lifetime; expired entries re-resolve fresh.
+    this.ttl = 60 * 1000;
   }
 
   async handleInternal(ctx, _type, id) {

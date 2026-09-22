@@ -560,7 +560,15 @@ async function getStreams(tmdbId, mediaType, season, episode, preloaded) {
     // Origin/Referer the workers demand onto the whole rewritten tree.
     const wrapArtemis = (u) => {
       if (!SELF_ORIGIN || !u) return u;
-      if (!/peraspera\.nbsycfzrpa4\.workers\.dev|(^|\.)totallyacdn\.org/i.test(u)) return u;
+      // Task 79 fix: match the HOSTNAME, not the URL string. The old
+      // `(^|\.)totallyacdn\.org` alternative never matched
+      // "https://totallyacdn.org/…" (preceded by "/" from "//", not a dot or
+      // string start) — aphrodite cards shipped UNWRAPPED and ate the
+      // headerless trailer-302 at play time.
+      let host = '';
+      try { host = new URL(u, ATLANTIC_ORIGIN).hostname.toLowerCase(); } catch { return u; }
+      if (!/peraspera\.nbsycfzrpa4\.workers\.dev$/i.test(host) &&
+          !/(^|\.)totallyacdn\.org$/i.test(host)) return u;
       return `${SELF_ORIGIN}/proxy?url=${encodeURIComponent(u)}` +
         `&origin=${encodeURIComponent('https://atlantic.st')}` +
         `&referer=${encodeURIComponent('https://atlantic.st/')}` +
