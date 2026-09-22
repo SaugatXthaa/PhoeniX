@@ -114,29 +114,48 @@ async function getRequestToken(tmdbId, type, season, episode) {
     ? `/watch/embed/movie/${tmdbId}`
     : `/watch/embed/tv/${tmdbId}-${season}-${episode}`;
   const embedPath = `/en${watchPath}`;
+  // Task 82 (2026-09-23): the site degraded to 8-12s per round-trip; the old
+  // flow downloaded the full 92KB embed body just to regex an inline token
+  // that no longer exists (verified: `__REQUEST_TOKEN__` string appears in
+  // bundle code only, the value-assignment regex matches nothing). We now
+  // read HEADERS ONLY (session cookies) and cancel the body, going straight
+  // to POST /api/request-token — saving the body transfer from the critical
+  // path. If the POST fails we fall back to the full body read + inline
+  // regex once, covering a site-side revert to inline-only tokens.
   const res = await fetch(STELLAR_RIP + embedPath, {
-    headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10000),
+    headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(12000),
   });
   if (!res.ok) throw new Error(`Embed page HTTP ${res.status}`);
   const setCookies = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
   const cookieJar = setCookies.map(c => c.split(';')[0]).filter(Boolean).join('; ');
-  const html = await res.text();
-  const match = html.match(/__REQUEST_TOKEN__\s*=\s*"([^"]+)"/);
-  if (match) return { token: match[1], embedPath, cookieJar };
+  try { await res.body?.cancel(); } catch { /* body already consumed */ }
 
   // Task 64 body — path WITHOUT the /en prefix + embedPlayback, verbatim from
   // the site's inline bootstrap: {"path":"/watch/embed/movie/27205","embedPlayback":true}
-  const tokRes = await fetch(STELLAR_RIP + '/api/request-token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Origin': STELLAR_RIP, 'Referer': STELLAR_RIP + embedPath, 'User-Agent': UA, ...(cookieJar && { Cookie: cookieJar }) },
-    body: JSON.stringify({ path: watchPath, embedPlayback: true }),
-    signal: AbortSignal.timeout(10000),
+  try {
+    const tokRes = await fetch(STELLAR_RIP + '/api/request-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Origin': STELLAR_RIP, 'Referer': STELLAR_RIP + embedPath, 'User-Agent': UA, ...(cookieJar && { Cookie: cookieJar }) },
+      body: JSON.stringify({ path: watchPath, embedPlayback: true }),
+      signal: AbortSignal.timeout(12000),
+    });
+    if (tokRes.ok) {
+      const tokData = await tokRes.json().catch(() => null);
+      const merged = [cookieJar, ...(tokRes.headers.getSetCookie ? tokRes.headers.getSetCookie().map(c => c.split(';')[0]) : [])].filter(Boolean).join('; ');
+      if (tokData && tokData.token) return { token: tokData.token, embedPath, cookieJar: merged };
+    }
+  } catch { /* fall through to the inline-token fallback */ }
+
+  // Fallback: full body read + inline token (Task 41 path, kept for safety).
+  const htmlRes = await fetch(STELLAR_RIP + embedPath, {
+    headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(12000),
   });
-  if (tokRes.ok) {
-    const tokData = await tokRes.json().catch(() => null);
-    const merged = [cookieJar, ...(tokRes.headers.getSetCookie ? tokRes.headers.getSetCookie().map(c => c.split(';')[0]) : [])].filter(Boolean).join('; ');
-    if (tokData && tokData.token) return { token: tokData.token, embedPath, cookieJar: merged };
-  }
+  if (!htmlRes.ok) throw new Error('No __REQUEST_TOKEN__ in embed page and /api/request-token failed');
+  const html = await htmlRes.text();
+  const sc2 = htmlRes.headers.getSetCookie ? htmlRes.headers.getSetCookie().map(c => c.split(';')[0]) : [];
+  const jar2 = [cookieJar, ...sc2].filter(Boolean).join('; ');
+  const match = html.match(/__REQUEST_TOKEN__\s*=\s*"([^"]+)"/);
+  if (match) return { token: match[1], embedPath, cookieJar: jar2 };
   throw new Error('No __REQUEST_TOKEN__ in embed page and /api/request-token failed');
 }
 
@@ -148,7 +167,7 @@ async function getStreamToken(mediaId, mediaType, tvSlug, requestToken, cookieJa
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Origin': STELLAR_RIP, 'Referer': STELLAR_RIP + embedPath, 'User-Agent': UA, ...(cookieJar && { Cookie: cookieJar }) },
     body: JSON.stringify({ mediaId, mediaType, tv_slug: tvSlug || '', requestToken }),
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(15000),
   });
   if (!initRes.ok) throw new Error(`playback-init HTTP ${initRes.status}`);
   const initData = await initRes.json();
@@ -162,7 +181,7 @@ async function getStreamToken(mediaId, mediaType, tvSlug, requestToken, cookieJa
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Origin': STELLAR_RIP, 'Referer': STELLAR_RIP + embedPath, 'User-Agent': UA, ...(cookieJar && { Cookie: cookieJar }) },
     body: JSON.stringify({ mediaId, mediaType, tv_slug: tvSlug || '', requestToken, pow: { challengeId, nonce: String(nonce) } }),
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(15000),
   });
   if (!solveRes.ok) throw new Error(`playback-init solve HTTP ${solveRes.status}`);
   const solveData = await solveRes.json();
@@ -178,7 +197,7 @@ async function resolveSource(mediaId, mediaType, tvSlug, requestToken, streamTok
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Origin': STELLAR_RIP, 'Referer': STELLAR_RIP + embedPath, 'User-Agent': UA, ...(cookieJar && { Cookie: cookieJar }) },
     body: JSON.stringify({ data: { mediaId, mediaType, tv_slug: tvSlug || '', source }, endpoint: 'stream-encrypted', requestToken }),
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(12000),
   });
   if (encRes.status === 429) return { retryAfter: encRes.headers.get('retry-after') };
   if (!encRes.ok) return null;
@@ -188,7 +207,7 @@ async function resolveSource(mediaId, mediaType, tvSlug, requestToken, streamTok
     'requestToken=' + encodeURIComponent(requestToken) + '&token=' + encodeURIComponent(streamToken);
   const streamRes = await fetch(STELLAR_RIP + opaqueUrl, {
     headers: { 'Referer': STELLAR_RIP + embedPath, 'User-Agent': UA },
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(12000),
   });
   if (!streamRes.ok) return null;
   const streamData = await streamRes.json();
@@ -287,48 +306,75 @@ async function getStreams(tmdbId, type, season, episode) {
     const { token: requestToken, embedPath, cookieJar } = await getRequestToken(tmdbId, type, season, episode);
     console.log('[Stellar] Request token acquired');
 
-    const streamToken = await getStreamToken(mediaId, mediaType, tvSlug, requestToken, cookieJar, embedPath);
-    console.log('[Stellar] Stream token acquired');
-
-    const dead = await fetchDeadSources(mediaId, mediaType, tvSlug, cookieJar, embedPath);
+    // Task 82: dead-sources needs ONLY cookies + embedPath — run it in
+    // parallel with the PoW chain instead of after it (saves 2-4s of the
+    // ~32s convergence budget on the degraded site). Best-effort: an empty
+    // set just means a fuller sweep.
+    const chainT0 = Date.now();
+    const [streamToken, dead] = await Promise.all([
+      getStreamToken(mediaId, mediaType, tvSlug, requestToken, cookieJar, embedPath),
+      fetchDeadSources(mediaId, mediaType, tvSlug, cookieJar, embedPath),
+    ]);
+    console.log('[Stellar] Stream token acquired; dead=' + dead.size);
     const servers = SERVERS.filter(s => !dead.has(s.id));
-    console.log('[Stellar] ' + servers.length + '/' + SERVERS.length + ' servers after dead-source skip');
 
     // Paced sweep: the site's own client limits itself to ~6 encrypt calls
-    // per 60s window; 18 sequential would blow the budget, so sweep the
-    // 4K-confirmed order in batches of 6 with one 429-aware retry pass.
+    // per 60s window AND answers "playback-unavailable" (not 429) to clients
+    // it gates — Task 82 live-measured: an 18-encrypt burst @72/min saw every
+    // subsequent encrypt go unavailable, while a single paced call right
+    // before had returned a real stream-OK URL. So the sweep now covers the
+    // 12 best servers (the 4K-confirmed-first order), batches of 6 with a
+    // 3s gap (≈12/min worst case, 3× gentler than before), and starts a new
+    // batch only while there's realistic budget — soft stop (results in
+    // hand) at 24s, hard stop at 29s, both inside the wrapper's 32s race and
+    // the resolver's 35s cutoff.
     const allStreams = [];
     let hit429 = false;
     const BATCH = 6;
-    for (let i = 0; i < servers.length; i += BATCH) {
-      const batch = servers.slice(i, i + BATCH);
+    const SWEEP_CAP = 12;
+    const sweepServers = servers.slice(0, SWEEP_CAP);
+    for (let i = 0; i < sweepServers.length; i += BATCH) {
+      const elapsed = Date.now() - chainT0;
+      if (i > 0 && (allStreams.length > 0 ? elapsed > 24000 : elapsed > 29000)) {
+        console.log('[Stellar] sweep deadline @' + (elapsed / 1000).toFixed(1) + 's — stopping with ' + allStreams.length + ' streams');
+        break;
+      }
+      const batch = sweepServers.slice(i, i + BATCH);
       const settled = await Promise.allSettled(batch.map(async (srv) => {
         const r = await resolveSource(mediaId, mediaType, tvSlug, requestToken, streamToken, srv.id, embedPath, cookieJar);
         return { srv, r };
       }));
+      const hits = [];
       for (const s of settled) {
         if (s.status !== 'fulfilled' || !s.value) continue;
         const { srv, r } = s.value;
         if (!r) continue;
         if (r.retryAfter) { hit429 = true; continue; }
-        const streamUrl = r.streamUrl;
-        const probe = await probeMasterPlaylist(streamUrl, embedPath);
+        hits.push({ srv, streamUrl: r.streamUrl });
+      }
+      // Task 82: probe all playlists in PARALLEL (was sequential per stream —
+      // an 8s timeout each used to serialize 6-18 probes after the sweep).
+      const probes = await Promise.allSettled(hits.map(h =>
+        probeMasterPlaylist(h.streamUrl, embedPath)));
+      hits.forEach((h, k) => {
+        const p = probes[k];
+        const probe = p.status === 'fulfilled' ? p.value : null;
         const quality = probe ? probe.quality : '1080p';
         const resStr = probe && probe.width ? ` ${probe.width}x${probe.height}` : '';
         const is4K = probe && probe.has4K;
-        console.log('[Stellar] + ' + srv.name + ' (' + quality + (is4K ? ' 4K!' : '') + '): ' + streamUrl.slice(0, 60) + '...');
+        console.log('[Stellar] + ' + h.srv.name + ' (' + quality + (is4K ? ' 4K!' : '') + '): ' + h.streamUrl.slice(0, 60) + '...');
         allStreams.push(buildStream({
-          title: `${info.title} [Stellar ${srv.name}${resStr}${is4K ? ' 4K' : ''}]`,
-          url: streamUrl,
+          title: `${info.title} [Stellar ${h.srv.name}${resStr}${is4K ? ' 4K' : ''}]`,
+          url: h.streamUrl,
           quality,
-          serverLabel: srv.name,
-          bingeGroup: `stellar-${srv.id}-${tmdbId}`,
+          serverLabel: h.srv.name,
+          bingeGroup: `stellar-${h.srv.id}-${tmdbId}`,
           referer: STELLAR_RIP + embedPath,
         }));
-      }
+      });
       // one 429 retry pass for the rate-limited servers after a short pause
-      if (hit429 && i + BATCH < servers.length) {
-        await new Promise(r2 => setTimeout(r2, 1500));
+      if (hit429 && i + BATCH < sweepServers.length && (Date.now() - chainT0) < 20000) {
+        await new Promise(r2 => setTimeout(r2, 3000));
         hit429 = false;
       }
     }

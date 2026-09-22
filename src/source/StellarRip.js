@@ -110,8 +110,16 @@ export class StellarRip extends Source {
         // Task 38: bounded retry-on-empty — stellar.rip availability flickers
         // (all servers "unavailable" windows) returned [] and the 60s negative
         // cache then hid the recovery from users.
-        withRetryOnEmpty(() => mod.getStreams(String(tmdbId.id), stellarType, tmdbId.season || null, tmdbId.episode || null), { maxTotalMs: 14000, tag: 'stellarrip' }),
-        new Promise(r => setTimeout(() => r(null), 25000)),
+        // Task 82 retune: the provider's chain now converges inside ~29s
+        // (deadline sweep), so the old 25s race killed batch 1 mid-flight
+        // even when streams existed (site degraded to 8-12s/round-trip on
+        // 09-23; Dune2 encrypt returned a REAL stream-OK URL that the old
+        // budget never lived to collect). Race 32s keeps everything inside
+        // the resolver's 35s cutoff; retry only fires when attempt 1 was
+        // FAST (finished by 26s = healthy site), so a slow-window attempt 2
+        // can never start and get discarded by the race.
+        withRetryOnEmpty(() => mod.getStreams(String(tmdbId.id), stellarType, tmdbId.season || null, tmdbId.episode || null), { attempts: 2, maxTotalMs: 26000, tag: 'stellarrip' }),
+        new Promise(r => setTimeout(() => r(null), 32000)),
       ]);
     } catch (e) {
       console.error(`[stellarrip] error: ${e?.message || e}`);
