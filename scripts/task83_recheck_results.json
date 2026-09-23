@@ -1,0 +1,3659 @@
+[
+ [
+  "4khdhub|movie",
+  [
+   {
+    "id": "4khdhub",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 5,
+    "durationMs": 6371,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:32.645Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "4khdhub|series",
+  [
+   {
+    "id": "4khdhub",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 4,
+    "durationMs": 6478,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:33.544Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "cinefreak|movie",
+  [
+   {
+    "id": "cinefreak",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 6,
+    "durationMs": 8474,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:35.469Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "moviebox|movie",
+  [
+   {
+    "id": "moviebox",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 2580,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:45:36.601Z",
+    "logTail": []
+   },
+   {
+    "id": "moviebox",
+    "cat": "movie",
+    "titleKey": "movie2",
+    "title": "Inception",
+    "rid": "tmdb:27205",
+    "count": 1,
+    "durationMs": 1276,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:50.093Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "moviebox|series",
+  [
+   {
+    "id": "moviebox",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 3,
+    "durationMs": 828,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:36.780Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "cinefreak|series",
+  [
+   {
+    "id": "cinefreak",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 6,
+    "durationMs": 6671,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:39.805Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "watchseries|movie",
+  [
+   {
+    "id": "watchseries",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 11,
+    "durationMs": 2,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:40.274Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "watchseries|series",
+  [
+   {
+    "id": "watchseries",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 11,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:40.739Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "cinewave|series",
+  [
+   {
+    "id": "cinewave",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 28,
+    "durationMs": 3597,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:40.871Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "necro|movie",
+  [
+   {
+    "id": "necro",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 5,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:41.223Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "necro|series",
+  [
+   {
+    "id": "necro",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 5,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:41.350Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vidsrcsbs|movie",
+  [
+   {
+    "id": "vidsrcsbs",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 3,
+    "durationMs": 1,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:41.690Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vidsrcsbs|series",
+  [
+   {
+    "id": "vidsrcsbs",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 3,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:41.832Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vidlink2|movie",
+  [
+   {
+    "id": "vidlink2",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 2,
+    "durationMs": 973,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:43.145Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vidlink2|series",
+  [
+   {
+    "id": "vidlink2",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 3,
+    "durationMs": 1072,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:43.398Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vidking|movie",
+  [
+   {
+    "id": "vidking",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 1,
+    "durationMs": 1,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:43.627Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vidking|series",
+  [
+   {
+    "id": "vidking",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 1,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:43.866Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vidfast|movie",
+  [
+   {
+    "id": "vidfast",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 1,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:44.106Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vidfast|series",
+  [
+   {
+    "id": "vidfast",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 1,
+    "durationMs": 1,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:44.346Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vegamovies|movie",
+  [
+   {
+    "id": "vegamovies",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 1,
+    "durationMs": 1,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:44.587Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vegamovies|series",
+  [
+   {
+    "id": "vegamovies",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 1,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:44.828Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "cinewave|movie",
+  [
+   {
+    "id": "cinewave",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 29,
+    "durationMs": 7731,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:44.835Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "netlio|movie",
+  [
+   {
+    "id": "netlio",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 130,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:45:45.430Z",
+    "logTail": []
+   },
+   {
+    "id": "netlio",
+    "cat": "movie",
+    "titleKey": "movie2",
+    "title": "Inception",
+    "rid": "tmdb:27205",
+    "count": 0,
+    "durationMs": 191,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:49.012Z",
+    "logTail": []
+   },
+   {
+    "id": "netlio",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 316,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:07.756Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "primeshows|movie",
+  [
+   {
+    "id": "primeshows",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 14,
+    "durationMs": 814,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:45.870Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "netlio|series",
+  [
+   {
+    "id": "netlio",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 1,
+    "durationMs": 605,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:46.514Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "animeflix|anime",
+  [
+   {
+    "id": "animeflix",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 0,
+    "durationMs": 2806,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:45:49.145Z",
+    "logTail": []
+   },
+   {
+    "id": "animeflix",
+    "cat": "anime",
+    "titleKey": "an2",
+    "title": "Frieren S2E1",
+    "rid": "tmdb:209867:2:1",
+    "count": 2,
+    "durationMs": 4116,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:52.969Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "primeshows|series",
+  [
+   {
+    "id": "primeshows",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 14,
+    "durationMs": 3929,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:49.245Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "anineko|anime",
+  [
+   {
+    "id": "anineko",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 0,
+    "durationMs": 2269,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:45:49.265Z",
+    "logTail": []
+   },
+   {
+    "id": "anineko",
+    "cat": "anime",
+    "titleKey": "an2",
+    "title": "Frieren S2E1",
+    "rid": "tmdb:209867:2:1",
+    "count": 0,
+    "durationMs": 691,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:50.172Z",
+    "logTail": []
+   },
+   {
+    "id": "anineko",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 0,
+    "durationMs": 1027,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:08.871Z",
+    "logTail": [
+     "[acermovies] rate-limit cooldown — no cached results, honest zero (upstream untouched)",
+     "[err] [MeineCloud] Error fetching https://meinecloud.click/movie/tt10919420: {}",
+     "[err] [AniNeko] Error: No search results found for: JUJUTSU KAISEN"
+    ]
+   }
+  ]
+ ],
+ [
+  "meinecloud|movie",
+  [
+   {
+    "id": "meinecloud",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 5,
+    "durationMs": 479,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:50.225Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "verhdlink|series",
+  [
+   {
+    "id": "verhdlink",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 729,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:45:50.446Z",
+    "logTail": []
+   },
+   {
+    "id": "verhdlink",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 0,
+    "durationMs": 703,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:51.761Z",
+    "logTail": [
+     "[err] [MeineCloud] Error fetching https://meinecloud.click/movie/tt0903747: {}"
+    ]
+   },
+   {
+    "id": "verhdlink",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 277,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:07.755Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "verhdlink|movie",
+  [
+   {
+    "id": "verhdlink",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 4,
+    "durationMs": 998,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:45:50.614Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "meinecloud|series",
+  [
+   {
+    "id": "meinecloud",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 376,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:45:51.104Z",
+    "logTail": [
+     "[err] [MeineCloud] Error fetching https://meinecloud.click/movie/tt10919420: {}"
+    ]
+   },
+   {
+    "id": "meinecloud",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 0,
+    "durationMs": 698,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:51.648Z",
+    "logTail": [
+     "[err] [MeineCloud] Error fetching https://meinecloud.click/movie/tt0903747: {}"
+    ]
+   },
+   {
+    "id": "meinecloud",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 423,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:08.670Z",
+    "logTail": [
+     "[acermovies] rate-limit cooldown — no cached results, honest zero (upstream untouched)",
+     "[err] [MeineCloud] Error fetching https://meinecloud.click/movie/tt10919420: {}"
+    ]
+   }
+  ]
+ ],
+ [
+  "acermovies|series",
+  [
+   {
+    "id": "acermovies",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 864,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:45:51.949Z",
+    "logTail": [
+     "[err] [MeineCloud] Error fetching https://meinecloud.click/movie/tt10919420: {}"
+    ]
+   },
+   {
+    "id": "acermovies",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 0,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:52.347Z",
+    "logTail": [
+     "[acermovies] rate-limit cooldown — no cached results, honest zero (upstream untouched)"
+    ]
+   },
+   {
+    "id": "acermovies",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:09.035Z",
+    "logTail": [
+     "[acermovies] rate-limit cooldown — no cached results, honest zero (upstream untouched)"
+    ]
+   }
+  ]
+ ],
+ [
+  "acermovies|movie",
+  [
+   {
+    "id": "acermovies",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 1340,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:45:52.265Z",
+    "logTail": [
+     "[err] [MeineCloud] Error fetching https://meinecloud.click/movie/tt10919420: {}"
+    ]
+   },
+   {
+    "id": "acermovies",
+    "cat": "movie",
+    "titleKey": "movie2",
+    "title": "Inception",
+    "rid": "tmdb:27205",
+    "count": 0,
+    "durationMs": 1,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:52.162Z",
+    "logTail": [
+     "[acermovies] rate-limit cooldown — no cached results, honest zero (upstream untouched)"
+    ]
+   },
+   {
+    "id": "acermovies",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 1,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:08.564Z",
+    "logTail": [
+     "[acermovies] rate-limit cooldown — no cached results, honest zero (upstream untouched)"
+    ]
+   }
+  ]
+ ],
+ [
+  "streamxtv|movie",
+  [
+   {
+    "id": "streamxtv",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 3,
+    "durationMs": 21483,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:13.090Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "streamxtv|series",
+  [
+   {
+    "id": "streamxtv",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 4,
+    "durationMs": 21564,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:13.996Z",
+    "logTail": [
+     "[StreamXTV]   dragon: Timeout awaiting 'request' for 7000ms",
+     "[StreamXTV] Deadline approaching — stopping after 10 provider(s)"
+    ]
+   }
+  ]
+ ],
+ [
+  "streamxtv|anime-info",
+  [
+   {
+    "id": "streamxtv",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 9,
+    "durationMs": 22917,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:15.666Z",
+    "logTail": [
+     "[StreamXTV]   dragon: Timeout awaiting 'request' for 7000ms",
+     "[StreamXTV] Deadline approaching — stopping after 10 provider(s)"
+    ]
+   }
+  ]
+ ],
+ [
+  "anikoto|anime",
+  [
+   {
+    "id": "anikoto",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 6,
+    "durationMs": 3254,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:16.822Z",
+    "logTail": [
+     "[StreamXTV] Deadline approaching — stopping after 10 provider(s)"
+    ]
+   }
+  ]
+ ],
+ [
+  "anikage|anime",
+  [
+   {
+    "id": "anikage",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 5,
+    "durationMs": 1844,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:16.911Z",
+    "logTail": [
+     "[StreamXTV]   super_pekka: Timeout awaiting 'request' for 7000ms",
+     "[StreamXTV]   dragon: Timeout awaiting 'request' for 7000ms",
+     "[StreamXTV] Deadline approaching — stopping after 10 provider(s)"
+    ]
+   }
+  ]
+ ],
+ [
+  "anibd|anime",
+  [
+   {
+    "id": "anibd",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 1,
+    "durationMs": 851,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:16.998Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "2dhive|anime",
+  [
+   {
+    "id": "2dhive",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 2,
+    "durationMs": 204,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:17.507Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "anidoor|anime",
+  [
+   {
+    "id": "anidoor",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 4,
+    "durationMs": 375,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:17.788Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "nowhdtime|movie",
+  [
+   {
+    "id": "nowhdtime",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 1,
+    "durationMs": 1995,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:19.475Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "nowhdtime|series",
+  [
+   {
+    "id": "nowhdtime",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 2055,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:46:20.042Z",
+    "logTail": []
+   },
+   {
+    "id": "nowhdtime",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 0,
+    "durationMs": 2413,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:55.059Z",
+    "logTail": []
+   },
+   {
+    "id": "nowhdtime",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 9315,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:18.455Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "animegg|anime",
+  [
+   {
+    "id": "animegg",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 4,
+    "durationMs": 1938,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:22.462Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "pantyflix|series",
+  [
+   {
+    "id": "pantyflix",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 16150,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:46:36.112Z",
+    "logTail": []
+   },
+   {
+    "id": "pantyflix",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 0,
+    "durationMs": 15192,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:52:08.143Z",
+    "logTail": []
+   },
+   {
+    "id": "pantyflix",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 1,
+    "durationMs": 8398,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:54:17.762Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "pantyflix|movie",
+  [
+   {
+    "id": "pantyflix",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 2,
+    "durationMs": 18391,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:36.660Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "peckle|movie",
+  [
+   {
+    "id": "peckle",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 9,
+    "durationMs": 14042,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:36.993Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "peckle|series",
+  [
+   {
+    "id": "peckle",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 4,
+    "durationMs": 3946,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:40.551Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "hianime|anime",
+  [
+   {
+    "id": "hianime",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 2,
+    "durationMs": 3400,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:40.554Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "animekai|anime",
+  [
+   {
+    "id": "animekai",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 2,
+    "durationMs": 3382,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:40.858Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "cineby|series",
+  [
+   {
+    "id": "cineby",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 8,
+    "durationMs": 2556,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:43.591Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "cineby|movie",
+  [
+   {
+    "id": "cineby",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 7,
+    "durationMs": 6681,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:47.710Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "cineby|anime-info",
+  [
+   {
+    "id": "cineby",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 6,
+    "durationMs": 6442,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:47.769Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "playimdb|movie",
+  [
+   {
+    "id": "playimdb",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 3,
+    "durationMs": 602,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:48.841Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "playimdb|series",
+  [
+   {
+    "id": "playimdb",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 3,
+    "durationMs": 383,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:49.693Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "movieblast|movie",
+  [
+   {
+    "id": "movieblast",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 3,
+    "durationMs": 1323,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:51.526Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "movieblast|series",
+  [
+   {
+    "id": "movieblast",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 2,
+    "durationMs": 1080,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:53.117Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "zxcstream|movie",
+  [
+   {
+    "id": "zxcstream",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 1,
+    "durationMs": 3432,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:57.054Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "zxcstream|series",
+  [
+   {
+    "id": "zxcstream",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 1,
+    "durationMs": 1728,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:46:59.251Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "animezey|anime",
+  [
+   {
+    "id": "animezey",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 2,
+    "durationMs": 4797,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:47:04.531Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "hindmoviez|movie",
+  [
+   {
+    "id": "hindmoviez",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 16,
+    "durationMs": 23497,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:47:07.569Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "uhdmovies|movie",
+  [
+   {
+    "id": "uhdmovies",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 2630,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:47:07.668Z",
+    "logTail": []
+   },
+   {
+    "id": "uhdmovies",
+    "cat": "movie",
+    "titleKey": "movie2",
+    "title": "Inception",
+    "rid": "tmdb:27205",
+    "count": 0,
+    "durationMs": 1464,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:54.936Z",
+    "logTail": []
+   },
+   {
+    "id": "uhdmovies",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 9187,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:18.712Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "uhdmovies|series",
+  [
+   {
+    "id": "uhdmovies",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:47:08.044Z",
+    "logTail": []
+   },
+   {
+    "id": "uhdmovies",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 0,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:55.437Z",
+    "logTail": []
+   },
+   {
+    "id": "uhdmovies",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:18.636Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "hindmoviez|series",
+  [
+   {
+    "id": "hindmoviez",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 20,
+    "durationMs": 27163,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:47:15.364Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "videasy|movie",
+  [
+   {
+    "id": "videasy",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 6,
+    "durationMs": 10669,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:47:18.827Z",
+    "logTail": [
+     "[warn] [VidEasy] ❌ Error from Helium: HTTP 404",
+     "[warn] [VidEasy] ❌ Error from Aluminium: HTTP 500",
+     "[warn] [VidEasy] ❌ Error from Neon: HTTP 500"
+    ]
+   }
+  ]
+ ],
+ [
+  "videasy|series",
+  [
+   {
+    "id": "videasy",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 5,
+    "durationMs": 11551,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:47:20.102Z",
+    "logTail": [
+     "[warn] [VidEasy] ❌ Error from Helium: HTTP 404",
+     "[warn] [VidEasy] ❌ Error from Aluminium: HTTP 500",
+     "[warn] [VidEasy] ❌ Error from Neon: HTTP 500"
+    ]
+   }
+  ]
+ ],
+ [
+  "anikototv|anime",
+  [
+   {
+    "id": "anikototv",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 2,
+    "durationMs": 1321,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:47:20.614Z",
+    "logTail": [
+     "[warn] [VidEasy] ❌ Error from Oxygen: HTTP 500"
+    ]
+   }
+  ]
+ ],
+ [
+  "animeworldindia|movie",
+  [
+   {
+    "id": "animeworldindia",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 295,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:47:20.901Z",
+    "logTail": []
+   },
+   {
+    "id": "animeworldindia",
+    "cat": "movie",
+    "titleKey": "movie2",
+    "title": "Inception",
+    "rid": "tmdb:27205",
+    "count": 0,
+    "durationMs": 212,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:55.744Z",
+    "logTail": []
+   },
+   {
+    "id": "animeworldindia",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 132,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:19.095Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "animeworldindia|series",
+  [
+   {
+    "id": "animeworldindia",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 142,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:47:21.262Z",
+    "logTail": []
+   },
+   {
+    "id": "animeworldindia",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 0,
+    "durationMs": 164,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:56.085Z",
+    "logTail": []
+   },
+   {
+    "id": "animeworldindia",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 53,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:19.185Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "itachi|anime",
+  [
+   {
+    "id": "itachi",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 14,
+    "durationMs": 1393,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:47:23.149Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "videasy|anime-info",
+  [
+   {
+    "id": "videasy",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 5,
+    "durationMs": 11314,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:47:27.144Z",
+    "logTail": [
+     "[warn] [VidEasy] ❌ Error from Aluminium: HTTP 500",
+     "[warn] [VidEasy] ❌ Error from Neon: HTTP 500",
+     "[warn] [VidEasy] ❌ Error from Oxygen: HTTP 500"
+    ]
+   }
+  ]
+ ],
+ [
+  "imdbplay|movie",
+  [
+   {
+    "id": "imdbplay",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 1,
+    "durationMs": 3742,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:47:27.395Z",
+    "logTail": [
+     "[warn] [VidEasy] ❌ Error from Oxygen: HTTP 500"
+    ]
+   }
+  ]
+ ],
+ [
+  "imdbplay|anime-info",
+  [
+   {
+    "id": "imdbplay",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 1,
+    "durationMs": 3060,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:47:51.168Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "raflix|movie",
+  [
+   {
+    "id": "raflix",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 1,
+    "durationMs": 1681,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:47:59.451Z",
+    "logTail": [
+     "[raflix] CinePro resolution failed: fetch failed"
+    ]
+   }
+  ]
+ ],
+ [
+  "imdbplay|series",
+  [
+   {
+    "id": "imdbplay",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 3149,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:48:00.851Z",
+    "logTail": [
+     "[raflix] CinePro resolution failed: fetch failed"
+    ]
+   },
+   {
+    "id": "imdbplay",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 1,
+    "durationMs": 2721,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:58.969Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "raflix|anime-info",
+  [
+   {
+    "id": "raflix",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 0,
+    "durationMs": 517,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:48:01.850Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "hindmovie|movie",
+  [
+   {
+    "id": "hindmovie",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 2,
+    "durationMs": 11201,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:48:13.861Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "raflix|series",
+  [
+   {
+    "id": "raflix",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 13698,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:48:13.881Z",
+    "logTail": []
+   },
+   {
+    "id": "raflix",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 1,
+    "durationMs": 1178,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:57.762Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "animesdigital|anime",
+  [
+   {
+    "id": "animesdigital",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 2,
+    "durationMs": 16702,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:48:14.366Z",
+    "logTail": [
+     "[raflix] CinePro resolution failed: fetch failed",
+     "[raflix] VidStorm resolution failed: This operation was aborted"
+    ]
+   }
+  ]
+ ],
+ [
+  "hindmovie|series",
+  [
+   {
+    "id": "hindmovie",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 2,
+    "durationMs": 4779,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:48:19.125Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "hindmovie|anime-info",
+  [
+   {
+    "id": "hindmovie",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 0,
+    "durationMs": 23590,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:48:37.946Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "rivestream|movie",
+  [
+   {
+    "id": "rivestream",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 35003,
+    "http": 200,
+    "timedOut": true,
+    "error": null,
+    "sig": "timeout(35s)",
+    "at": "2026-09-23T05:48:54.117Z",
+    "logTail": []
+   },
+   {
+    "id": "rivestream",
+    "cat": "movie",
+    "titleKey": "movie2",
+    "title": "Inception",
+    "rid": "tmdb:27205",
+    "count": 11,
+    "durationMs": 29798,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:52:28.034Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "rivestream|anime-info",
+  [
+   {
+    "id": "rivestream",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 18,
+    "durationMs": 18094,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:48:56.549Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "rivestream|series",
+  [
+   {
+    "id": "rivestream",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 16,
+    "durationMs": 19574,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:48:57.523Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "reanime|anime",
+  [
+   {
+    "id": "reanime",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 3,
+    "durationMs": 3799,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:48:58.398Z",
+    "logTail": [
+     "[reanime] curl transport: HTTP 403 for https://reanime.to/api/flix/113415/1 — trying got-scraping",
+     "[reanime] node transport: HTTP 403 for https://flixcloud.cc/e/daeomiul3z2p?v=2 — trying got-scraping",
+     "[reanime] node transport: HTTP 403 for https://flixcloud.cc/api/m3u8/73a71aac8917d4dda955501c — trying got-scraping"
+    ]
+   }
+  ]
+ ],
+ [
+  "desiflix|movie",
+  [
+   {
+    "id": "desiflix",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 7,
+    "durationMs": 23535,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:49:20.571Z",
+    "logTail": [
+     "[reanime] node transport: HTTP 403 for https://flixcloud.cc/e/daeomiul3z2p?v=2 — trying got-scraping"
+    ]
+   }
+  ]
+ ],
+ [
+  "persianstremio|movie",
+  [
+   {
+    "id": "persianstremio",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 24680,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:49:23.559Z",
+    "logTail": [
+     "[err] [PersianStremio] fetch failed: https://persianstremio.vercel.app/stream/movie/tt15239678.json -> Timeout 12000ms"
+    ]
+   },
+   {
+    "id": "persianstremio",
+    "cat": "movie",
+    "titleKey": "movie2",
+    "title": "Inception",
+    "rid": "tmdb:27205",
+    "count": 0,
+    "durationMs": 17509,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:52:16.982Z",
+    "logTail": []
+   },
+   {
+    "id": "persianstremio",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 12784,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:54:31.981Z",
+    "logTail": [
+     "[err] [PersianStremio] fetch failed: https://persianstremio.vercel.app/stream/movie/tt15239678.json -> Timeout 12000ms"
+    ]
+   }
+  ]
+ ],
+ [
+  "anichan|anime",
+  [
+   {
+    "id": "anichan",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 9,
+    "durationMs": 1271,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:49:25.311Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "animesuge|anime",
+  [
+   {
+    "id": "animesuge",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 1,
+    "durationMs": 2249,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:49:28.039Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "desiflix|series",
+  [
+   {
+    "id": "desiflix",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 5,
+    "durationMs": 34933,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:49:32.939Z",
+    "logTail": [
+     "[ReAnime] FlixCloud: fetching /api/m3u8/187261403d5eb92e2adb5e0d",
+     "[reanime] node transport: HTTP 403 for https://flixcloud.cc/api/m3u8/187261403d5eb92e2adb5e0d — trying got-scraping"
+    ]
+   }
+  ]
+ ],
+ [
+  "animotvslash|anime",
+  [
+   {
+    "id": "animotvslash",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 2,
+    "durationMs": 5941,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:49:34.462Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "bollyflix|series",
+  [
+   {
+    "id": "bollyflix",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 4,
+    "durationMs": 7713,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:49:42.659Z",
+    "logTail": [
+     "[BollyFlix] Extracted 4 download links from post",
+     "[BollyFlix] Extracted 7 download links from post"
+    ]
+   }
+  ]
+ ],
+ [
+  "bollyflix|movie",
+  [
+   {
+    "id": "bollyflix",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 5,
+    "durationMs": 9307,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:49:42.729Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "fourkhdhubone|movie",
+  [
+   {
+    "id": "fourkhdhubone",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 5,
+    "durationMs": 720,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:49:43.847Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "fourkhdhubone|series",
+  [
+   {
+    "id": "fourkhdhubone",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 4,
+    "durationMs": 2352,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:49:45.570Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "persianstremio|series",
+  [
+   {
+    "id": "persianstremio",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 25595,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:49:46.660Z",
+    "logTail": [
+     "[err] [PersianStremio] fetch failed: https://persianstremio.vercel.app/stream/movie/tt15239678.json -> Timeout 12000ms"
+    ]
+   },
+   {
+    "id": "persianstremio",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 0,
+    "durationMs": 12761,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:52:21.385Z",
+    "logTail": [
+     "[err] [PersianStremio] fetch failed: https://persianstremio.vercel.app/stream/movie/tt1375666.json -> Timeout 12000ms"
+    ]
+   },
+   {
+    "id": "persianstremio",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 1049,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:20.639Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "cinejoyaio|movie",
+  [
+   {
+    "id": "cinejoyaio",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 3,
+    "durationMs": 1398,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:49:48.549Z",
+    "logTail": [
+     "[CineJoy] Downloaded fresh crush.wasm (67222 bytes)"
+    ]
+   }
+  ]
+ ],
+ [
+  "cinejoyaio|series",
+  [
+   {
+    "id": "cinejoyaio",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 3,
+    "durationMs": 326,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:49:49.347Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "nikastream|anime",
+  [
+   {
+    "id": "nikastream",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 14,
+    "durationMs": 19315,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:50:09.149Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "cinebyrocks|movie",
+  [
+   {
+    "id": "cinebyrocks",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 3,
+    "durationMs": 5620,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:50:15.241Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "cinebyrocks|series",
+  [
+   {
+    "id": "cinebyrocks",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 3,
+    "durationMs": 2388,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:50:18.100Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "framextv|movie",
+  [
+   {
+    "id": "framextv",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 33396,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:50:18.947Z",
+    "logTail": [
+     "[err] [PersianStremio] fetch failed: https://persianstremio.vercel.app/stream/series/tt10919420:1:1.json -> Timeout 12000ms"
+    ]
+   },
+   {
+    "id": "framextv",
+    "cat": "movie",
+    "titleKey": "movie2",
+    "title": "Inception",
+    "rid": "tmdb:27205",
+    "count": 0,
+    "durationMs": 33101,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:52:50.587Z",
+    "logTail": [
+     "[err] [PersianStremio] fetch failed: https://persianstremio.vercel.app/stream/series/tt0903747:1:1.json -> Timeout 12000ms"
+    ]
+   },
+   {
+    "id": "framextv",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 39480,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:59.162Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "framextv|series",
+  [
+   {
+    "id": "framextv",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 33100,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:50:19.349Z",
+    "logTail": [
+     "[err] [PersianStremio] fetch failed: https://persianstremio.vercel.app/stream/series/tt10919420:1:1.json -> Timeout 12000ms"
+    ]
+   },
+   {
+    "id": "framextv",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 0,
+    "durationMs": 33979,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:52:55.849Z",
+    "logTail": [
+     "[RiveStream]   pulse: error timeout"
+    ]
+   },
+   {
+    "id": "framextv",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 38011,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:54:59.164Z",
+    "logTail": [
+     "[err] [PersianStremio] fetch failed: https://persianstremio.vercel.app/stream/movie/tt15239678.json -> Timeout 12000ms"
+    ]
+   }
+  ]
+ ],
+ [
+  "cinebyrocks|anime-info",
+  [
+   {
+    "id": "cinebyrocks",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 3,
+    "durationMs": 5280,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:50:23.852Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "stellarrip|movie",
+  [
+   {
+    "id": "stellarrip",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 19848,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:50:39.294Z",
+    "logTail": []
+   },
+   {
+    "id": "stellarrip",
+    "cat": "movie",
+    "titleKey": "movie2",
+    "title": "Inception",
+    "rid": "tmdb:27205",
+    "count": 0,
+    "durationMs": 13439,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:52:41.972Z",
+    "logTail": [
+     "[Stellar] Stream token acquired; dead=0",
+     "[Stellar] Stream token acquired; dead=0"
+    ]
+   },
+   {
+    "id": "stellarrip",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 17106,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:54:49.571Z",
+    "logTail": [
+     "[Stellar] Stream token acquired; dead=0"
+    ]
+   }
+  ]
+ ],
+ [
+  "stellarrip|series",
+  [
+   {
+    "id": "stellarrip",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 23534,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:50:43.370Z",
+    "logTail": []
+   },
+   {
+    "id": "stellarrip",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 0,
+    "durationMs": 8819,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:52:51.258Z",
+    "logTail": [
+     "[Stellar] Stream token acquired; dead=0",
+     "[FrameX]   electro_wizard: Timeout awaiting 'request' for 7000ms",
+     "[Stellar] Stream token acquired; dead=0"
+    ]
+   },
+   {
+    "id": "stellarrip",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 15105,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:55:05.162Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "stellarrip|anime-info",
+  [
+   {
+    "id": "stellarrip",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 0,
+    "durationMs": 20027,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:50:45.080Z",
+    "logTail": [
+     "[Stellar] Stream token acquired; dead=0",
+     "[FrameX] Deadline approaching — stopping after 10 provider(s)",
+     "[Stellar] Stream token acquired; dead=0"
+    ]
+   }
+  ]
+ ],
+ [
+  "stellar|movie",
+  [
+   {
+    "id": "stellar",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 2,
+    "durationMs": 5407,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:50:46.064Z",
+    "logTail": [
+     "[Stellar] Stream token acquired; dead=0"
+    ]
+   }
+  ]
+ ],
+ [
+  "stellar|series",
+  [
+   {
+    "id": "stellar",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 1,
+    "durationMs": 9338,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:50:53.177Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "stellar|anime-info",
+  [
+   {
+    "id": "stellar",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 1,
+    "durationMs": 9634,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:50:55.385Z",
+    "logTail": [
+     "[Stellar]   Astra failed: Resolve HTTP 404"
+    ]
+   }
+  ]
+ ],
+ [
+  "hdhub4uv2|movie",
+  [
+   {
+    "id": "hdhub4uv2",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 5,
+    "durationMs": 14497,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:01.676Z",
+    "logTail": [
+     "[Stellar]   Orbit failed: Resolve HTTP 404",
+     "[Stellar]   Astra failed: Resolve HTTP 404"
+    ]
+   }
+  ]
+ ],
+ [
+  "movieshuntv2|movie",
+  [
+   {
+    "id": "movieshuntv2",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 6,
+    "durationMs": 7587,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:03.837Z",
+    "logTail": [
+     "[MoviesHunt] Found 1 download links",
+     "[HDHub4u] + 1080p 8.7GB: https://pixeldrain.com/api/file/negn6f?download"
+    ]
+   }
+  ]
+ ],
+ [
+  "movieshuntv2|series",
+  [
+   {
+    "id": "movieshuntv2",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 1,
+    "durationMs": 5105,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:07.253Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "hdhub4uv2|series",
+  [
+   {
+    "id": "hdhub4uv2",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 34,
+    "durationMs": 16146,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:09.811Z",
+    "logTail": [
+     "[Stellar]   Orbit failed: Resolve HTTP 404",
+     "[Stellar]   Astra failed: Resolve HTTP 404"
+    ]
+   }
+  ]
+ ],
+ [
+  "moviesdrivev2|movie",
+  [
+   {
+    "id": "moviesdrivev2",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 4,
+    "durationMs": 9774,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:14.084Z",
+    "logTail": [
+     "[MoviesHunt] Found 11 download links",
+     "[MoviesDrive] Best match: Download Dune: Part Two (2024) AMZN WEB-DL Dual Audio {Hindi (https://new4.moviesdrive.christmas/dune-part-two-2024/)",
+     "[MoviesDrive] Found 7 download link(s)"
+    ]
+   }
+  ]
+ ],
+ [
+  "vegamovies2|series",
+  [
+   {
+    "id": "vegamovies2",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 2,
+    "durationMs": 4645,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:19.233Z",
+    "logTail": [
+     "[VegaMovies] Best match: Download Squid Game: The Challenge (Season 1 - 2) [S02E09 Ad (/download-squid-game-the-challenge-hindi-english-series-480p-720p-1080p-web-dl/)"
+    ]
+   }
+  ]
+ ],
+ [
+  "vegamovies2|movie",
+  [
+   {
+    "id": "vegamovies2",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 4,
+    "durationMs": 8950,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:19.304Z",
+    "logTail": [
+     "[VegaMovies] Best match: Download Dune: Part Two (2024) Dual Audio {Hindi-English} 48 (/download-dune-part-two-2024-hindi-dubbed-org-5-1-english-480p-720p-1080p-2160p-4k-sdr-web-dl/)",
+     "[MoviesDrive]   ✓ Resolved: https://video-downloads.googleusercontent.com/ADGPM2lJ-Jv2suUKkkCkqw5-6FI7VYHTYJ...",
+     "[MoviesDrive]   ✓ GDrive: https://video-downloads.googleusercontent.com/ADGPM2lJ-Jv2suUKkkCkqw5-6FI7VYHTYJ..."
+    ]
+   }
+  ]
+ ],
+ [
+  "cinehdplus|movie",
+  [
+   {
+    "id": "cinehdplus",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 1039,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:20.747Z",
+    "logTail": []
+   },
+   {
+    "id": "cinehdplus",
+    "cat": "movie",
+    "titleKey": "movie2",
+    "title": "Inception",
+    "rid": "tmdb:27205",
+    "count": 0,
+    "durationMs": 1972,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:52:53.063Z",
+    "logTail": []
+   },
+   {
+    "id": "cinehdplus",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 902,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:55:00.646Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vidzee|movie",
+  [
+   {
+    "id": "vidzee",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 2,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:21.554Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vidzee|series",
+  [
+   {
+    "id": "vidzee",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 2,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:22.034Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vixsrc|movie",
+  [
+   {
+    "id": "vixsrc",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 1,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:22.522Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "cinehdplus|series",
+  [
+   {
+    "id": "cinehdplus",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 1,
+    "durationMs": 2967,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:22.748Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "vixsrc|series",
+  [
+   {
+    "id": "vixsrc",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 1,
+    "durationMs": 0,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:23.013Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "allwish|anime",
+  [
+   {
+    "id": "allwish",
+    "cat": "anime",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 2,
+    "durationMs": 5268,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:28.497Z",
+    "logTail": [
+     "[warn] [VidEasy] ❌ Error from Titanium: HTTP 404",
+     "[warn] [VidEasy] ❌ Error from Helium: HTTP 404",
+     "[warn] [VidEasy] ❌ Error from Neon: HTTP 500"
+    ]
+   }
+  ]
+ ],
+ [
+  "videasyto|movie",
+  [
+   {
+    "id": "videasyto",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 6,
+    "durationMs": 8308,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:31.795Z",
+    "logTail": [
+     "[warn] [VidEasy] ❌ Error from Titanium: HTTP 404",
+     "[warn] [VidEasy] ❌ Error from Helium: HTTP 404",
+     "[warn] [VidEasy] ❌ Error from Neon: HTTP 500"
+    ]
+   }
+  ]
+ ],
+ [
+  "kmmovies|movie",
+  [
+   {
+    "id": "kmmovies",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 4481,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:51:36.770Z",
+    "logTail": [
+     "[KMMovies] Search \"Dune: Part Two\" → 1 results, picked: dune-part-two-2024-dual-audio-hindi-english-download-2160p-bluray",
+     "[KMMovies] Found: Dune Part Two 2024 Dual Audio Hindi English Download 2160p Bluray → https://kmmovies.rest/dune-part-two-2024-dual-audio-hindi-english-download-2160p-bluray/",
+     "[KMMovies] 0 stream(s) total (0 playable, 0 download-only)"
+    ]
+   },
+   {
+    "id": "kmmovies",
+    "cat": "movie",
+    "titleKey": "movie2",
+    "title": "Inception",
+    "rid": "tmdb:27205",
+    "count": 0,
+    "durationMs": 5520,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:52:57.249Z",
+    "logTail": []
+   },
+   {
+    "id": "kmmovies",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 0,
+    "durationMs": 5798,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:55:05.446Z",
+    "logTail": [
+     "[KMMovies] Search \"Dune: Part Two\" → 1 results, picked: dune-part-two-2024-dual-audio-hindi-english-download-2160p-bluray",
+     "[KMMovies] Found: Dune Part Two 2024 Dual Audio Hindi English Download 2160p Bluray → https://kmmovies.rest/dune-part-two-2024-dual-audio-hindi-english-download-2160p-bluray/"
+    ]
+   }
+  ]
+ ],
+ [
+  "videasyto|series",
+  [
+   {
+    "id": "videasyto",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 5,
+    "durationMs": 8365,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:37.346Z",
+    "logTail": [
+     "[warn] [VidEasy] ❌ Error from Titanium: HTTP 404",
+     "[warn] [VidEasy] ❌ Error from Neon: HTTP 500",
+     "[warn] [VidEasy] ❌ Error from Oxygen: The operation was aborted due to timeout"
+    ]
+   }
+  ]
+ ],
+ [
+  "moviesdrivev2|series",
+  [
+   {
+    "id": "moviesdrivev2",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 2,
+    "durationMs": 30204,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:37.957Z",
+    "logTail": [
+     "[HDHub4u] + 2160p: https://video-downloads.googleusercontent.com/ADGPM2nAFMG9tQjFQ1qY9Mqh",
+     "[HDHub4u] + 2160p: https://video-downloads.googleusercontent.com/ADGPM2nJhbilt3Wi0rvwCv8F",
+     "[HDHub4u] + 2160p: https://video-downloads.googleusercontent.com/ADGPM2mj-5MteRRpYn06CI_s"
+    ]
+   }
+  ]
+ ],
+ [
+  "kmmovies|series",
+  [
+   {
+    "id": "kmmovies",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 2454,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "conn-fail",
+    "at": "2026-09-23T05:51:39.699Z",
+    "logTail": [
+     "[warn] [VidEasy] ❌ Error from Oxygen: The operation was aborted due to timeout"
+    ]
+   },
+   {
+    "id": "kmmovies",
+    "cat": "series",
+    "titleKey": "ser2",
+    "title": "Breaking Bad S1E1",
+    "rid": "tmdb:1396:1:1",
+    "count": 0,
+    "durationMs": 2699,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:52:56.263Z",
+    "logTail": [
+     "[KMMovies] Search \"Inception\" → 1 results, picked: inception-2010-dual-audio-hindi-english-download-4k-uhd-bluray-remux-web-dl-dovi",
+     "[KMMovies] Found: Inception 2010 Dual Audio Hindi English Download 4k Uhd Bluray Remux Web Dl Dovi → https://kmmovies.rest/inception-2010-dual-audio-hindi-english-download-4k-uhd-bluray-remux-web-dl-dovi/"
+    ]
+   },
+   {
+    "id": "kmmovies",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 0,
+    "durationMs": 5015,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "clean-zero",
+    "at": "2026-09-23T05:55:06.281Z",
+    "logTail": [
+     "[KMMovies] Search \"Dune: Part Two\" → 1 results, picked: dune-part-two-2024-dual-audio-hindi-english-download-2160p-bluray",
+     "[KMMovies] Found: Dune Part Two 2024 Dual Audio Hindi English Download 2160p Bluray → https://kmmovies.rest/dune-part-two-2024-dual-audio-hindi-english-download-2160p-bluray/"
+    ]
+   }
+  ]
+ ],
+ [
+  "atlantic|movie",
+  [
+   {
+    "id": "atlantic",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 1,
+    "durationMs": 2131,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:39.963Z",
+    "logTail": [
+     "[MoviesDrive] ⏱ Resolve deadline (14000ms) — delivering 2/3 resolved chain(s)"
+    ]
+   }
+  ]
+ ],
+ [
+  "atlantic|series",
+  [
+   {
+    "id": "atlantic",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 1,
+    "durationMs": 1608,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:40.057Z",
+    "logTail": [
+     "[Atlantic] gate[b] bootstrap unavailable (gate bootstrap HTTP 403) — unsigned fallback",
+     "[Atlantic] gate[a] bootstrap unavailable (gate bootstrap HTTP 403) — unsigned fallback"
+    ]
+   }
+  ]
+ ],
+ [
+  "atlantic|anime-info",
+  [
+   {
+    "id": "atlantic",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 1,
+    "durationMs": 722,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:40.904Z",
+    "logTail": [
+     "[Atlantic] gate[b] bootstrap unavailable (gate bootstrap HTTP 403) — unsigned fallback",
+     "[Atlantic] gate[a] bootstrap unavailable (gate bootstrap HTTP 403) — unsigned fallback",
+     "[Atlantic] getStreams done: 1 cards in 720ms (deadline 10500ms)"
+    ]
+   }
+  ]
+ ],
+ [
+  "movielinkbd|movie",
+  [
+   {
+    "id": "movielinkbd",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 2,
+    "durationMs": 5243,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:45.675Z",
+    "logTail": [
+     "[Atlantic] getStreams done: 1 cards in 720ms (deadline 10500ms)"
+    ]
+   }
+  ]
+ ],
+ [
+  "movielinkbd|anime-info",
+  [
+   {
+    "id": "movielinkbd",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 2,
+    "durationMs": 4522,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:45.898Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "antarctica|series",
+  [
+   {
+    "id": "antarctica",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 50,
+    "durationMs": 969,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:47.352Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "movielinkbd|series",
+  [
+   {
+    "id": "movielinkbd",
+    "cat": "series",
+    "titleKey": "ser1",
+    "title": "Squid Game S1E1",
+    "rid": "tmdb:93405:1:1",
+    "count": 2,
+    "durationMs": 6914,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:47.448Z",
+    "logTail": [
+     "[Atlantic] getStreams done: 1 cards in 720ms (deadline 10500ms)"
+    ]
+   }
+  ]
+ ],
+ [
+  "antarctica|movie",
+  [
+   {
+    "id": "antarctica",
+    "cat": "movie",
+    "titleKey": "movie1",
+    "title": "Dune: Part Two",
+    "rid": "tmdb:693134",
+    "count": 50,
+    "durationMs": 1322,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:47.543Z",
+    "logTail": []
+   }
+  ]
+ ],
+ [
+  "antarctica|anime-info",
+  [
+   {
+    "id": "antarctica",
+    "cat": "anime-info",
+    "titleKey": "an1",
+    "title": "Jujutsu Kaisen S1E1",
+    "rid": "tmdb:95479:1:1",
+    "count": 50,
+    "durationMs": 524,
+    "http": 200,
+    "timedOut": false,
+    "error": null,
+    "sig": "ok",
+    "at": "2026-09-23T05:51:48.347Z",
+    "logTail": []
+   }
+  ]
+ ]
+]
