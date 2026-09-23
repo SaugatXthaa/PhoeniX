@@ -54,7 +54,7 @@ const FETCH_TIMEOUT_MS = 15000;       // per-HTTP-request cap (prod measured cha
 const CHAIN_TIMEOUT_MS = 20000;       // per-release multi-hop cap
 const SWEEP_SOFT_MS = 22000;          // stop launching new chains after this
 const MAX_POSTS = 2;                  // top-scoring posts to mine
-const MAX_RELEASES = 5;               // sid chains to resolve in parallel
+const MAX_RELEASES = 4;               // sid chains to resolve in parallel
 
 function log(m) { console.log(`[${PROVIDER_NAME}] ${m}`); }
 function err(m) { console.error(`[${PROVIDER_NAME}] ${m}`); }
@@ -382,7 +382,17 @@ async function getStreams(tmdbId, type, _season, _episode, meta) {
     const postHtmls = await Promise.allSettled(postPages.map(async p => {
       const s = createSession();
       const res = await s.fetchDoc(p, { headers: { Referer: 'https://uhdmovies.my/' } });
-      return res.status === 200 ? res.body : '';
+      let html = res.status === 200 ? res.body : '';
+      // Task 84g: under merged load the site serves degraded post pages
+      // (0 release anchors). One in-place refetch absorbs it WITHOUT burning
+      // a whole wrapper attempt (re-search + re-post under burst cost ~20s
+      // and left the chains no window before the 35s source cap).
+      if (!extractReleases(html).length) {
+        await new Promise(r => setTimeout(r, 700));
+        const res2 = await s.fetchDoc(p, { headers: { Referer: 'https://uhdmovies.my/' } });
+        if (res2.status === 200 && extractReleases(res2.body).length) html = res2.body;
+      }
+      return html;
     }));
     let releases = [];
     for (const ph of postHtmls) {
@@ -397,7 +407,7 @@ async function getStreams(tmdbId, type, _season, _episode, meta) {
     // Task 84d: stagger launches 250ms — merged bursts trip site-side rate limits
     const settled = await Promise.allSettled(batch.map(async (rel, i) => {
       if (i && Date.now() - t0 > SWEEP_SOFT_MS) return null; // soft sweep stop
-      if (i) await new Promise(r => setTimeout(r, 250 * i));
+      if (i) await new Promise(r => setTimeout(r, 150 * i));
       const deadline = new Promise(r => setTimeout(r, CHAIN_TIMEOUT_MS, null));
       const work = resolveRelease(rel, meta).catch(e => { err(`release resolve: ${e.message}`); return null; });
       return Promise.race([work, deadline]);
