@@ -50,9 +50,9 @@ const BROWSER_HEADERS = {
   'Cache-Control': 'max-age=0',
   'Upgrade-Insecure-Requests': '1',
 };
-const FETCH_TIMEOUT_MS = 12000;       // per-HTTP-request cap
-const CHAIN_TIMEOUT_MS = 16000;       // per-release multi-hop cap
-const SWEEP_SOFT_MS = 21000;          // stop launching new chains after this
+const FETCH_TIMEOUT_MS = 15000;       // per-HTTP-request cap (prod measured chains 3-8s/hop; 12s aborted 3/5 chains)
+const CHAIN_TIMEOUT_MS = 20000;       // per-release multi-hop cap
+const SWEEP_SOFT_MS = 22000;          // stop launching new chains after this
 const MAX_POSTS = 2;                  // top-scoring posts to mine
 const MAX_RELEASES = 5;               // sid chains to resolve in parallel
 
