@@ -254,14 +254,55 @@ function extractMagiclinks(html) {
 // ─── Resolve magiclinks page → stream URLs ────────────────────────────────
 // Returns array of { url, source, playable } where playable=true means
 // the URL is a direct playable stream (no captcha/auth needed).
+//
+// Task 84: EGRESS RELAY. magiclinks.lol's CF challenges Render + CF-worker
+// egress ranges (matrix: test.cors.workers.dev 429, allorigins/codetabs 522,
+// jina challenge-forwarded, cors.lol/eu 429) but ACCEPTS Google's egress:
+// the w3.magiclinks.lol page fetched via translate.goog returns 200 with the
+// original download links intact (rewritten into
+// translate.google.com/website?...&u=<real> params — unwrapped below).
+// Sandbox DC egress works direct, so direct stays the fast path and the
+// relay only engages on a challenge/short page.
+function translateGoogUrl(url) {
+  const u = new URL(url);
+  const host = u.hostname.replace(/-/g, '--').replace(/\./g, '-');
+  return `https://${host}.translate.goog${u.pathname}${u.search || ''}?_x_tr_sl=auto&_x_tr_tl=en&_x_tr_hl=en`;
+}
+function unwrapGoogleWebsiteLinks(html) {
+  // href="https://translate.google.com/website?sl=auto&amp;tl=en&amp;hl=en&amp;u=https://pixeldrain.com/u/ID"
+  // (&amp; entity form appears verbatim in the proxied markup)
+  return String(html || '').replace(
+    /https:\/\/translate\.google\.com\/website\?[^"'>]*?&(?:amp;)?u=([^&"'>]+)/gi,
+    (m, u) => { try { return decodeURIComponent(u); } catch { return u; } }
+  );
+}
+function isCfChallengeHtml(html) {
+  return /Just a moment|challenge-platform|cf-browser-verification|cf_chl_/i.test(String(html || ''));
+}
 async function resolveMagiclinks(magiclinksUrl) {
-  const html = await fetchText(magiclinksUrl, { headers: { Referer: KMMOVIES_BASE + '/' } });
+  let html = '';
+  try {
+    html = await fetchText(magiclinksUrl, { headers: { Referer: KMMOVIES_BASE + '/' } });
+  } catch (e) { /* fall through to relay */ }
+  if (isCfChallengeHtml(html) || /pixeldrain\.com\/u\/|kmphotos\.cv|hubcloud\.[a-z.]+\/drive/i.test(html) === false) {
+    // direct hit the CF verdict (or an empty/JS-shell page) — retry via Google egress
+    try {
+      const relayed = await fetchText(translateGoogUrl(magiclinksUrl), {
+        headers: { Referer: KMMOVIES_BASE + '/', 'Accept': 'text/html' },
+        timeout: 20000,
+      });
+      const unwrapped = unwrapGoogleWebsiteLinks(relayed);
+      if (unwrapped && !isCfChallengeHtml(unwrapped) && /pixeldrain\.com\/u\/|kmphotos\.cv|hubcloud\.[a-z.]+\/drive/i.test(unwrapped)) {
+        html = unwrapped;
+      }
+    } catch (e) { /* keep original html */ }
+  }
   // Task 65: CF verdict propagation. magiclinks.lol answers datacenter egress
   // (Render) with the "Just a moment..." challenge page — HTTP 200/403 HTML
   // with zero link matches. Throwing a flagged error lets getStreams abort the
   // WHOLE batch loop on the first verdict instead of burning 20+ fetches ×
   // the got h2→h1 ladder on links that will all be challenged identically.
-  if (/Just a moment|challenge-platform|cf-browser-verification|cf_chl_/i.test(html)) {
+  if (isCfChallengeHtml(html)) {
     const err = new Error('CF_CHALLENGE');
     err.cfGated = true;
     throw err;
