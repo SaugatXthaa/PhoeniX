@@ -96,13 +96,28 @@ function stripTags(html) {
 }
 
 // ── TMDB metadata ────────────────────────────────────────────────────────────
+// Task 84d: merged resolves burst 40+ sources at TMDB simultaneously —
+// single-shot metadata fetches failed under that burst and the empty result
+// hit the 60s negative cache every round (isolated probes always worked).
+// Retry ×3 with backoff + key rotation breaks the loop.
+async function tmdbGet(path) {
+  const keys = [TMDB_API_KEY, SITE_SECRETS.TMDB_SECONDARY, SITE_SECRETS.TMDB_TERTIARY].filter(Boolean);
+  let lastErr = null;
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const res = await fetch(`${TMDB_URL}${path}${path.includes('?') ? '&' : '?'}api_key=${keys[i]}`, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (res.ok) return await res.json();
+      lastErr = new Error(`TMDB HTTP ${res.status}`);
+    } catch (e) { lastErr = e; }
+    await new Promise(r => setTimeout(r, 250 * (i + 1)));
+  }
+  throw lastErr || new Error('TMDB failed');
+}
 async function fetchMetadata(tmdbId) {
-  const res = await fetch(`${TMDB_URL}/movie/${tmdbId}?api_key=${TMDB_API_KEY}`, {
-    headers: { 'User-Agent': UA, Accept: 'application/json' },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`TMDB HTTP ${res.status}`);
-  const j = await res.json();
+  const j = await tmdbGet(`/movie/${tmdbId}`);
   return {
     title: j.title || j.original_title || '',
     originalTitle: j.original_title || '',
@@ -376,8 +391,10 @@ async function getStreams(tmdbId, type, _season, _episode) {
     log(`found ${releases.length} release(s)`);
     // 4K first (extractReleases already sorts) — resolve in parallel with a soft sweep
     const batch = releases.slice(0, MAX_RELEASES);
+    // Task 84d: stagger launches 250ms — merged bursts trip site-side rate limits
     const settled = await Promise.allSettled(batch.map(async (rel, i) => {
       if (i && Date.now() - t0 > SWEEP_SOFT_MS) return null; // soft sweep stop
+      if (i) await new Promise(r => setTimeout(r, 250 * i));
       const deadline = new Promise(r => setTimeout(r, CHAIN_TIMEOUT_MS, null));
       const work = resolveRelease(rel, meta).catch(e => { err(`release resolve: ${e.message}`); return null; });
       return Promise.race([work, deadline]);
