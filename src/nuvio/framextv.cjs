@@ -79,10 +79,10 @@ const ALL_PROVIDERS = [
 const SWEEP_DEADLINE_MS = 22000;
 const BATCH_SIZE = 5;
 const BATCH_DELAY_MS = 500;
-// 7s per attempt: the API normally answers in 1-3s; worst batch (attempt +
-// 1.5s backoff + retry) stays ≈15.5s, so a batch that starts before the
-// deadline always finishes before the source-level 25s timeout race.
-const REQUEST_TIMEOUT_MS = 7000;
+// 8s per attempt (Task 84: got-first, 1 retry — worst batch ≈17.5s; batch 0
+// always completes before the 22s deadline and the source-level 33s race).
+// StreamXTV's identical sweep answers in 1-7s per provider from prod.
+const REQUEST_TIMEOUT_MS = 8000;
 const REQUEST_RETRIES = 1; // one retry per provider (2 attempts total)
 const MAX_SUBTITLES = 20;  // deduped by language
 
@@ -97,33 +97,27 @@ async function getGs() {
   return _gs;
 }
 
-// Fetch JSON with retry — the API is rate-limited, so transient 5xx/timeouts
-// are retried with a short backoff. Throws on hard failure (the sweep loop
-// treats per-provider failures as non-fatal via Promise.allSettled).
+// Task 84: transport order RE-FLIPPED back to got-scraping first — the Task 65
+// flip is stale. Prod evidence (Task 83 audit + Task 84 probes): streamxtv.cjs
+// (SAME api.framextv.tech backend, got-first) delivers 3-9 cards in ~21s from
+// Render egress while framextv (fetch-first) timed out every provider at 7s
+// ("Timeout awaiting 'request'") — plain undici fetch is the transport that
+// tarpits on Render for this API now, and the old fallback cascade
+// (fetch 7s ×2 + got 7s ×2 = up to 31s per provider) burned the whole sweep
+// budget on batch 0 → "Deadline approaching — stopping after 5 provider(s)"
+// → count 0 at 33s. got-first + one retry = the exact streamxtv config that
+// works from prod (worst case 15.5s per provider, batch 0 always completes).
 async function fetchJson(url, timeout = REQUEST_TIMEOUT_MS, retries = REQUEST_RETRIES) {
   const headers = {
     'User-Agent': UA,
     'Accept': 'application/json',
+    // Task 84: mirror streamxtv's header set — streamxtv sends a same-site
+    // Referer and gets through; header-order/Referer may factor into the
+    // API's per-IP throttling decisions.
+    'Referer': 'https://framextv.tech/',
   };
   let lastErr;
-  // Task 65: transport order FLIPPED — plain fetch first. api.framextv.tech
-  // sits behind NO CF challenge (measured from Render egress: native undici
-  // 200 in 357ms), while the got-scraping Chrome-JA3 batch gets tarpit-hung
-  // there (5 parallel requests > 7s ×2 attempts each → the whole 14s deadline
-  // burned on batch 1 → "stopping after 5 provider(s)" → 0 streams). Same
-  // lesson as zokoanime in Task 64: the browser-grade transport is the one
-  // failing on datacenter egress for un-protected APIs.
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const r = await fetch(url, { headers, signal: AbortSignal.timeout(timeout) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return await r.json();
-    } catch (e) {
-      lastErr = e;
-      if (attempt < retries) await sleep(1500 * (attempt + 1));
-    }
-  }
-  // Fallback: got-scraping (browser TLS fingerprint class)
+  // Primary: got-scraping (browser TLS fingerprint) — proven from Render egress
   const gs = await getGs();
   if (gs) {
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -136,6 +130,21 @@ async function fetchJson(url, timeout = REQUEST_TIMEOUT_MS, retries = REQUEST_RE
         });
         if (res.statusCode !== 200) throw new Error(`HTTP ${res.statusCode}`);
         return JSON.parse(res.body);
+      } catch (e) {
+        lastErr = e;
+        if (attempt < retries) await sleep(1500 * (attempt + 1));
+      }
+    }
+  }
+  // Fallback: plain fetch — ONLY when got-scraping is unavailable (module
+  // failed to load). NOT on got timeouts: undici fetch tarpits from Render
+  // for this API (Task 84 evidence), cascading doubles the burned budget.
+  if (!gs) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const r = await fetch(url, { headers, signal: AbortSignal.timeout(timeout) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return await r.json();
       } catch (e) {
         lastErr = e;
         if (attempt < retries) await sleep(1500 * (attempt + 1));
