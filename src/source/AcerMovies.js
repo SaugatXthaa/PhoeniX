@@ -58,6 +58,11 @@ const RESULT_CACHE_MAX = 200;
 // retried into; ACER_RELAY_BASE env override exists for rotation.
 const RELAY_BASE = process.env.ACER_RELAY_BASE || 'https://test.cors.workers.dev/?';
 const RELAY_TIMEOUT_MS = 12000;
+// Task 84b: the public relay is itself rate-limited at the CF edge (measured:
+// 429 HTML block page after a burst of relayed calls, from ANY client IP).
+// After a relay 429, pause relay attempts for 90s — the cooldown resolve
+// path already retries on empty and would otherwise hammer the relay.
+const RELAY_COOLDOWN_MS = 90 * 1000;
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -111,6 +116,7 @@ export class AcerMovies extends Source {
     this.ttl = 3600000; // 1h — sourceUrl is short-lived but Stremio caches the resolved URL
     this._cooldownUntil = 0;   // rate-limit circuit: no upstream calls before this ts
     this._resultCache = new Map(); // cacheKey -> { results, at } — 429 fallback
+    this._relayCooldownUntil = 0; // Task 84b: relay's own CF-edge rate limit
   }
 
   // Task 81: the Fetcher throws TooManyRequestsError on 429; the previous
@@ -143,7 +149,11 @@ export class AcerMovies extends Source {
         }
       }
     }
-    // Relay path (cooldown active, or direct just 429'd)
+    // Relay path (cooldown active, or direct just 429'd) — paced: after a
+    // relay 429 we back off 90s instead of hammering the shared demo worker.
+    if (Date.now() < this._relayCooldownUntil) {
+      throw new Error('relay in cooldown (own rate limit)');
+    }
     const relayUrl = RELAY_BASE + directUrl.toString();
     try {
       const resp = await fetch(relayUrl, {
@@ -152,7 +162,13 @@ export class AcerMovies extends Source {
         body,
         signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
       });
-      if (!resp.ok) throw new Error(`relay HTTP ${resp.status}`);
+      if (!resp.ok) {
+        if (resp.status === 429) {
+          this._relayCooldownUntil = Date.now() + RELAY_COOLDOWN_MS;
+          throw new Error(`relay rate-limited (pausing ${RELAY_COOLDOWN_MS / 1000}s)`);
+        }
+        throw new Error(`relay HTTP ${resp.status}`);
+      }
       return await resp.text();
     } catch (e) {
       console.log(`[acermovies] relay ${path} failed: ${e?.message || e}`);

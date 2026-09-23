@@ -71,13 +71,14 @@ const ALL_PROVIDERS = [
 // callNuvioProvider timeout (25s) so partial results are returned instead
 // of being discarded by the timeout race (StreamResolver kills sources at
 // 35s and TMDB/anime lookups consume a few seconds before this runs).
-const SWEEP_DEADLINE_MS = 22000;
+// Task 84: deadline 22s→26s + per-attempt 7s→9s — the shared sweep (framextv
+// now delegates here) halves the API load, and prod probes still show 7s
+// timeouts on slow providers (Task 84 logs); 9s×2 ≈ 19.5s worst batch, batch
+// stop-check at 18s keeps everything inside the source-level 33s race.
+const SWEEP_DEADLINE_MS = 26000;
 const BATCH_SIZE = 5;
 const BATCH_DELAY_MS = 500;
-// 7s per attempt: the API normally answers in 1-3s; worst batch (attempt +
-// 1.5s backoff + retry) stays ≈15.5s, so a batch that starts before the
-// deadline always finishes before the source-level 25s timeout race.
-const REQUEST_TIMEOUT_MS = 7000;
+const REQUEST_TIMEOUT_MS = 9000;
 const REQUEST_RETRIES = 1; // one retry per provider (2 attempts total)
 const MAX_SUBTITLES = 20;  // deduped by language; mirrors addon's multi-sub philosophy
 
@@ -311,4 +312,29 @@ async function getStreams(tmdbId, type, season, episode) {
   return allStreams;
 }
 
-module.exports = { getStreams, normalizeQuality, ALL_PROVIDERS, API_BASE };
+// Task 84: shared sweep cache — framextv.cjs DELEGATES to this module (both
+// hit the same api.framextv.tech backend with the same provider params), so
+// one 20-provider sweep serves both sources instead of two competing sweeps
+// (40 near-parallel requests from one IP — measured to trip the API's burst
+// throttle from Render egress). 90s TTL: fresh for a user refresh cycle,
+// short enough to track the API's minute-scale flap windows. In-flight
+// promise dedup: a merged request that runs both sources in the same wave
+// waits on ONE sweep. Failures clear the cache so the next request retries.
+const SWEEP_CACHE_TTL = 90 * 1000;
+let _sweep = { key: null, at: 0, promise: null };
+
+function getStreamsShared(tmdbId, type, season, episode) {
+  const key = `${tmdbId}|${type}|${season || ''}|${episode || ''}`;
+  const now = Date.now();
+  if (_sweep.key === key && now - _sweep.at < SWEEP_CACHE_TTL && _sweep.promise) {
+    return _sweep.promise;
+  }
+  const promise = getStreams(tmdbId, type, season, episode).catch((e) => {
+    if (_sweep.promise === promise) _sweep = { key: null, at: 0, promise: null };
+    throw e;
+  });
+  _sweep = { key, at: now, promise };
+  return promise;
+}
+
+module.exports = { getStreams: getStreamsShared, getStreamsRaw: getStreams, normalizeQuality, ALL_PROVIDERS, API_BASE };

@@ -216,7 +216,44 @@ function mapSubtitles(rawSubs) {
 // Signature matches the other nuvio provider modules:
 //   getStreams(tmdbId, mediaType, season, episode) → [{ name, title, url,
 //   quality, type, headers, subtitles, audioTracks, behaviorHints }]
+// Task 84: SWEEP-SHARING DELEGATION. framextv and streamxtv hit the SAME
+// api.framextv.tech backend with the same provider param set. Running two
+// independent 20-provider sweeps per title = 40 near-parallel requests from
+// one IP, which trips the API's burst throttle from Render egress (measured:
+// framextv alone delivered 1/20 providers even after the Task 84 transport
+// flip). This module now DELEGATES to streamxtv.cjs's shared-sweep getStreams
+// (module-level 90s result cache + in-flight dedup — one sweep serves both
+// sources) and re-labels the returned streams to FrameX branding. FrameX.js
+// enrichment (audio markers, WEB-DL/HEVC/HDR tags) still runs on top. The
+// local sweep code below is kept only as a fallback if the delegation import
+// fails, so the module degrades to independent behavior instead of breaking.
 async function getStreams(tmdbId, type, season, episode) {
+  try {
+    const sxtv = require('./streamxtv.cjs');
+    if (sxtv && typeof sxtv.getStreams === 'function') {
+      const shared = await sxtv.getStreams(String(tmdbId), type, season, episode);
+      const relabeled = (Array.isArray(shared) ? shared : []).map((s) => ({
+        ...s,
+        name: typeof s.name === 'string' ? s.name.replace(/StreamXTV/g, 'FrameX') : s.name,
+        title: typeof s.title === 'string' ? s.title.replace(/StreamXTV/g, 'FrameX') : s.title,
+        behaviorHints: {
+          ...(s.behaviorHints || {}),
+          bingeGroup: typeof s.behaviorHints?.bingeGroup === 'string'
+            ? s.behaviorHints.bingeGroup.replace(/^streamxtv-/, 'framextv-')
+            : s.behaviorHints?.bingeGroup,
+        },
+      }));
+      console.log(`[FrameX] delegated to shared StreamXTV sweep: ${relabeled.length} stream(s)`);
+      return relabeled;
+    }
+  } catch (e) {
+    console.log(`[FrameX] delegation unavailable (${String(e?.message || e).slice(0, 60)}) — running own sweep`);
+  }
+  return ownSweep(tmdbId, type, season, episode);
+}
+
+// Original independent sweep (fallback path — see getStreams above).
+async function ownSweep(tmdbId, type, season, episode) {
   // FrameX API only supports 'movie' and 'tv' types.
   // Anime is handled as type=tv (anime IS TV on TMDB).
   tmdbId = String(tmdbId);
