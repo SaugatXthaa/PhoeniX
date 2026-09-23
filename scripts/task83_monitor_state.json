@@ -1,0 +1,214 @@
+{
+  "rounds": [
+    {
+      "round": 1,
+      "at": "2026-09-23T05:11:49.404Z",
+      "st": {
+        "title": "Dune2",
+        "cards": 0,
+        "ms": 16918,
+        "reported": 16264,
+        "cachedResp": false
+      },
+      "local": null,
+      "acer": {
+        "title": "Inception",
+        "cards": 0,
+        "ms": 4751,
+        "cooldown": true,
+        "samples": []
+      }
+    },
+    {
+      "round": 2,
+      "at": "2026-09-23T05:14:41.078Z",
+      "st": {
+        "title": "Inception",
+        "cards": 0,
+        "ms": 24777,
+        "reported": 24238,
+        "cachedResp": false
+      },
+      "local": {
+        "title": "Inception",
+        "cards": 0
+      },
+      "acer": {
+        "title": "Dune2",
+        "cards": 0,
+        "ms": 207,
+        "cooldown": true,
+        "samples": []
+      }
+    },
+    {
+      "round": 3,
+      "at": "2026-09-23T05:15:58.100Z",
+      "st": {
+        "title": "Dune2",
+        "cards": 0,
+        "ms": 7850,
+        "reported": 7604,
+        "cachedResp": false
+      },
+      "local": null,
+      "acer": {
+        "title": "Interstellar",
+        "cards": 0,
+        "ms": 510,
+        "cooldown": true,
+        "samples": []
+      }
+    },
+    {
+      "round": 4,
+      "at": "2026-09-23T05:18:36.466Z",
+      "st": {
+        "title": "Inception",
+        "cards": 0,
+        "ms": 12208,
+        "reported": 11998,
+        "cachedResp": false
+      },
+      "local": {
+        "title": "Inception",
+        "cards": 6,
+        "samples": [
+          {
+            "name": "Stellar - Sirius",
+            "quality": "1080p"
+          },
+          {
+            "name": "Stellar - Procyon",
+            "quality": "1080p"
+          }
+        ],
+        "probes": [
+          {
+            "label": "local-Inception",
+            "name": "Stellar - Sirius",
+            "quality": "1080p",
+            "master": 200,
+            "variants": [
+              "1920x1080",
+              "1280x720",
+              "640x360"
+            ],
+            "variant": 200,
+            "segments": 889,
+            "media": 206,
+            "magic": "MPEG-TS",
+            "verdict": "PLAYABLE"
+          },
+          {
+            "label": "local-Inception",
+            "name": "Stellar - Procyon",
+            "quality": "1080p",
+            "master": 200,
+            "variants": [
+              "1920x800",
+              "1280x534",
+              "640x266"
+            ],
+            "variant": 200,
+            "segments": 1776,
+            "media": 200,
+            "magic": "MPEG-TS",
+            "verdict": "PLAYABLE"
+          }
+        ]
+      },
+      "acer": {
+        "title": "Endgame",
+        "cards": 0,
+        "ms": 625,
+        "cooldown": true,
+        "samples": []
+      }
+    },
+    {
+      "round": 5,
+      "at": "2026-09-23T05:19:17.834Z",
+      "st": {
+        "title": "Dune2",
+        "cards": 0,
+        "ms": 27856,
+        "reported": 27592,
+        "cachedResp": false
+      },
+      "local": null,
+      "acer": {
+        "title": "Oppenheimer",
+        "cards": 0,
+        "ms": 515,
+        "cooldown": true,
+        "samples": []
+      }
+    },
+    {
+      "round": 6,
+      "at": "2026-09-23T05:22:16.208Z",
+      "st": {
+        "title": "Inception",
+        "cards": 0,
+        "ms": 16167,
+        "reported": 15949,
+        "cachedResp": false
+      },
+      "local": {
+        "title": "Inception",
+        "cards": 5,
+        "samples": [
+          {
+            "name": "Stellar - Sirius",
+            "quality": "1080p"
+          },
+          {
+            "name": "Stellar - Betelgeuse",
+            "quality": "1080p"
+          }
+        ],
+        "probes": [
+          {
+            "label": "local-Inception",
+            "name": "Stellar - Sirius",
+            "quality": "1080p",
+            "master": 200,
+            "variants": [
+              "1920x1080",
+              "1280x720",
+              "640x360"
+            ],
+            "variant": 200,
+            "segments": 889,
+            "media": 206,
+            "magic": "MPEG-TS",
+            "verdict": "PLAYABLE"
+          },
+          {
+            "label": "local-Inception",
+            "name": "Stellar - Betelgeuse",
+            "quality": "1080p",
+            "master": 200,
+            "variants": [
+              "1920x800",
+              "1280x532"
+            ],
+            "variant": 200,
+            "segments": 2223,
+            "media": 206,
+            "magic": "unknown",
+            "verdict": "unknown-magic"
+          }
+        ]
+      },
+      "acer": {
+        "title": "Godfather",
+        "cards": 0,
+        "ms": 1491,
+        "cooldown": true,
+        "samples": []
+      }
+    }
+  ]
+}
