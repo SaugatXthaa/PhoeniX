@@ -123,7 +123,7 @@ export class UHDMovies extends Source {
       // ~15s bad window where BOTH attempts failed → 0 cards → 60s negative
       // cache amplified it (user-visible "uhdmovies not returning streams").
       // A 3rd attempt inside the same 30s budget rides out the window.
-      streams = await withRetryOnEmpty(() => mod.getStreams(tmdbId.id, 'movie', null, null), { attempts: 3, maxTotalMs: 30000, tag: 'uhdmovies' });
+      streams = await withRetryOnEmpty(() => mod.getStreams(tmdbId.id, 'movie', null, null, { title: name, year: String(year || '') }), { attempts: 3, maxTotalMs: 30000, tag: 'uhdmovies' });
     } catch (e) {
       console.error(`[uhdmovies] getStreams error: ${e?.message || e}`);
       return [];

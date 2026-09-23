@@ -364,14 +364,17 @@ function buildDropdownMetadata(meta, release, fileUrl) {
 const _resultCache = new Map(); // tmdbId -> { ts, streams }
 const RESULT_TTL_MS = 10 * 60 * 1000;
 
-async function getStreams(tmdbId, type, _season, _episode) {
+async function getStreams(tmdbId, type, _season, _episode, meta) {
   if (!tmdbId || type !== 'movie') return [];
   const cached = _resultCache.get(tmdbId);
   if (cached && Date.now() - cached.ts < RESULT_TTL_MS) return cached.streams;
   const t0 = Date.now();
   try {
     log(`looking up movie ${tmdbId}`);
-    const meta = await fetchMetadata(tmdbId);
+    // Task 84e: the wrapper already resolved title+year — prefer it. Under
+    // merged load the provider-side TMDB call joined a 40-source burst that
+    // 429'd the shared community keys and zeroed the source every round.
+    meta = (meta && meta.title) ? meta : await fetchMetadata(tmdbId);
     if (!meta.title) { log('TMDB returned no title'); return []; }
     const postPages = (await findMoviePages(meta)).slice(0, MAX_POSTS);
     if (!postPages.length) { log(`no result for ${meta.title}`); return []; }
