@@ -48,9 +48,9 @@ const NUVIO_SOURCE_IDS = new Set([
   'cineby', 'hindmoviez',
   'movies4u', 'playimdb',
   // Batch 2: videasy, anikototv, animesalt,
-  // animeworldindia, animesdigital
+  // animesdigital (animeworldindia REMOVED 2026-09 — dead upstream, user request)
   'videasy', 'anikototv',
-  'animesalt', 'animeworldindia', 'animesdigital',
+  'animesalt', 'animesdigital',
   // AniChan — anime sub+dub HLS via AniList ID + anichan.net API
   'anichan',
   // ZinkMovies — movies/series via gemma416okl.com API, HLS on rasta428jem.com
@@ -137,11 +137,8 @@ const NUVIO_SOURCE_IDS = new Set([
   //   - imdbplay: returns ALREADY-PROXIED self /proxy URLs (ctx.hostUrl) —
   //     NuvioExtractor's no-Referer passthrough ships them unchanged
   //     (mirrors 'playimdb', which was already in this set)
-  //   - stellarrip: stellar.rip CDN (cdn.reallyfast.ch / *.workers.dev) is
-  //     Origin-gated — meta.nuvioReferer/nuvioOrigin (set by the source)
-  //     route its HLS through /proxy with whole-tree auth, exactly like
-  //     'stellar' (which was already in this set)
-  'imdbplay', 'stellarrip',
+  //   (stellarrip was in this set — REMOVED 2026-09, dead upstream)
+  'imdbplay',
   // animotvslash — anime hardsub/softsub via animotvslash.org (Task 28).
   //   Streams: rumble.com HLS (Referer: animotvslash.org), videas.fr HLS
   //   (Origin-gated, INVERTED hotlink gate — 403 WITH Referer; ships

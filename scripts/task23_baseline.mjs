@@ -214,7 +214,9 @@ async function runChecks(child, logFile, bootLines) {
   // Task 58: 70 → 71 — MovieLinkBD (movielinkbd.net RE: WP API + KiteCloud)
   // Task 66: 71 → 72 — MovieBlast re-port (orig parity; Task 19 had deleted it)
   // Task 77: 72 → 73 — Antarctica (comet.feels.legal + TorBox debrid cache)
-  check('boot source count = 73', srcM && srcM[1] === '73', `got ${srcM?.[1]}`);
+  // Task 85: 73 → 70 — animeworldindia + anineko + stellarrip removed
+  //   (user request; evidence-locked dead upstreams, Task 83/84)
+  check('boot source count = 70', srcM && srcM[1] === '70', `got ${srcM?.[1]}`);
   // Task 25: 30 → 31 — VidZee extractor registered (ported file existed but
   // was never wired into createExtractors; vidzee source shipped 0 streams).
   // Task 28: 31 → 32 — MixDrop extractor (verhdlink mixdrop mirrors → direct MP4)
@@ -230,6 +232,9 @@ async function runChecks(child, logFile, bootLines) {
   // Task 50: dahmermovies + dahmermovies4k removed (user request) — must not
   // appear in the registry NOR leak into any catalog stream title/url.
   check('no dahmermovies/dahmermovies4k in registry', !ids.includes('dahmermovies') && !ids.includes('dahmermovies4k'));
+  // Task 85: animeworldindia + anineko + stellarrip removed (user request,
+  // evidence-locked dead upstreams) — must not reappear in the registry.
+  check('no animeworldindia/anineko/stellarrip in registry', !ids.includes('animeworldindia') && !ids.includes('anineko') && !ids.includes('stellarrip'));
 
   // crash-class errors in boot log (upstream fetch noise during warmup excluded)
   const crashy = bootLines.split('\n').filter(l => /Cannot find module|SyntaxError|ReferenceError|TypeError|failed to load scraper/i.test(l));

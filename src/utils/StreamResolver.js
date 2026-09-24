@@ -511,7 +511,7 @@ const WAVE2_SOURCE_IDS = new Set([
 const BACKGROUND_ONLY_SOURCE_IDS = new Set([
   // never land within the 15s budget (measured) or known-dead upstreams;
   // run last so their slots don't starve the race — results still cache
-  'stellarrip',     // PoW 22.8s + upstream content drought
+  // (stellarrip was here — REMOVED 2026-09, dead upstream, user request)
   // cinejoyaio REMOVED Task 47: fixed upstream migration (api.wing.st),
   // measured ~2s cold with 2160p — promoted to wave-0 (WAVE1_SOURCE_ORDER)
   // desiflix REMOVED Task 59: promoted to wave-2 (measured 23-32s, lands
@@ -522,13 +522,11 @@ const BACKGROUND_ONLY_SOURCE_IDS = new Set([
   'verhdlink', 'movix',
 ]);
 const ANIME_ONLY_SOURCE_IDS = new Set([
-  'animeflix', 'anineko', 'anikoto', 'anikage', 'anibd', '2dhive',
+  'animeflix', 'anikoto', 'anikage', 'anibd', '2dhive',
   'anidoor', 'animegg', 'hianime', 'animekai', 'animesdigital',
   'itachi', 'anikototv', 'animezey', 'animotvslash',
   'allwish', 'animesuge', 'reanime', 'nikastream', 'anichan',
-  // animeworldindia REMOVED Task 68: source now serves movies too
-  // (anime movies on watchanimeworld.one) and resolves in ~5-8s measured
-  // — unclassified placement (wave 100) lands both types in-request.
+  // (anineko + animeworldindia REMOVED 2026-09 — dead upstreams, user request)
 ]);
 // Task 69: anime-only sources are episode-scrapers — on MOVIE requests
 // they are guaranteed zero-yield (production-measured: all 21 returned 0

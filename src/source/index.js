@@ -3,7 +3,6 @@
 
 import { CineWave } from './CineWave.js';
 import { AnimeFlix } from './AnimeFlix.js';
-import { AniNeko } from './AniNeko.js';
 import { AcerMovies } from './AcerMovies.js';
 import { FrameX } from './FrameX.js';
 import { CineJoyAllInOne } from './CineJoyAllInOne.js';
@@ -14,8 +13,6 @@ import { CinebyRocks } from './CinebyRocks.js';
 // atlantic.st — movies/TV/anime via Aphrodite (signed CDN) + Artemis (Orbit 4K
 //   / Nova anime) with granite+natsuki subtitles (Task 48 reverse engineering)
 import { Atlantic } from './Atlantic.js';
-// stellar.rip — movies/TV/anime via 19-server PoW API (direct HLS, up to 4K)
-import { StellarRip } from './StellarRip.js';
 // stellar.gdn — movies/TV/anime via PoW + AES-GCM API (direct HLS, up to 4K)
 import { Stellar } from './Stellar.js';
 // HDHub4u v2 — movies/TV via new5.hdhub4u.cl sitemap search (up to 4K)
@@ -80,7 +77,6 @@ import { UHDMovies } from './UHDMovies.js';
 // Nuvio provider sources — Batch 2 (each has its own dedicated source file)
 import { VidEasy } from './VidEasy.js';
 import { AnikotoTV } from './AnikotoTV.js';
-import { AnimeWorldIN } from './AnimeWorldIN.js';
 import { AnimesDigital } from './AnimesDigital.js';
 // itachi.tv — anime-only sub+dub via VidHawk REST API + MegaPlay fallback
 //   VidHawk: 3 servers × 2 audio = 6 HLS streams + English VTT subtitles
@@ -153,8 +149,8 @@ export const createSources = (fetcher) => {
     new Netlio(fetcher),
     // anime
     new AnimeFlix(fetcher),
-    // Three dead-upstream sources removed 2026-09 — see git history
-    new AniNeko(fetcher),
+    // anineko REMOVED 2026-09 (user request): upstream platform dead —
+    // nekovault.online DB routes refuse all connections (Task 83/84 evidence).
     // AL
     // ES / MX
     new VerHdLink(fetcher),
@@ -215,9 +211,8 @@ export const createSources = (fetcher) => {
     new VidEasy(fetcher),
     // anikototv — anime-only sub+dub (megap.akirax.buzz, Referer: megaplay.buzz)
     new AnikotoTV(fetcher),
-    // animeworldindia — anime+cartoon series & anime movies (watchanimeworld.one,
-    // play.zephyrix.org multi-audio HLS 240p→1080p; Task 68 re-RE)
-    new AnimeWorldIN(fetcher),
+    // animeworldindia REMOVED 2026-09 (user request): infrastructure closed to
+    // every reachable egress (sandbox 522 / Render 403 / zephyrix dead / no mirror).
     // animesdigital — anime-only (cdn.imagesskill.com, Portuguese sub/dub)
     new AnimesDigital(fetcher),
     // itachi.tv — anime-only sub+dub via VidHawk REST API + MegaPlay fallback
@@ -253,8 +248,9 @@ export const createSources = (fetcher) => {
     new NikaStream(fetcher),
     // cineby.rocks — movies/TV/anime via VidRock API (8 servers, direct m3u8/mp4, up to 4K)
     new CinebyRocks(fetcher),
-    // stellar.rip — movies/TV/anime via 19-server PoW API (direct HLS, up to 4K)
-    new StellarRip(fetcher),
+    // stellarrip REMOVED 2026-09 (user request): stellar.rip gates the
+    // stream-encrypted step by egress-IP class incl. every prod-reachable exit
+    // (Task 82/83 A/B evidence: relay PoW-session-bound to issuing IP).
     // stellar.gdn — movies/TV/anime via PoW + AES-GCM (direct HLS, up to 4K)
     new Stellar(fetcher),
     // HDHub4u v2 — movies/TV via new5.hdhub4u.cl sitemap search (up to 4K)
