@@ -453,14 +453,8 @@ const WAVE1_SOURCE_ORDER = [
   // Measured 2.5-3.2s cold (Inception/Dune2 2160p, Frieren S1E1 1080p).
   // 4K-capable + fast → wave-0 4K group.
   'atlantic',      // 1-4 @2.5-3.2s cold incl 2160p (Orbit/Aphrodite)
-  // Task 77: antarctica (comet.feels.legal + TorBox debrid cache) — measured
-  // 1.4-2.3s TOTAL scrape (328 raw → 50 ranked cards; TMDB→IMDB + animation
-  // lookup included), the fastest non-embed source in the registry, and the
-  // most 4K-capable (2160p REMUX up to 4320p). Registered last = starved to
-  // 0 cards in every throttled merged round (the Task 66 wave-0-last class).
-  // 4K-capable + fast → wave-0 4K group, same placement logic as
-  // cinefreak/cinejoyaio/atlantic. No existing entries moved.
-  'antarctica',    // 50 @1.4-2.3s cold incl 2160p REMUX (TorBox cache)
+  // (antarctica was here — REMOVED 2026-09, user request, source deleted;
+  //  was the wave-0 50-card TorBox-cache source)
   // Task 70: desiflix wave-2 → wave-0 tail (see the Task 70 block above).
   'desiflix',      // 23-32s chain — early start puts the finish in-budget
   // Task 71: hindmoviez promoted medium → wave-0 tail. Isolated 16 cards

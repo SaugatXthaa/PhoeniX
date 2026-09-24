@@ -148,12 +148,7 @@ const NUVIO_SOURCE_IDS = new Set([
   //   as animesuge). Without joining this set every URL matched NO extractor
   //   and was silently dropped at StreamResolver's extraction stage.
   'animotvslash',
-  // antarctica — Task 77: comet.feels.legal (TorBox debrid cache) direct MKVs.
-  //   Extension-less /playback/<hash>/<idx> URLs, NO Referer (UA only) →
-  //   no-Referer branch ships them DIRECT (player's own IP; 206 Range from
-  //   sandbox). Without joining this set every card matched NO extractor
-  //   and was silently dropped (Task 25 failure class).
-  'antarctica',
+  // (antarctica was here — REMOVED 2026-09, user request, source deleted)
 ]);
 
 // Detect if URL is clearly HLS (m3u8 file or /playlist path)

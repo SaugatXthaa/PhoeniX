@@ -111,11 +111,8 @@ import { KMMovies } from './KMMovies.js';
 //   KiteCloud host resolved to DIRECT googleusercontent MKV (up to 1080p
 //   upstream, dual/multi embedded audio, Task 58 reverse engineering)
 import { MovieLinkBD } from './MovieLinkBD.js';
-// Antarctica — movies/series via comet.feels.legal (Comet fork) over the
-//   TorBox debrid cache. cachedOnly + enableTorrent:false ⇒ HTTPS-only direct
-//   MKVs (no magnets). Up to 8K, deterministic non-expiring playback URLs.
-//   Task 77.
-import { Antarctica } from './Antarctica.js';
+// antarctica REMOVED 2026-09 (user request) — comet.feels.legal + TorBox
+//   debrid source deleted entirely (see git history, Task 85).
 // ─── Orphan sources (complete but never registered — batch add) ───
 // All verified as complete with unique source IDs. Some use Nuvio scrapers,
 // others use got-scraping or this.fetcher directly.
@@ -283,8 +280,6 @@ export const createSources = (fetcher) => {
     // googleusercontent MKV via KiteCloud (dual/multi embedded audio,
     // embedded ESub, up to 1080p upstream — Task 58)
     new MovieLinkBD(fetcher),
-    // antarctica — movies/series via comet.feels.legal + TorBox debrid cache
-    // (HTTPS-only cached direct MKVs, up to 8K, no magnets — Task 77)
-    new Antarctica(fetcher),
+    // antarctica REMOVED 2026-09 (user request) — source + provider deleted.
   ].filter(source => !disabledSources.includes(source.id));
 };

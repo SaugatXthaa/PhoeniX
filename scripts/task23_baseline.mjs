@@ -216,7 +216,9 @@ async function runChecks(child, logFile, bootLines) {
   // Task 77: 72 → 73 — Antarctica (comet.feels.legal + TorBox debrid cache)
   // Task 85: 73 → 70 — animeworldindia + anineko + stellarrip removed
   //   (user request; evidence-locked dead upstreams, Task 83/84)
-  check('boot source count = 70', srcM && srcM[1] === '70', `got ${srcM?.[1]}`);
+  // Task 85c: 70 → 69 — antarctica removed (user request; source + provider
+  //   deleted, was the wave-0 50-card TorBox-cache source)
+  check('boot source count = 69', srcM && srcM[1] === '69', `got ${srcM?.[1]}`);
   // Task 25: 30 → 31 — VidZee extractor registered (ported file existed but
   // was never wired into createExtractors; vidzee source shipped 0 streams).
   // Task 28: 31 → 32 — MixDrop extractor (verhdlink mixdrop mirrors → direct MP4)
@@ -228,13 +230,15 @@ async function runChecks(child, logFile, bootLines) {
   // only anidb/flystream must stay absent.
   const srcLine = bootLines.match(/Sources: \d+ \(([^)]*)\)/)?.[1] || '';
   const ids = srcLine.split(',').map(s => s.trim());
-  check('movieblast re-ported (Task 66) + antarctica (Task 77) + no anidb/flystream in registry', ids.includes('movieblast') && ids.includes('antarctica') && !ids.includes('anidb') && !ids.includes('flystream'));
+  check('movieblast re-ported (Task 66) + no anidb/flystream in registry', ids.includes('movieblast') && !ids.includes('anidb') && !ids.includes('flystream'));
   // Task 50: dahmermovies + dahmermovies4k removed (user request) — must not
   // appear in the registry NOR leak into any catalog stream title/url.
   check('no dahmermovies/dahmermovies4k in registry', !ids.includes('dahmermovies') && !ids.includes('dahmermovies4k'));
   // Task 85: animeworldindia + anineko + stellarrip removed (user request,
   // evidence-locked dead upstreams) — must not reappear in the registry.
   check('no animeworldindia/anineko/stellarrip in registry', !ids.includes('animeworldindia') && !ids.includes('anineko') && !ids.includes('stellarrip'));
+  // Task 85c: antarctica removed (user request) — must not reappear.
+  check('no antarctica in registry', !ids.includes('antarctica'));
 
   // crash-class errors in boot log (upstream fetch noise during warmup excluded)
   const crashy = bootLines.split('\n').filter(l => /Cannot find module|SyntaxError|ReferenceError|TypeError|failed to load scraper/i.test(l));
