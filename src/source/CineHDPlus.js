@@ -12,7 +12,7 @@
 
 import * as cheerio from 'cheerio';
 import { CountryCode } from '../types.js';
-import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
+import { getImdbId, getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
 import { Source } from './Source.js';
 
 // Accents/case-insensitive title comparison (TMDB "La casa del dragón" vs page "La Casa del Dragón")
@@ -57,8 +57,30 @@ export class CineHDPlus extends Source {
     const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
 
     // ─── Primary: vimeus.com per-episode embeds (2025+ player) ───
+    // Task 86: vimeus.com spent 2026-09-24 in a CF 522 (origin dead site-wide,
+    // verified from a clean egress). Cap its fetch so the two fallbacks below
+    // still fit the request budget when it hangs.
     const vimeusResults = await this.fetchVimeusEmbeds(ctx, html, seriesPageUrl, tmdbId, title, countryCodes, vidkingMeta);
     if (vimeusResults.length > 0) return vimeusResults;
+
+    // ─── Fallback 1: verhdlink.cam serial player ───
+    // The site's OWN player script defaults to this when vimeus fails:
+    //   useVerhdlink() → fetch('https://verhdlink.cam/serial/' + imdb)
+    //     → non-"not found" → iframe.src = that URL.
+    // The serial page carries the same ._player-mirrors latino/castellano
+    // data-link blocks as the VerHdLink /movie/ pages — parse them the same way.
+    const serialResults = await this.fetchVerhdlinkSerial(ctx, tmdbId, title);
+    if (serialResults.length > 0) return serialResults;
+
+    // ─── Fallback 2: the page's static dr0pstream switcher ───
+    // Last rung on the site (useDropstream()): a fixed iframe embed baked into
+    // the page JS. The addon's Dropload/EmbedResolver chain resolves these
+    // server-side (same class as MeineCloud's dr0pstream cards).
+    const drop = html.match(/iframe\.src\s*=\s*'(https:\/\/dr0pstream\.com\/e\/[a-z0-9]+)'/);
+    if (drop) {
+      console.log(`[cinehdplus] vimeus down — shipping static dr0pstream embed ${drop[1]}`);
+      try { return [{ url: new URL(drop[1]), meta: { countryCodes, referer: 'https://cinehdplus.surf/', title } }]; } catch { /* fall through */ }
+    }
 
     // ─── Fallback: legacy data-num/.mirrors markup (kept for rollback safety) ───
     return Promise.all(
@@ -101,7 +123,7 @@ export class CineHDPlus extends Source {
 
     let embedHtml;
     try {
-      embedHtml = await this.fetcher.text(ctx, vimeusUrl, { headers: { Referer: seriesPageUrl.href } });
+      embedHtml = await this.fetcher.text(ctx, vimeusUrl, { headers: { Referer: seriesPageUrl.href }, timeout: 6000 });
     } catch {
       return [];
     }
@@ -130,32 +152,95 @@ export class CineHDPlus extends Source {
     return results;
   }
 
-  // Case-insensitive match handles TMDB/CineHDPlus capitalization differences (e.g. "La casa de dragón" vs "La Casa del Dragón")
-  async fetchSeriesPageUrl(ctx, name) {
-    // DLE POST form search — the GET variant (/?story=&do=search) now ignores
-    // the query and returns a default listing (verified 2025-09).
+  // Task 86: verhdlink.cam serial player — the site's default when vimeus is
+  // down (verified in the live page JS 2026-09-24). Same mirror markup as the
+  // VerHdLink source's /movie/ pages (._player-mirrors latino/castellano).
+  async fetchVerhdlinkSerial(ctx, tmdbId, title) {
+    let imdbId = '';
+    try { imdbId = (await getImdbId(this.fetcher, ctx, tmdbId)).id || ''; } catch { return []; }
+    if (!imdbId) return [];
+
+    const pageUrl = new URL(`/serial/${imdbId}`, 'https://verhdlink.cam');
     let html;
     try {
-      html = await this.fetcher.textPost(
-        ctx,
-        new URL('/index.php?do=search&subaction=search', this.baseUrl),
-        `story=${encodeURIComponent(name)}&do=search&subaction=search&search_start=0&full_search=0&result_from=1&result_num=50`,
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-      );
-    } catch {
-      return null;
+      html = await this.fetcher.text(ctx, pageUrl);
+    } catch (e) {
+      console.log(`[cinehdplus] verhdlink serial fetch failed: ${String(e?.message || e).slice(0, 80)}`);
+      return [];
     }
 
     const $ = cheerio.load(html);
+    const out = [];
+    $('._player-mirrors').each((_i, el) => {
+      let codes;
+      if ($(el).hasClass('latino')) codes = [CountryCode.mx];
+      else if ($(el).hasClass('castellano')) codes = [CountryCode.es];
+      else return;
+      $('[data-link!=""]', el).each((_j, mEl) => {
+        const raw = ($(mEl).attr('data-link') || '').replace(/^(https:)?\/\//, 'https://');
+        if (!raw) return;
+        try {
+          const url = new URL(raw);
+          if (/verhdlink/.test(url.host)) return;
+          out.push({ url, meta: { countryCodes: codes, referer: 'https://verhdlink.cam/', title: `${title} · VerHdLink` } });
+        } catch { /* invalid URL */ }
+      });
+    });
+    console.log(`[cinehdplus] verhdlink serial: ${out.length} mirror(s) for ${imdbId}`);
+    return out;
+  }
 
-    const wanted = normalizeTitle(name);
-    const candidates = $('.card__title a[href]').toArray()
-      .map(el => ({ href: $(el).attr('href'), text: normalizeTitle($(el).text()) }))
-      .filter(c => c.href && c.text && c.text === wanted);
-
-    // Prefer URLs under the current /peliculas/ path; fall back to first match
-    const picked = candidates.find(c => /\/peliculas\//.test(c.href))?.href || candidates[0]?.href;
-
-    return picked ? new URL(picked) : null;
+  // Case-insensitive match handles TMDB/CineHDPlus capitalization differences (e.g. "La casa de dragón" vs "La Casa del Dragón")
+  async fetchSeriesPageUrl(ctx, name) {
+    // Task 86: production silently zeroed (cinehdplus series probes returned []
+    // with no logs at all) because this function caught every failure invisibly.
+    // Strategy chain with per-step logging: POST form search on .surf → legacy
+    // GET search on .surf (was dead 2025-09, cheap to retry) → POST on the
+    // mirror domain .biz (same DLE catalog, verified comment 2025-09).
+    const attempts = [
+      ['post-surf', 'https://cinehdplus.surf', 'POST'],
+      ['get-surf', 'https://cinehdplus.surf', 'GET'],
+      ['post-biz', 'https://cinehdplus.biz', 'POST'],
+    ];
+    for (const [tag, base, method] of attempts) {
+      let html = '';
+      try {
+        if (method === 'POST') {
+          html = await this.fetcher.textPost(
+            ctx,
+            new URL('/index.php?do=search&subaction=search', base),
+            `story=${encodeURIComponent(name)}&do=search&subaction=search&search_start=0&full_search=0&result_from=1&result_num=50`,
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+          );
+        } else {
+          html = await this.fetcher.text(
+            ctx,
+            new URL(`/index.php?do=search&subaction=search&story=${encodeURIComponent(name)}`, base),
+          );
+        }
+      } catch (e) {
+        console.log(`[cinehdplus] search ${tag} fetch failed: ${String(e?.message || e).slice(0, 80)}`);
+        continue;
+      }
+      if (!html || html.length < 500) {
+        console.log(`[cinehdplus] search ${tag}: empty/tiny response (${html.length}B)`);
+        continue;
+      }
+      const $ = cheerio.load(html);
+      const wanted = normalizeTitle(name);
+      const candidates = $('.card__title a[href]').toArray()
+        .map(el => ({ href: $(el).attr('href'), text: normalizeTitle($(el).text()) }))
+        .filter(c => c.href && c.text && c.text === wanted);
+      if (candidates.length === 0) {
+        console.log(`[cinehdplus] search ${tag}: ${html.length}B, no exact match for "${name}"`);
+        continue;
+      }
+      // Prefer URLs under the current /peliculas/ path; fall back to first match
+      const picked = candidates.find(c => /\/peliculas\//.test(c.href))?.href || candidates[0]?.href;
+      console.log(`[cinehdplus] search ${tag}: matched "${name}" → ${picked}`);
+      return new URL(picked);
+    }
+    console.log(`[cinehdplus] search: all ${attempts.length} strategies exhausted for "${name}"`);
+    return null;
   }
 }

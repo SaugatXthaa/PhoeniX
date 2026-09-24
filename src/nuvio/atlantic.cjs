@@ -1,5 +1,18 @@
 // src/nuvio/atlantic.cjs — Atlantic (atlantic.st) provider (Task 48 rewrite; Task 55 budget fix)
 //
+// Task 86 (2026-09-24) — Artemis is DEAD, long live Helios:
+//   The current live bundle (assets/index-C7dyXE7O.js + aphrodite-gate-DFWVaQMO.js)
+//   has ZERO references to stellar.hls.lol / gate b / /resolve. Server set now:
+//     Helios    — GET https://stream.hls.lol/helios?tmdbId&type[&seasonId&episodeId]
+//                 → {sources:{Moscow,Novo,Omsk}} — ns_ AES-GCM "nesterov" payloads
+//                 (inline key in bundle) → peraspera payload-worker masters.
+//                 NO signing. Verified live: Dune2 movie + Squid S1E1 both 200.
+//     Aphrodite — cdn.hls.lol/content/... UNCHANGED path, but gate a's seed
+//                 ROTATED again (old seed → bootstrap 403 {"error":"forbidden"}).
+//                 New seed extracted from aphrodite-gate-DFWVaQMO.js via webcrack
+//                 (the M/X table derivation is back: seed[a] = m[1+a*2] ^ x[a]);
+//                 bootstrap verified 200 with a 30min session.
+//
 // Reverse engineering trail (verified live 2026-09-17):
 //   https://atlantic.st/            → React SPA (Vite build), TMDB-driven catalog.
 //                                     Player code lives in assets/index-BWLBkgfa.js;
@@ -90,8 +103,19 @@ const ATLANTIC_ORIGIN = 'https://atlantic.st';
 // verified 200 live with sources Orbit/Nova/Astra). Gate scheme unchanged —
 // same aphrodite.a.v1 HMAC/AES-GCM bootstrap, verified against the new host.
 const CDN = 'https://cdn.hls.lol';
-const STELLAR_BASE = 'https://stellar.hls.lol';
-const ARTEMIS = `${STELLAR_BASE}/resolve`;
+// Task 86 (2026-09-24): stellar.hls.lol/resolve (Artemis, gate b) is GONE from
+// the client — the live bundle (assets/index-C7dyXE7O.js) has ZERO references
+// to stellar/handshake/X-S-*/resolve. The Artemis replacement is Helios:
+//   GET https://stream.hls.lol/helios?tmdbId=<tmdb>&type=movie|tv
+//       [&seasonId=<s>&episodeId=<e>]
+//     → {sources:{Moscow:{url}, Novo:{url}, Omsk:{url}}}
+//   Each url is either a plain https URL or "ns_<hex>" — an AES-256-GCM
+//   "nesterov" payload (iv 12B || ct || tag 16B, key = the inline 32B hex in
+//   the bundle) decrypting to a peraspera payload-worker master URL.
+//   NO signing on /helios (plain browser fetch, 8s timeout client-side).
+const HELIOS_BASE = 'https://stream.hls.lol';
+// Verbatim from assets/index-C7dyXE7O.js (v_ = nesterov AES key):
+const NESTEROV_KEY_HEX = 'e4b8a1d6f2c9037b5a8e4d1c6f9b2085a7c3e9f6d1b4a8c2e5f7a0d3b6c9e2f5';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 const HEADERS = {
@@ -176,20 +200,19 @@ async function ftext(url, { headers = {}, timeoutMs = MASTER_TIMEOUT_MS, fetcher
 //   a = aphrodite.a.v1  — cdn.hls.lol/content/index    → /content/* GETs (X-A-*)
 //   b = stellar.b.v1    — stellar.hls.lol/gate/handshake → /resolve GETs (X-S-*)
 const GATES = {
+  // Task 86: seed re-extracted from the CURRENT live gate bundle
+  // (aphrodite-gate-DFWVaQMO.js, deobfuscated via webcrack — the M/X table
+  // derivation is back: seed[a] = m[1 + a*2] ^ x[a]). Old DNDGgaS1-era seed
+  // 403s the bootstrap ("{"error":"forbidden"}", app-level JSON — verified
+  // 2026-09-24); the new seed bootstraps 200 with a 30min session.
   a: {
     cLabel: 'a',
     version: 'aphrodite.a.v1',
-    seedHex: 'e85b060a65626b661c66fb09b143f7218dbe9285441890158a1703b3677172b9',
+    seedHex: '452c1208202e241c084e870ad3dffbe033c45f0e398befa3681862c84da6af19',
     bootstrapUrl: 'https://cdn.hls.lol/content/index',
     prefix: 'X-A',
   },
-  b: {
-    cLabel: 'b',
-    version: 'stellar.b.v1',
-    seedHex: '9a9080abdc4d5d7331b3514cfe4000731d53c9ed6e797970e17964cd6bef2ab6',
-    bootstrapUrl: 'https://stellar.hls.lol/gate/handshake',
-    prefix: 'X-S',
-  },
+  // gate b (stellar.b.v1) REMOVED — stellar/resolve retired upstream (Task 86).
 };
 for (const g of Object.values(GATES)) {
   g.masterKey = crypto.createHash('sha256')
@@ -306,26 +329,49 @@ function unsignedGateGet(url, fetcher, ctx) {
 
 // ─── Stream servers ───
 
-async function resolveArtemis(tmdbId, type, season, episode, fetcher, ctx) {
+// Task 86: nesterov payload decrypt — "ns_<hex>" URLs from /helios are
+// AES-256-GCM(iv 12B || ct || tag 16B) with the inline bundle key, decrypting
+// to the real payload-worker master URL. Plain (non-ns_) URLs pass through.
+function nesterovDecrypt(url) {
+  if (!url.startsWith('ns_')) return url;
+  const blob = Buffer.from(url.slice(3), 'hex');
+  if (blob.length < 29) throw new Error('nesterov payload too short');
+  const key = Buffer.from(NESTEROV_KEY_HEX, 'hex');
+  const d = crypto.createDecipheriv('aes-256-gcm', key, blob.subarray(0, 12));
+  d.setAuthTag(blob.subarray(blob.length - 16));
+  return Buffer.concat([d.update(blob.subarray(12, blob.length - 16)), d.final()]).toString('utf8');
+}
+
+// Helios (Task 86 — Artemis replacement): plain GET stream.hls.lol/helios,
+// no gate signing. Returns the CANDIDATE master URLs (Moscow → Novo → Omsk)
+// in priority order; the chain below tries them until one master validates.
+// Decoy guard retained: any candidate pointing at the SPA origin is dropped.
+async function resolveHelios(tmdbId, type, season, episode, fetcher, ctx) {
   const q = new URLSearchParams();
   q.set('tmdbId', String(tmdbId));
   q.set('type', type);
   if (type === 'tv') {
-    q.set('season', String(season || 1));
-    q.set('episode', String(episode || 1));
+    q.set('seasonId', String(season || 1));
+    q.set('episodeId', String(episode || 1));
   }
-  const path = `/resolve?${q.toString()}`;
-  // Task 79: /resolve is behind gate b (stellar.b.v1). Signed → real
-  // Orbit/Nova/Astra payload masters; unsigned → "manual" + SPA-shell edge
-  // placeholder (the decoy the Task 78 audit caught). The m3u8 sniff below
-  // drops the placeholder honestly if the gate is down.
-  const r = await gateGet(GATES.b, `${STELLAR_BASE}${path}`, path, fetcher, ctx);
-  if (!r.ok) return null;
-  const j = r.json;
-  if (!j || j.found !== true || typeof j.url !== 'string' || !/^https?:\/\//.test(j.url)) return null;
-  // Decoy guard: the unsigned placeholder points at the SPA (atlantic.st/edge-*)
-  try { if (new URL(j.url).hostname === 'atlantic.st') return null; } catch { return null; }
-  return { url: j.url, server: String(j.source || 'Artemis') };
+  const url = `${HELIOS_BASE}/helios?${q.toString()}`;
+  const r = await ftext(url, { headers: HEADERS, fetcher, ctx, attempts: 1, tag: 'helios' });
+  if (!r.ok || !r.data || r.data[0] !== '{') return [];
+  let j;
+  try { j = JSON.parse(r.data); } catch { return []; }
+  const sources = j && typeof j.sources === 'object' ? j.sources : null;
+  if (!sources) return [];
+  const out = [];
+  for (const name of ['Moscow', 'Novo', 'Omsk']) {
+    const raw = sources?.[name]?.url;
+    if (typeof raw !== 'string' || !raw) continue;
+    let u;
+    try { u = nesterovDecrypt(raw); } catch (e) { console.log(`[Atlantic] helios ${name} decrypt failed: ${e?.message || e}`); continue; }
+    if (!/^https?:\/\//.test(u)) continue;
+    try { if (new URL(u).hostname === 'atlantic.st') continue; } catch { continue; }
+    out.push({ url: u, server: `Helios · ${name}` });
+  }
+  return out;
 }
 
 // Title guard (Task 79): the unsigned content path serves DECOY catalog
@@ -510,22 +556,25 @@ async function getStreams(tmdbId, mediaType, season, episode, preloaded) {
       return v;
     };
 
-    // — Artemis (Orbit/Nova): resolve → master parse, deadline-raced —
-    const artemisChain = (async () => {
-      const a = await resolveArtemis(id, type, season, episode, fetcher, ctx);
-      if (!a) return null;
-      const r = await ftext(a.url, { headers: HEADERS, fetcher, ctx, attempts: 1, tag: 'artemis-master' });
-      if (r.ok && r.data.startsWith('#EXTM3U')) {
-        // flatBody: raw master kept for the Task 71 flat-media-playlist branch
-        return { ...a, parsed: parseMaster(r.data), masterOk: true, flatBody: r.data };
+    // — Helios (Task 86, replaces Artemis/stellar): plain /helios GET →
+    //   nesterov-decrypted candidate masters, tried in order until one parses —
+    const heliosChain = (async () => {
+      const candidates = await resolveHelios(id, type, season, episode, fetcher, ctx);
+      for (const a of candidates) {
+        const r = await ftext(a.url, { headers: HEADERS, fetcher, ctx, attempts: 1, tag: 'helios-master' });
+        if (r.ok && r.data.startsWith('#EXTM3U')) {
+          // flatBody: raw master kept for the Task 71 flat-media-playlist branch
+          return { ...a, parsed: parseMaster(r.data), masterOk: true, flatBody: r.data };
+        }
+        console.log(`[Atlantic] helios master failed (${r ? r.status : 'no-response'}) for ${a.server} — trying next candidate`);
       }
       // Master fetch failed from OUR IP. Task 60: the old "advisory" card
       // (direct + requestHeaders) is now known-broken — headerless player
       // requests get 302'd to a YouTube trailer by the payload workers (iOS
       // never sends custom headers), so an advisory card = stuck-on-loading.
-      // When the gate passes, the parsed branch below ships a fully-validated
-      // /proxy-wrapped card instead. Drop honestly otherwise.
-      console.log(`[Atlantic] artemis master failed (${r.status}) — dropping (no advisory)`);
+      // When the resolve passes, the parsed branch above ships a fully-
+      // validated /proxy-wrapped card instead. Drop honestly otherwise.
+      if (candidates.length > 0) console.log(`[Atlantic] helios: all ${candidates.length} candidates failed master validation — dropping (no advisory)`);
       return null;
     })();
 
@@ -539,7 +588,7 @@ async function getStreams(tmdbId, mediaType, season, episode, preloaded) {
     })();
 
     const [artemisMaster, aphroditeMaster] = await Promise.all([
-      withDeadline(artemisChain).then(v => timed('artemis', v)),
+      withDeadline(heliosChain).then(v => timed('helios', v)),
       withDeadline(aphroditeChain).then(v => timed('aphrodite', v)),
     ]);
 
@@ -567,7 +616,11 @@ async function getStreams(tmdbId, mediaType, season, episode, preloaded) {
       // headerless trailer-302 at play time.
       let host = '';
       try { host = new URL(u, ATLANTIC_ORIGIN).hostname.toLowerCase(); } catch { return u; }
-      if (!/peraspera\.nbsycfzrpa4\.workers\.dev$/i.test(host) &&
+      // Task 86: match ANY workers.dev subdomain — Helios-era payloads still
+      // ride peraspera but the workers subdomain rotates upstream (the old
+      // exact `peraspera.nbsycfzrpa4` match would silently un-wrap a rotated
+      // host and eat headerless trailer-302s at play time).
+      if (!/\.workers\.dev$/i.test(host) &&
           !/(^|\.)totallyacdn\.org$/i.test(host)) return u;
       return `${SELF_ORIGIN}/proxy?url=${encodeURIComponent(u)}` +
         `&origin=${encodeURIComponent('https://atlantic.st')}` +

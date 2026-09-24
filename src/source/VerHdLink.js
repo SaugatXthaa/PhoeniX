@@ -35,7 +35,20 @@ export class VerHdLink extends Source {
     };
 
     const pageUrl = new URL(`/movie/${imdbId.id}`, this.baseUrl);
-    const html = await this.fetcher.text(ctx, pageUrl);
+    // Task 86: the page fetch is CF-flapped upstream (403 interstitials land on
+    // individual page GETs — verified: Inception passed while Dune2 403'd in the
+    // same minute from the same egress). A thrown fetch used to bubble all the
+    // way out of handleInternal (debug endpoint surfaced a bare "Error"). Now:
+    // one retry absorbs the flap class, and failure degrades to [] instead.
+    let html = '';
+    for (let attempt = 0; attempt < 2 && !html; attempt++) {
+      try {
+        html = await this.fetcher.text(ctx, pageUrl);
+      } catch (e) {
+        console.log(`[verhdlink] page fetch ${attempt + 1}/2 failed: ${String(e?.message || e).slice(0, 80)}`);
+      }
+    }
+    if (!html) return [];
 
     const $ = cheerio.load(html);
 

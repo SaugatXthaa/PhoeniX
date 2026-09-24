@@ -48,7 +48,12 @@ export class MeineCloud extends Source {
           'Sec-Fetch-Dest': 'document',
           'Upgrade-Insecure-Requests': '1',
         },
-        timeout: 15000,
+        timeout: 30000, // Task 86: upstream serves first byte after a ~19-20s
+        // server-side delay (verified from a clean egress 3/3 — 19.4-19.7s per
+        // page fetch, zero variance = deliberate tarpit, not network loss).
+        // The old 15s cap aborted EVERY page fetch → permanent zero since the
+        // delay was introduced. 30s fits the /debug 35s race; the merged
+        // resolver still budget-caps slower fetches per wave.
       });
 
       const $ = cheerio.load(html);

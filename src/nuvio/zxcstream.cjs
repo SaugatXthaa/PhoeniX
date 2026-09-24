@@ -75,9 +75,12 @@ var FIELD_MAP = {
 };
 
 var PLAYER_BASES = ["https://player.zxcprime.xyz", "https://player.zxcstream.xyz"];
-// Task 71: token route rotation — burat is CURRENT (chunk 0uktzs59zudq..js);
-// bugok/abaygagoka kept as fallbacks for their origin-proxy rotation pattern.
-var TOKEN_ROUTES = ["/backend/burat", "/backend/bugok", "/backend/abaygagoka"];
+// Task 86 (2026-09-24): token route rotated AGAIN — /backend/burat 404s on
+// zxcprime.xyz (and 302s via the zxcstream.xyz origin proxy to that 404).
+// The live Next.js rebuild (chunks 03.7c2mh9y-.u.js + module 55790) now POSTs
+// /backend/ololmo. FIELD_MAP + SECRET byte-identical to Task 71. Old names
+// kept as fallbacks (the route has rotated 5×; older names come back).
+var TOKEN_ROUTES = ["/backend/ololmo", "/backend/burat", "/backend/bugok", "/backend/abaygagoka"];
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
 
