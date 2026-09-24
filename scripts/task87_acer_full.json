@@ -1,0 +1,79 @@
+{
+ "postUrl": "https://moviesmod.ai.in/download-inception-2010-hindi-480p-720p-1080p/",
+ "sourceQuality": {
+  "sourceQualityList": [
+   {
+    "title": "Inception Single Audio (Hindi) 480p [450MB]",
+    "url": "https://links.modpro.blog/archives/5785",
+    "episodesUrl": "",
+    "batchUrl": "",
+    "quality": "480p"
+   },
+   {
+    "title": "Inception Dual Audio (Hindi-English) 720p [1.3GB]",
+    "url": "https://links.modpro.blog/archives/5786",
+    "episodesUrl": "",
+    "batchUrl": "",
+    "quality": "720p"
+   },
+   {
+    "title": "Inception Dual Audio (Hindi-English) 1080p Bluray [3.2GB]",
+    "url": "https://links.modpro.blog/archives/5787",
+    "episodesUrl": "",
+    "batchUrl": "",
+    "quality": "1080p"
+   },
+   {
+    "title": "Inception Dual Audio (Hindi-English) 720p 10Bit HEVC [1.6GB]",
+    "url": "https://posts.modpro.blog/archives/29684",
+    "episodesUrl": "",
+    "batchUrl": "",
+    "quality": "720p"
+   },
+   {
+    "title": "Inception Dual Audio (Hindi-English) 1080p 10Bit HEVC [2.69GB]",
+    "url": "https://posts.modpro.blog/archives/29686",
+    "episodesUrl": "",
+    "batchUrl": "",
+    "quality": "1080p"
+   }
+  ],
+  "meta": {
+   "mainTitle": "",
+   "title": "Inception (2010) Dual Audio {Hindi-English} 480p [450MB] || 720p [1.3GB] || 1080p [3.2GB]",
+   "synopsis": "Cobb, a skilled thief who commits corporate espionage by infiltrating the subconscious of his targets is offered a chance to regain his old life as payment for a task considered to be impossible: \"inception\", the implantation of another person's idea into a target's subconscious.",
+   "image": "https://image.tmdb.org/t/p/w185/xlaY2zyzMfkhk0HSC5VUwzoZPU1.jpg",
+   "imdbId": "tt1375666",
+   "type": "movie"
+  },
+  "fromCache": true
+ },
+ "sourceUrlMovie": {
+  "status": 200,
+  "body": "{\"fromCache\":false}"
+ },
+ "seriesSearch": [
+  {
+   "title": "Breaking Bad (Season 1 – 5) Dual Audio {Hindi-English} BluRay 480p [200MB] || 720p [320MB] || 1080p [1GB]",
+   "url": "https://moviesmod.ai.in/download-breaking-bad-hindi/",
+   "image": "https://moviesmod.ai.in/wp-content/uploads/2023/08/Download-Breaking-Bad-S01-Hindi-Dubbed-480p-720p-1080p.jpg"
+  },
+  {
+   "title": "El Camino: A Breaking Bad Movie (2019) {English} 480p [300MB] || 720p [1GB] || 1080p [2.1GB]",
+   "url": "https://moviesmod.ai.in/download-el-camino-a-breaking-bad-movie-2019-480p-720p-1080p/",
+   "image": "https://moviesmod.ai.in/wp-content/uploads/2019/10/Download-El-Camino-A-Breaking-Bad-Movie-English-720p.jpg"
+  }
+ ],
+ "seriesQuality": {
+  "entries": 25,
+  "epSample": "https://episodes.modpro.blog/archives/61063"
+ },
+ "sourceEpisodes": {
+  "status": 200,
+  "body": "{\"sourceEpisodes\":false,\"fromCache\":false}"
+ },
+ "requestOnline": {
+  "status": 404,
+  "body": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot POST /api/requestOnline/sourceUrl</pre>\n</body>\n</html>\n"
+ }
+}

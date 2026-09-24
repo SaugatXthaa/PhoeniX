@@ -1,0 +1,89 @@
+{
+ "at": "2026-09-24T20:30:11.060Z",
+ "probes": [
+  {
+   "name": "home-sandbox",
+   "status": 200,
+   "len": 45639,
+   "note": "homepage",
+   "ms": 163
+  },
+  {
+   "name": "bundle https://cdn77.unnajd.com/5dd6f0ec.js",
+   "status": 200,
+   "len": 43171,
+   "ms": 225
+  },
+  {
+   "name": "sandbox POST /api/search",
+   "status": 200,
+   "note": "results=1 postUrl=https://moviesmod.ai.in/download-inception-2010-hindi-480p-720p-1080p/",
+   "bodyHead": "{\"searchResult\":[{\"title\":\"Inception (2010) Dual Audio {Hindi-English} 480p [450MB] || 720p [1.3GB] || 1080p [3.2GB]\",\"url\":\"https://moviesmod.ai.in/download-inception-2010-hindi-480p-720p-1080p/\",\"image\":\"https://moviesmod.ai.in/wp-content/uploads/2018/10/Download-Inception-Dual-Audio-Hindi-English",
+   "ms": 459
+  },
+  {
+   "name": "sandbox POST /api/sourceQuality",
+   "status": 200,
+   "note": "qualities=5 480p:URL,720p:URL,1080p:URL,720p:URL,1080p:URL",
+   "bodyHead": "{\"sourceQualityList\":[{\"title\":\"Inception Single Audio (Hindi) 480p [450MB]\",\"url\":\"https://links.modpro.blog/archives/5785\",\"episodesUrl\":\"\",\"batchUrl\":\"\",\"quality\":\"480p\"},{\"title\":\"Inception Dual Audio (Hindi-English) 720p [1.3GB]\",\"url\":\"https://links.modpro.blog/archives/5786\",\"episodesUrl\":\"\",\"batchUrl\":\"\",\"quality\":\"720p\"},{\"title\":\"Inception Dual Audio (Hindi-English) 1080p Bluray [3.2GB]\"",
+   "ms": 431
+  },
+  {
+   "name": "sandbox POST /api/sourceUrl",
+   "status": 200,
+   "note": "body={\"fromCache\":false}",
+   "ms": 297
+  },
+  {
+   "name": "alt-host api.acermovies.fun",
+   "error": "fetch failed",
+   "ms": 8
+  },
+  {
+   "name": "alt-host api1.acermovies.fun",
+   "error": "fetch failed",
+   "ms": 9
+  },
+  {
+   "name": "alt-host api3.acermovies.fun",
+   "error": "fetch failed",
+   "ms": 6
+  },
+  {
+   "name": "alt-host api2.acermovies.net",
+   "error": "fetch failed",
+   "ms": 55
+  },
+  {
+   "name": "prod POST /api/search (rawfetch)",
+   "status": 200,
+   "note": "head={\"searchResult\":[{\"title\":\"Inception (2010) Dual Audio {Hindi-English} 480p [450MB] || 720p [1.3GB] || 1080p [3.2GB]\",\"url\":\"https://moviesmod.ai.in/download-inception-2010-hindi-480p-720p-1080p/\",\"im",
+   "ms": 466
+  }
+ ],
+ "apiRefs": [
+  "https://api2.acermovies.fun",
+  "backendUrl = \"https://api2.acermovies.fun\"\n\nwindow.addEventListener('popstate'",
+  "backendUrl+'/api/search' ",
+  "backendUrl+'/api/sourceUrl' ",
+  "backendUrl+\"/api/list/add\"",
+  "backendUrl+\"/api/list/remove\"",
+  "backendUrl+'/api/sourceQuality' ",
+  "backendUrl+'/api/sourceEpisodes' ",
+  "backendUrl+\"/api/list\")",
+  "backendUrl+'/main/stats')\n  .then(response => {\n    if (!response.ok) {\n      throw new Er",
+  "/api/search",
+  "/api/sourceUrl",
+  "/api/requestOnline",
+  "/api/list",
+  "/api/sourceQuality",
+  "/api/sourceEpisodes",
+  "src=\"https://cdn77.unnajd.com/5dd6f0ec.js\""
+ ],
+ "bundleFindings": [
+  {
+   "url": "https://cdn77.unnajd.com/5dd6f0ec.js",
+   "refs": []
+  }
+ ]
+}

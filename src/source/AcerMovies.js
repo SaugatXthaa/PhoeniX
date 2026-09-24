@@ -16,8 +16,35 @@
 // redirect chain through cloud.unblockedgames.world (CF-protected blog
 // with JS auto-submit) — not resolvable server-side without a browser.
 //
-// Search returns results from moviesmod.zone — Hindi/English dual audio
+// Search returns results from moviesmod.ai.in — Hindi/English dual audio
 // focused, but covers Hollywood, Korean, and anime movies too.
+//
+// Task 87 (2026-09-25) — full API RE round, "migration" investigated and
+// answered: there is NO migration target. The live site bundle (homepage
+// inline JS) calls the exact same surface we implement (POST /api/search
+// {searchQuery}, /api/sourceQuality {url}, /api/sourceUrl {url, seriesType},
+// /api/sourceEpisodes {url}); the /api/requestOnline/sourceUrl route seen in
+// the JS is DEAD CODE (its only caller is commented out; POSTing it 404s on
+// api2 and 405s on the site origin), no alternate api hosts exist
+// (api/api1/api3.* DNS-dead), and the 429 ban on Render's egress had LIFTED
+// (rawfetch POST /api/search → 200 @466ms on 2026-09-25). The REAL upstream
+// failure: /api/sourceUrl answers {"fromCache":false} for EVERY title —
+// 0/17 measured E2E including acer's own trending 2026 list (api/list) and
+// hot 2025 releases — each answer taking ~2.3-3.0s (their backend appears to
+// attempt a live links.modpro.blog resolve and fail; modpro 403s datacenter
+// IPs in ~70ms, acer's backend included). The per-quality resolution layer is
+// upstream-dead, so this source honestly zeros until that heals. What WE can
+// fix is the blast radius: a fromCache:false answer is FINAL (their cache
+// state cannot change between retries seconds apart), so the old 3×
+// search→quality→sourceUrl retry ladder only burned ~9 quota-counted POSTs
+// per player request — the exact behavior that historically tripped acer's
+// per-IP 429 ban and zeroed the source for everyone on Render. Now: a
+// canary sourceUrl POST decides; fromCache:false short-circuits the ladder
+// via a sentinel (withRetryOnEmpty passes non-arrays through un-retried) and
+// a 30min bounded negative cache absorbs repeated player refreshes with zero
+// upstream calls. Recovery is instant and automatic: the first title acer's
+// backend resolves again flows through the normal path and fills the 24h
+// positive cache as before.
 
 import { CountryCode, Format } from '../types.js';
 import { getTmdbId, getTmdbNameAndYear, TmdbId } from '../utils/index.js';
@@ -46,6 +73,26 @@ const ORIGIN = 'https://acermovies.fun';
 const RATE_LIMIT_COOLDOWN_MS = 10 * 60 * 1000;
 const RESULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const RESULT_CACHE_MAX = 200;
+
+// Task 87: definitive-miss negative cache. acer's {"fromCache":false} is a
+// final upstream verdict for the title (not a transient window) — remember it
+// briefly so player refreshes / warm passes don't re-burn quota-counted
+// POSTs on a cache we measured empty across 17 titles. 30min keeps recovery
+// latency bounded if their backend starts resolving again (their own UI
+// folklore promises "5-30 mins" processing).
+const NEGATIVE_TTL_MS = 30 * 60 * 1000;
+const NEGATIVE_CACHE_MAX = 200;
+
+// Sentinel returned by _resolve instead of an array when the upstream answer
+// is final. withRetryOnEmpty passes non-array results through WITHOUT
+// retrying (nuvioHelpers line "if (!Array.isArray(r)) return r;"), so the
+// old 3-attempt ladder short-circuits cleanly with no helper changes.
+const DEFINITIVE_MISS = Object.freeze({ definitive: true });
+
+// Thrown by _resolveOne on fromCache:false; caught at the _resolve canary.
+class DefinitiveMissError extends Error {
+  constructor(msg) { super(msg); this.name = 'DefinitiveMissError'; }
+}
 
 // Task 84: egress-relay fallback. The ban is on RENDER'S IP, not on acer's
 // API — the identical POST relayed through the public Cloudflare Worker
@@ -117,6 +164,33 @@ export class AcerMovies extends Source {
     this._cooldownUntil = 0;   // rate-limit circuit: no upstream calls before this ts
     this._resultCache = new Map(); // cacheKey -> { results, at } — 429 fallback
     this._relayCooldownUntil = 0; // Task 84b: relay's own CF-edge rate limit
+    this._negativeCache = new Map(); // Task 87: cacheKey -> { at } — definitive-miss memory
+  }
+
+  // Task 87: bounded negative-cache write (oldest-evicting like _resultCache).
+  _noteDefinitiveMiss(key) {
+    if (this._negativeCache.size >= NEGATIVE_CACHE_MAX) {
+      const oldest = this._negativeCache.keys().next().value;
+      this._negativeCache.delete(oldest);
+    }
+    this._negativeCache.set(key, { at: Date.now() });
+  }
+
+  _negativeFresh(key) {
+    const hit = this._negativeCache.get(key);
+    return hit && (Date.now() - hit.at) < NEGATIVE_TTL_MS;
+  }
+
+  // Cache keys must be VALUE-stable: handleInternal receives a freshly-parsed
+  // TmdbId/ImdbId object per request (debug route) or a string (internal), and
+  // Map keys by identity — object keys never hit. Canonicalize to a string.
+  _keyOf(id) {
+    if (typeof id === 'string') return id;
+    if (!id || typeof id !== 'object') return String(id);
+    let k = (typeof id.id === 'number') ? `tmdb:${id.id}` : String(id.id);
+    if (id.season != null) k += `:${id.season}`;
+    if (id.episode != null) k += `:${id.episode}`;
+    return k;
   }
 
   // Task 81: the Fetcher throws TooManyRequestsError on 429; the previous
@@ -178,7 +252,17 @@ export class AcerMovies extends Source {
 
   async handleInternal(ctx, _type, id) {
     const now = Date.now();
-    const hit = this._resultCache.get(id);
+    const key = this._keyOf(id);
+    const hit = this._resultCache.get(key);
+
+    // Task 87: definitive-miss memory — acer told us fromCache:false for this
+    // title recently (a final verdict, not a window). Honest zero with ZERO
+    // upstream calls; expires with NEGATIVE_TTL_MS so backend-side recovery
+    // is picked up automatically.
+    if (this._negativeFresh(key)) {
+      console.log(`[acermovies] negative cache fresh (${Math.round((now - this._negativeCache.get(key).at) / 60000)}min old) — honest zero, upstream untouched`);
+      return [];
+    }
 
     // Cooldown circuit — direct calls stop. Serve cached results first;
     // without a cache, resolve through the relay (Task 84) instead of an
@@ -190,13 +274,20 @@ export class AcerMovies extends Source {
         return hit.results;
       }
       try {
-        const relayed = await withRetryOnEmpty(() => this._resolve(ctx, id), { attempts: 2, maxTotalMs: 12000, tag: 'acermovies-relay' });
+        const relayed = await withRetryOnEmpty(() => this._resolve(ctx, id, { relay: true }), { attempts: 2, maxTotalMs: 12000, tag: 'acermovies-relay' });
+        // Task 87: non-array = definitive-miss sentinel (passed through
+        // un-retried by withRetryOnEmpty) — remember it, return honest zero.
+        if (!Array.isArray(relayed)) {
+          this._noteDefinitiveMiss(key);
+          console.log('[acermovies] relay resolve hit definitive miss — honest zero (negative-cached)');
+          return [];
+        }
         if (relayed.length > 0) {
           if (this._resultCache.size >= RESULT_CACHE_MAX) {
             const oldest = this._resultCache.keys().next().value;
             this._resultCache.delete(oldest);
           }
-          this._resultCache.set(id, { results: relayed, at: Date.now() });
+          this._resultCache.set(key, { results: relayed, at: Date.now() });
           console.log(`[acermovies] cooldown relay resolve delivered ${relayed.length} cards`);
         }
         return relayed;
@@ -210,7 +301,15 @@ export class AcerMovies extends Source {
     // evidence: 1-of-3 probes delivered, failures @~700ms → silent [] and the
     // 60s negative cache then hid the recovery). Bounded empty-retry rides out
     // the bad windows like the stellarrip/uhdmovies wrappers.
+    // Task 87: definitive misses (fromCache:false) short-circuit this ladder
+    // via the DEFINITIVE_MISS sentinel — those are NOT windows.
     const results = await withRetryOnEmpty(() => this._resolve(ctx, id), { attempts: 3, maxTotalMs: 14000, tag: 'acermovies' });
+
+    if (!Array.isArray(results)) {
+      this._noteDefinitiveMiss(key);
+      console.log('[acermovies] definitive miss (fromCache:false / unsupported) — honest zero, negative-cached 30min');
+      return [];
+    }
 
     if (results.length > 0) {
       // Bounded 24h fallback cache (429 survival)
@@ -218,7 +317,7 @@ export class AcerMovies extends Source {
         const oldest = this._resultCache.keys().next().value;
         this._resultCache.delete(oldest);
       }
-      this._resultCache.set(id, { results, at: Date.now() });
+      this._resultCache.set(key, { results, at: Date.now() });
     }
     return results;
   }
@@ -234,8 +333,10 @@ export class AcerMovies extends Source {
 
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
 
-    // Series not supported — episodes go through CF-protected blog chain
-    if (tmdbId.season) return [];
+    // Series not supported — episodes go through CF-protected blog chain.
+    // Task 87: definitive (never changes between retries) — sentinel stops
+    // the empty-retry ladder from re-running TMDB+search 3× for series ids.
+    if (tmdbId.season) return DEFINITIVE_MISS;
 
     // Step 1: search by name (+ year for disambiguation)
     const searchQuery = year ? `${name} ${year}` : name;
@@ -275,8 +376,13 @@ export class AcerMovies extends Source {
     const movieQualities = qualityList.filter(q => q?.url && !q.episodesUrl);
     if (movieQualities.length === 0 || Date.now() < this._cooldownUntil) return [];
 
-    // Step 3: resolve each quality to a direct GDrive URL (in parallel, bounded)
-    // Deduplicate by quality string to avoid redundant calls
+    // Step 3: resolve qualities to direct GDrive URLs.
+    // Task 87 CANARY: the FIRST quality's sourceUrl decides whether acer's
+    // resolution cache has this title at all. fromCache:false → DEFINITIVE
+    // (measured stable across seconds; retrying cannot change their cache —
+    // it only burned ~9 quota-counted POSTs per player request, which is what
+    // historically tripped the per-IP 429 ban). Sentinel return short-circuits
+    // the empty-retry ladder with zero helper changes.
     const seenQualities = new Set();
     const uniqueQualities = movieQualities.filter(q => {
       const key = q.quality || q.title;
@@ -286,47 +392,73 @@ export class AcerMovies extends Source {
     });
 
     const results = [];
-    const resolveOne = async (q) => {
-      // A 429 mid-batch (attempt N of M qualities) must stop the remaining
-      // DIRECT calls immediately — each extra POST into the rate limiter
-      // extends it. Relay resolves are exempt (different egress class).
-      if (Date.now() < this._cooldownUntil && !relay) return null;
-      try {
-        const body = JSON.stringify({ url: q.url, seriesType: 'movie' });
-        const resp = await this._apiPost(ctx, '/api/sourceUrl', body, 15000);
-        const parsed = JSON.parse(resp);
-        const directUrl = parsed?.sourceUrl;
-        if (!directUrl) return null;
-        let parsedUrl;
-        try { parsedUrl = new URL(directUrl); } catch { return null; }
-        if (!parsedUrl) return null;
 
-        const height = parseHeight(q.quality);
-        const countryCodes = countryCodesFromTitle(q.title);
-
-        return {
-          url: parsedUrl,
-          format: Format.mp4, // GDrive CDN serves MP4/MKV directly — Stremio plays both as mp4
-          meta: {
-            countryCodes,
-            ...(height && { height }),
-            title: `${title} (${q.quality || 'MP4'})`,
-            sourceId: this.id,
-            sourceLabel: this.label,
-          },
-        };
-      } catch (e) {
-        if (e instanceof TooManyRequestsError) this._noteRateLimit('sourceUrl');
-        return null;
+    let canary = null;
+    try {
+      canary = await this._resolveOne(ctx, uniqueQualities[0], title, relay);
+    } catch (e) {
+      if (e instanceof DefinitiveMissError) {
+        console.log(`[acermovies] upstream resolution cache empty for "${title}" (sourceUrl fromCache:false) — definitive miss, ladder short-circuited`);
+        return DEFINITIVE_MISS;
       }
-    };
+      // non-definitive canary failure (network flake): fall through, the
+      // batch below still runs (old behavior for window-class failures)
+    }
+    if (canary) results.push(canary);
 
-    // Resolve in parallel — Promise.all with bounded concurrency
-    const resolved = await Promise.all(uniqueQualities.map(resolveOne));
-    for (const r of resolved) {
-      if (r) results.push(r);
+    // A 429 mid-batch must stop remaining DIRECT calls — the per-quality
+    // guard inside _resolveOne handles that (returns null while banned).
+    // Canary success ALSO resolves the rest (title is cache-hot); canary
+    // ordinary-failure still probes the rest (window class, Task 63).
+    if (uniqueQualities.length > 1) {
+      const resolved = await Promise.all(uniqueQualities.slice(1).map(q => this._resolveOne(ctx, q, title, relay).catch(() => null)));
+      for (const r of resolved) {
+        if (r) results.push(r);
+      }
     }
 
     return results;
+  }
+
+  // Task 87: extracted from the old inline resolveOne so the canary can
+  // distinguish DefinitiveMissError (throw) from ordinary failures (null).
+  async _resolveOne(ctx, q, title, relay) {
+    // A 429 mid-batch (attempt N of M qualities) must stop the remaining
+    // DIRECT calls immediately — each extra POST into the rate limiter
+    // extends it. Relay resolves are exempt (different egress class).
+    if (Date.now() < this._cooldownUntil && !relay) return null;
+    try {
+      const body = JSON.stringify({ url: q.url, seriesType: 'movie' });
+      const resp = await this._apiPost(ctx, '/api/sourceUrl', body, 15000);
+      const parsed = JSON.parse(resp);
+      // Task 87: acer's final "we have not resolved this quality" verdict.
+      if (parsed && parsed.fromCache === false && !parsed.sourceUrl) {
+        throw new DefinitiveMissError('fromCache:false');
+      }
+      const directUrl = parsed?.sourceUrl;
+      if (!directUrl) return null;
+      let parsedUrl;
+      try { parsedUrl = new URL(directUrl); } catch { return null; }
+      if (!parsedUrl) return null;
+
+      const height = parseHeight(q.quality);
+      const countryCodes = countryCodesFromTitle(q.title);
+
+      return {
+        url: parsedUrl,
+        format: Format.mp4, // GDrive CDN serves MP4/MKV directly — Stremio plays both as mp4
+        meta: {
+          countryCodes,
+          ...(height && { height }),
+          title: `${title} (${q.quality || 'MP4'})`,
+          sourceId: this.id,
+          sourceLabel: this.label,
+        },
+      };
+    } catch (e) {
+      if (e instanceof DefinitiveMissError) throw e;
+      if (e instanceof TooManyRequestsError) this._noteRateLimit('sourceUrl');
+      return null;
+    }
   }
 }
