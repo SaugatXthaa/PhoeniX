@@ -80,7 +80,21 @@ var PLAYER_BASES = ["https://player.zxcprime.xyz", "https://player.zxcstream.xyz
 // The live Next.js rebuild (chunks 03.7c2mh9y-.u.js + module 55790) now POSTs
 // /backend/ololmo. FIELD_MAP + SECRET byte-identical to Task 71. Old names
 // kept as fallbacks (the route has rotated 5×; older names come back).
-var TOKEN_ROUTES = ["/backend/ololmo", "/backend/burat", "/backend/bugok", "/backend/abaygagoka"];
+// Task 93 (2026-09-25): 6th rotation — all four /backend/* names now 404
+// (zxcprime direct) or 302→404 (zxcstream origin proxy). The CURRENT build
+// (chunk 039fto~pe9a.s.js, page 200 /embed/movie/27205) POSTs
+// /backend_/tanginamogagotarantado. Protocol UNCHANGED: same SECRET + FIELD_MAP,
+// 5-field body (path + mediaType still REQUIRED — measured: 3-field body =
+// 400 "Invalid request"; 5-field = 200 {"token":…,"ts":…}, response also
+// accepts plain token/ts names which our reader already handles).
+// KNOWN UPSTREAM ISSUE at fix time: /backend_/embed/sentinel answered 502
+// ("error code: 502", CF origin) from every vantage while the token route
+// 200s — the site's own playback flow is broken for everyone; when their
+// sentinel heals, this source recovers automatically with the route below.
+var TOKEN_ROUTES = [
+  "/backend_/tanginamogagotarantado", // Task 93: current (6th rotation)
+  "/backend/ololmo", "/backend/burat", "/backend/bugok", "/backend/abaygagoka",
+];
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
 
