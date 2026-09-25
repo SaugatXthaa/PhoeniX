@@ -186,8 +186,13 @@ async function resolveEmbed(tmdbId, type, season, episode, imdbId) {
     }
     if (imdbId) q.set(FIELD_MAP.imdbId, String(imdbId));
 
+    // Task 93: sentinel timeout 12s → 18s. Live-measured 2026-09-25: the
+    // sentinel flaps 200 (fast) → 502 → 500 with 14-16.5s latency while their
+    // origin struggles; a 12s cap turned slow-but-alive windows into status 0
+    // (network error) zeros. 18s still fits the 35s resolve budget alongside
+    // the token POST (~0.3-2s) and stage B attestation (~2s).
     var sRes = await fetchRaw(base + "/backend_/embed/sentinel?" + q.toString(), {
-      headers: { Referer: base + pagePath }, timeout: 12000,
+      headers: { Referer: base + pagePath }, timeout: 18000,
     });
     if (sRes.status !== 200) {
       console.log("[ZXCStream] sentinel " + sRes.status);
