@@ -223,7 +223,8 @@ async function runChecks(child, logFile, bootLines) {
   // was never wired into createExtractors; vidzee source shipped 0 streams).
   // Task 28: 31 → 32 — MixDrop extractor (verhdlink mixdrop mirrors → direct MP4)
   // Task 30: 32 → 33 — VidSrcMe extractor (necro vidsrc.me chain unlock)
-  check('boot extractor count = 33', extM && extM[1] === '33', `got ${extM?.[1]}`);
+  // Task 92: 33 → 34 — UnlimPlay extractor (unlimplay.com aggregator, CineHDPlus delivery)
+  check('boot extractor count = 34', extM && extM[1] === '34', `got ${extM?.[1]}`);
 
   // removed-source leakage at registry level
   // Task 66: movieblast was RE-PORTED by design (orig parity, delivers) —
@@ -267,6 +268,13 @@ async function runChecks(child, logFile, bootLines) {
   // merged series catalog (Breaking Bad S1E1)
   const sr = await getCatalog(`${base}/stream/series/tt0903747:1:1.json`, 80);
   check('BreakingBad merged series count >= 80', sr.n >= 80, `count=${sr.n}`);
+  // Task 92 — Shippuden diacritic guard: TMDB "Naruto: Shippūden" previously
+  // zeroed animekai/hianime/cinewave (ū broke every name matcher). The merged
+  // series response must now carry anime-only brands + >= 25 total cards.
+  const nship = await getCatalog(`${base}/stream/series/tt0988824:1:1.json`, 70);
+  const nshipAnime = (JSON.stringify(nship.json?.streams || []).match(/HiAnime|AnimeKai|AnimeGG|AniChan|Anikoto|2Dhive|AllWish|ReAnime|AniBD|AniMoTVSlash|AnimeSuge|AnimesDigital|StreamXTV/g) || []).length;
+  check('Shippuden merged count >= 25 (Task 92 diacritic fix)', nship.n >= 25, `count=${nship.n}`);
+  check('Shippuden anime-brand card mentions >= 6 (Task 92)', nshipAnime >= 6, `hits=${nshipAnime}`);
   // Task 24 matrix extension — anime catalogs
   const fr = await getCatalog(`${base}/stream/series/tmdb:209867:2:1.json`, 60);
   check('Frieren S2E1 merged (anime) count >= 60', fr.n >= 60, `count=${fr.n} (obs 108)`);

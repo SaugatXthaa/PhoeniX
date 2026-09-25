@@ -33,16 +33,40 @@ const SERVER_CATEGORIES = [
   // is never tested.
   { buttonIncludes: 'PixelServer : 2', buttonExcludes: '', label: 'HubCloud (PixelDrain)', extractorId: 'hubcloud_pixeldrain', priority: 6, seekable: true,
     transformUrl: (url) => {
-      // pixeldrain.dev/u/{id} → pixeldrain.dev/api/file/{id}?download
+      // pixeldrain.dev/u/{id} → pixeldrain.dev/api/file/{id}
       // (the /u/ page is an HTML viewer, /api/file/ returns the raw video)
+      // Task 92: WITHOUT the ?download param — measured live, ?download makes
+      // pixeldrain answer Content-Disposition: attachment (browser/web players
+      // turn that into a FILE DOWNLOAD instead of playback) while the bare
+      // /api/file/{id} answers Content-Disposition: inline with identical
+      // 206/Range support → direct playable.
       const m = url.match(/pixeldrain\.(?:dev|com)\/u\/([^?&]+)/);
-      if (m) return `https://pixeldrain.dev/api/file/${m[1]}?download`;
+      if (m) return `https://pixeldrain.dev/api/file/${m[1]}`;
+      const api = url.match(/pixeldrain\.(?:dev|com)\/api\/file\/([^?&]+)/);
+      if (api) return `https://pixeldrain.dev/api/file/${api[1]}`;
       return url;
     }
   },
   { buttonIncludes: 'PixelServer', buttonExcludes: '', label: 'HubCloud (PxlSrv)', extractorId: 'hubcloud_pixelserver', priority: 3, seekable: true },
-  { buttonIncludes: 'PDL', buttonExcludes: '', label: 'HubCloud (PDL)', extractorId: 'hubcloud_pdl', priority: 1, seekable: false },
-  { buttonIncludes: 'Download File', buttonExcludes: '', label: 'HubCloud (Download)', extractorId: 'hubcloud_direct', priority: 0, seekable: true },
+  { buttonIncludes: 'PDL', buttonExcludes: '', label: 'HubCloud (PDL)', extractorId: 'hubcloud_pdl', priority: 1, seekable: false,
+    // Task 92: PDL links arrive as pixeldrain /api/file/{id}?download — the
+    // ?download param flips pixeldrain to Content-Disposition: attachment
+    // (download semantics). Strip it exactly like the PixelDrain category.
+    transformUrl: (url) => {
+      const api = url.match(/pixeldrain\.(?:dev|com)\/(?:api\/file|u)\/([^?&]+)/);
+      if (api) return `https://pixeldrain.dev/api/file/${api[1]}`;
+      return url;
+    }
+  },
+  { buttonIncludes: 'Download File', buttonExcludes: '', label: 'HubCloud (Download)', extractorId: 'hubcloud_direct', priority: 0, seekable: true,
+    // Task 92: hubcloud's "Download File" workers.dev URLs (terapiyoNNN class)
+    // flap between 206 and 403 — measured live: same URL 206 at issue time,
+    // 403 two minutes later, 206 again at +5min; some hosts 403 the first two
+    // requests then 200. A dead card = "can't play" in Stremio. Liveness-gate
+    // these URLs (Range GET, one flap-tolerant retry) and drop them when they
+    // refuse to stream — same honest-card doctrine as the animezey probe gate.
+    validate: true,
+  },
 ];
 
 const LABEL_TO_SEEKABLE = new Map(
@@ -223,7 +247,8 @@ export class HubCloud extends Extractor {
             try {
               const userUrl = new URL(href.replace('/api/file/', '/u/'));
               const apiUrl = new URL(userUrl.href.replace('/u/', '/api/file/'));
-              apiUrl.searchParams.set('download', '');
+              // Task 92: no ?download param — pixeldrain serves Content-Disposition:
+              // attachment with it (download semantics) and inline without it.
               await this.fetcher.head(ctx, apiUrl, { headers: { Referer: userUrl.href } });
               classified.push({
                 url: apiUrl,
@@ -238,8 +263,19 @@ export class HubCloud extends Extractor {
             }
           } else {
             // Apply URL transform if the category has one (e.g. PixelDrain
-            // converts /u/{id} viewer page → /api/file/{id}?download)
+            // converts /u/{id} viewer page → /api/file/{id})
             const finalUrl = category.transformUrl ? category.transformUrl(href) : href;
+            // Task 92: liveness gate for download-class URLs (workers.dev token
+            // files that flap 206↔403). Range-GET the URL with its Referer;
+            // one flap-tolerant retry after a short delay; drop on persistent
+            // 4xx/5xx so the user never sees a dead "can't play" card.
+            if (category.validate) {
+              const ok = await this.validateStreamUrl(finalUrl, meta.referer ?? url.href);
+              if (!ok) {
+                this.logger.warn(`[hubcloud] dropping dead Download URL: ${String(finalUrl).slice(0, 90)}`);
+                continue;
+              }
+            }
             classified.push({
               url: new URL(finalUrl),
               format: Format.unknown,
@@ -272,6 +308,44 @@ export class HubCloud extends Extractor {
     }
 
     return classified;
+  }
+
+  /**
+   * Task 92: liveness probe for download-class direct-file URLs.
+   * Range-GETs the first byte pair (headers only — body cancelled immediately,
+   * Task 41 OOM doctrine). These workers.dev token URLs flap: measured live,
+   * the same URL answered 206 → 403 (+2min) → 206 (+5min), and some hosts 403
+   * the first requests before serving. So: a failed attempt is retried ONCE
+   * after a 2s pause (flap tolerance); only a persistent 4xx/5xx or a network
+   * failure on both attempts drops the card. Errors (timeouts) are treated as
+   * alive — a slow host is better than a missing card, and the probe must not
+   * spend more than ~10s per URL worst case.
+   */
+  async validateStreamUrl(urlStr, referer) {
+    let parsed;
+    try { parsed = new URL(urlStr); } catch { return false; }
+    const headers = { Referer: referer ?? parsed.href };
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await fetch(parsed.href, {
+          headers: { ...headers, Range: 'bytes=0-1' },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(6000),
+        });
+        try { res.body?.cancel?.(); } catch {}
+        if (res.status < 400 || res.status === 416) return true;
+        if (res.status >= 400 && attempt === 1) {
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+          continue;
+        }
+        return false;
+      } catch {
+        // network error / timeout — treat as alive (do not drop on our own
+        // egress flakiness); only upstream CONFIRMED 4xx/5xx answers kill cards
+        return true;
+      }
+    }
+    return false;
   }
 
   extractRedirectUrl(html) {

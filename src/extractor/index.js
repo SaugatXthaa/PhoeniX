@@ -54,6 +54,9 @@ import { Vidzee } from './Vidzee.js';
 // VidSrcMe — Task 30: vidsrc.me/vidsrcme.ru chain (necro embeds) — data API +
 // per-5-min-window ChaCha20 WASM decrypt + generate.php JWT → /proxy HLS.
 import { VidSrcMe } from './VidSrcMe.js';
+// UnlimPlay — Task 92: unlimplay.com Spanish multi-server aggregator (CineHDPlus
+// delivery) — EMBEDS map + _sl=1 async loader + f.php?_hlsextract=1 worker.
+import { UnlimPlay } from './UnlimPlay.js';
 
 export { Extractor } from './Extractor.js';
 export { ExtractorRegistry } from './ExtractorRegistry.js';
@@ -121,6 +124,11 @@ export const createExtractors = (fetcher, logger) => {
     // vidsrcme.ru chain (WASM decrypt + IP-bound JWT → /proxy). Claims before
     // the generic EmbedResolver fallback, which cannot execute the chain.
     new VidSrcMe(fetcher, logger),
+    // UnlimPlay — Task 92: unlimplay.com embed pages (CineHDPlus delivery).
+    // Must claim BEFORE EmbedResolver/ExternalUrl — the aggregator page is a
+    // JS+PHP app the generic fallback cannot read, and ExternalUrl would list
+    // the embed as an unplayable external card.
+    new UnlimPlay(fetcher, logger),
     // EmbedResolver — generic fallback for embed pages (vidsrc.to, vidzee, voe, etc.)
     new EmbedResolver(fetcher, logger),
 

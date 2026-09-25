@@ -136,7 +136,9 @@ export class HiAnime extends Source {
 
     // Pick best match — require fuzzy score >= 60 to avoid false matches
     // (e.g., searching "Supergirl" must not return "One-Punch Man")
-    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    // Task 92: NFD diacritic fold — TMDB "Naruto: Shippūden" must match the
+    // site's "Shippuden"-style titles (ū previously became a space → score 0).
+    const normalize = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     const nameNorm = normalize(name);
     let bestAnime = null;
     let bestScore = 0;

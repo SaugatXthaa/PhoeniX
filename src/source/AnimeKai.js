@@ -58,7 +58,12 @@ async function anilistSearchMalIds(search) {
 }
 
 const ORDINALS = ['', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
-const norm = (s) => (s || '').toLowerCase().replace(/['\u2019]/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+// Task 92: fold diacritics BEFORE stripping — TMDB names carry macrons
+// ("Naruto: Shippūden") while AniList romaji often spells them out
+// ("Shippuuden"); the old ū→space strip produced "shipp den" which matched
+// NOTHING (score 0 → source silently zeroed every Shippuden/long-macron
+// title). NFD+mark-strip turns ū→u so both sides fold to "shippuden"-ish.
+const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['\u2019]/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
 // Pick the AniList entry whose title matches the TMDB name (+ season hints).
 function pickMalEntry(entries, name, season) {
@@ -319,7 +324,9 @@ export class AnimeKai extends Source {
     // Pick best match — require fuzzy score >= 60 to avoid false matches
     // Apostrophes are dropped BEFORE tokenizing so "Journey's" == "journeys"
     // (TMDB title text vs site slug artifact otherwise never converge).
-    const normalize = (s) => s.toLowerCase().replace(/['\u2019]/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    // Task 92: NFD diacritic fold (same reason as `norm` above) — site-search
+    // matching also zeroed on "Shippūden"-class names.
+    const normalize = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['\u2019]/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     const nameNorm = normalize(name);
     let best = null;
     let bestScore = 0;

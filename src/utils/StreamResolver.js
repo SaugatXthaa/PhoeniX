@@ -1199,6 +1199,17 @@ export class StreamResolver {
       let finalMeta = urlResult.meta;
       const isAlreadyProxied = finalUrl.href.includes('/proxy?') || finalUrl.href.includes('/range-proxy?');
 
+      // Task 92: pixeldrain "?download" → Content-Disposition: attachment
+      // (measured live: the bare /api/file/{id} answers `inline` with identical
+      // 206/Range support). ANY source can emit these (MoviesHunt/Nuvio did —
+      // the hubcloud extractor now strips it at its own layer, this covers the
+      // rest), and an attachment response turns Stremio Web / browsers into a
+      // DOWNLOAD instead of playback. Central sanitize at card assembly.
+      if (!isAlreadyProxied && /(^|\.)pixeldrain\.(dev|com)$/i.test(finalUrl.hostname) && finalUrl.searchParams.has('download')) {
+        finalUrl = new URL(finalUrl.href.replace(/\?download=?(?:&|$)/, m => m.endsWith('&') ? '?' : ''));
+      }
+
+
       // Task 49: workers.dev file hosts (hubcloud final links, 4khdhub /
       // 4khdhub.one / hdhub4u family) now IP-GATE datacenter IPs — live-
       // measured 403 "Access Denied" (plain-text worker deny, not a CF block

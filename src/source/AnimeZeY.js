@@ -26,9 +26,22 @@ export class AnimeZeY extends Source {
     this.baseUrl = 'https://animezey.com';
     this.fetcher = fetcher;
     this.ttl = 10 * 60 * 1000; // 10min
+    // Task 92: empty-streak cooldown circuit. Production evidence (Naruto
+    // probes): both download workers (1.animezeydl / 1.animezey23112022
+    // .workers.dev) 429 every call and the provider's rotation logic ping-pongs
+    // between them on EVERY request — per-request hammering that extends the
+    // upstream rate-limit window (Task 81 acer precedent). After 3 consecutive
+    // empty resolves, sleep 10min with an honest instant zero; any delivery
+    // resets the streak.
+    this._emptyStreak = 0;
+    this._cooldownUntil = 0;
   }
 
   async handleInternal(ctx, _type, id) {
+    if (Date.now() < this._cooldownUntil) {
+      console.log('[animezey] cooldown active (upstream 429 class) — honest zero, upstream untouched');
+      return [];
+    }
     const tmdbId = await getTmdbId(this.fetcher, ctx, id);
     const [name, year] = await getTmdbNameAndYear(this.fetcher, ctx, tmdbId);
     const title = name + (tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ` (${year})`);
@@ -78,8 +91,18 @@ export class AnimeZeY extends Source {
           return false;
         }
       }));
-      return results.filter((_, i) => alive[i]);
+      const liveResults = results.filter((_, i) => alive[i]);
+      if (liveResults.length > 0) {
+        this._emptyStreak = 0;
+        return liveResults;
+      }
+      // all candidates probed dead → counts toward the cooldown streak
     }
-    return results;
+    this._emptyStreak += 1;
+    if (this._emptyStreak >= 3) {
+      this._cooldownUntil = Date.now() + 10 * 60 * 1000;
+      console.log(`[animezey] ${this._emptyStreak} consecutive empty resolves — 10min cooldown engaged (upstream 429 class)`);
+    }
+    return [];
   }
 }

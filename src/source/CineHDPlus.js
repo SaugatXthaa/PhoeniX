@@ -74,12 +74,19 @@ export class CineHDPlus extends Source {
 
     const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
 
+    // Task 92: unlimplay.com aggregator candidate — the site's CURRENT player
+    // (page JS: unlimplayUrl(se, ep) → unlimplay.com/f/embed/tv/{imdb}/{se}/{ep}).
+    // Shipped as an ADDITIONAL candidate on every path; the UnlimPlay
+    // extractor resolves the server map server-side and honestly zeroes while
+    // the aggregator's own DB is empty (state note in UnlimPlay.js).
+    const unlimplayCandidate = await this.buildUnlimplayCandidate(ctx, tmdbId, title, countryCodes);
+
     // ─── Primary: vimeus.com per-episode embeds (2025+ player) ───
     // Task 86: vimeus.com spent 2026-09-24 in a CF 522 (origin dead site-wide,
     // verified from a clean egress). Cap its fetch so the two fallbacks below
     // still fit the request budget when it hangs.
     const vimeusResults = await this.fetchVimeusEmbeds(ctx, html, seriesPageUrl, tmdbId, title, countryCodes, vidkingMeta);
-    if (vimeusResults.length > 0) return vimeusResults;
+    if (vimeusResults.length > 0) return unlimplayCandidate ? [...vimeusResults, unlimplayCandidate] : vimeusResults;
 
     // ─── Fallback 1: verhdlink.cam serial player ───
     // The site's OWN player script defaults to this when vimeus fails:
@@ -88,7 +95,7 @@ export class CineHDPlus extends Source {
     // The serial page carries the same ._player-mirrors latino/castellano
     // data-link blocks as the VerHdLink /movie/ pages — parse them the same way.
     const serialResults = await this.fetchVerhdlinkSerial(ctx, tmdbId, title);
-    if (serialResults.length > 0) return serialResults;
+    if (serialResults.length > 0) return unlimplayCandidate ? [...serialResults, unlimplayCandidate] : serialResults;
 
     // ─── Fallback 2: the page's static dr0pstream switcher ───
     // Last rung on the site (useDropstream()): a fixed iframe embed baked into
@@ -101,7 +108,7 @@ export class CineHDPlus extends Source {
     }
 
     // ─── Fallback: legacy data-num/.mirrors markup (kept for rollback safety) ───
-    return Promise.all(
+    const legacyResults = await Promise.all(
       $(`[data-num="${tmdbId.season}x${tmdbId.episode}"]`)
         .siblings('.mirrors')
         .children('[data-link]')
@@ -110,6 +117,36 @@ export class CineHDPlus extends Source {
         .filter(url => !url.host.match(/cinehdplus/))
         .map(url => ({ url, meta: { countryCodes, referer: seriesPageUrl.href, title, ...(vidkingMeta && { vidking: vidkingMeta }) } })),
     );
+    if (legacyResults.length > 0) return unlimplayCandidate ? [...legacyResults, unlimplayCandidate] : legacyResults;
+
+    // All site-side paths empty — the unlimplay embed candidate is the last
+    // delivery hope (resolves to honest zero while the aggregator DB is empty,
+    // self-heals when it repopulates).
+    return unlimplayCandidate ? [unlimplayCandidate] : [];
+  }
+
+  // Task 92: build the unlimplay.com embed candidate for this episode/movie.
+  // Mirrors the live page JS exactly: unlimplayUrl(se, ep) →
+  // 'https://unlimplay.com/f/embed/tv/' + imdb + '/' + se + '/' + ep.
+  // Movies (no season) follow the /movie/ shape documented in UnlimPlay.js.
+  async buildUnlimplayCandidate(ctx, tmdbId, title, countryCodes) {
+    try {
+      const imdb = (await getImdbId(this.fetcher, ctx, tmdbId))?.id;
+      if (!imdb) return null;
+      const path = tmdbId.season
+        ? `/f/embed/tv/${imdb}/${tmdbId.season}/${tmdbId.episode || 1}`
+        : `/f/embed/movie/${imdb}`;
+      return {
+        url: new URL(`https://unlimplay.com${path}`),
+        meta: {
+          countryCodes,
+          referer: 'https://cinehdplus.surf/',
+          title: `${title} · UnlimPlay`,
+        },
+      };
+    } catch {
+      return null;
+    }
   }
 
   // Fetch the vimeus.com episode embed page and return vimeos.net embed URLs.

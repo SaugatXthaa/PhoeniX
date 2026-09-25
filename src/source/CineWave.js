@@ -144,8 +144,11 @@ export class CineWave extends Source {
           // a movie title (not just "HdHub VM 1080p" which is a server label).
           const streamText = (nameTitle + ' ' + (stream.title || '')).toLowerCase();
           const nameLower = name.toLowerCase();
-          const nameNormalized = nameLower.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-          const streamNormalized = streamText.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+          // Task 92: NFD diacritic fold before stripping — TMDB "Naruto: Shippūden"
+          // previously lost its ū as a dropped char here, so the filter's
+          // includes() check could never match the stream title text.
+          const nameNormalized = nameLower.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+          const streamNormalized = streamText.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
           // Only filter if stream text is substantial (has a real title, not just quality info)
           if (nameNormalized.length > 3 && streamNormalized.length > 30 &&
               !streamNormalized.includes(nameNormalized) &&
