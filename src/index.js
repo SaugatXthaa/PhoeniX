@@ -22,6 +22,11 @@ import playbackGate from './utils/playbackGate.cjs';
 // UptimeRobot-kept-alive instance delivers warm-round card sets on round 1.
 import { startCacheKeeper, recordUserRequest, getCacheKeeperInfo } from './utils/cacheKeeper.js';
 
+// Task 89: egress watch — periodic background prober for the upstream-gated
+// sources (kmmovies CF gate, acer backend cache-fill) + Render egress-IP
+// rotation tracking. Pure telemetry: see utils/EgressWatch.js safety rules.
+import { startEgressWatch, getEgressWatchSummary, getEgressWatchInfo } from './utils/EgressWatch.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -1490,6 +1495,7 @@ app.get('/health', (req, res) => {
     },
     keepalive: { rootHits, lastRootHitAt },
     cacheKeeper: getCacheKeeperInfo(),
+    egressWatch: getEgressWatchSummary(),
     sources: sources.map(s => s.id),
     extractors: extractors.map(e => e.id),
   });
@@ -1733,6 +1739,12 @@ app.get('/debug/source/:sourceId', async (req, res) => {
   }
 });
 
+// Task 89: egress watch telemetry — rolling probe history for the upstream-gated
+// sources (kmmovies / acermovies) + egress-IP rotation log. Read-only.
+app.get('/debug/egresswatch', (req, res) => {
+  res.json(getEgressWatchInfo());
+});
+
 // Raw native-fetch probe from THIS server — diagnoses egress-IP/TLS blocks.
 // Task 38: stellarrip/stellar/uhdmovies/bollyflix resolve 0 in production while
 // identical code + got-scraping /proxy probes succeed; this endpoint isolates
@@ -1907,6 +1919,18 @@ app.listen(PORT, HOST, () => {
       : ImdbId.fromString(rawId),
     logger,
     hostUrl: process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`,
+  });
+
+  // Task 89: egress watch — same contract inputs as the cache keeper; first
+  // tick is deliberately 90s after boot (no boot-window racing). Pure
+  // telemetry + upstream-cache pre-fill on acer recovery; see the module's
+  // safety rules. EGRESS_WATCH=off reverts to pre-Task-89 behavior.
+  startEgressWatch({
+    sources,
+    parseId: (type, rawId) => rawId.startsWith('tmdb:')
+      ? TmdbId.fromString(rawId.replace('tmdb:', ''))
+      : ImdbId.fromString(rawId),
+    logger,
   });
 });
 
