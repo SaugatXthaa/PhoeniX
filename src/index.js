@@ -2016,29 +2016,51 @@ function renderChips() {
 
 function setChip(c) { chip = c; render(); }
 
+var SECTIONS = [['Movies', '🎬 Movies'], ['Series', '📺 Series'], ['Anime', '🍿 Anime']];
+var collapsed = { Movies: false, Series: false, Anime: false };
+
+function rowHtml(r) {
+  var on = !!selected[r.id];
+  var badges = '';
+  for (var k = 0; k < r.kinds.length; k++) badges += '<span class="text-[10px] px-1.5 py-0.5 rounded-md border border-white/10 text-gray-400">' + esc(r.kinds[k]) + '</span> ';
+  return '<div class="row flex items-center gap-3 px-3 py-2.5 cursor-pointer ' + (on ? 'on' : '') + '" onclick="toggle(\\'' + esc(r.id) + '\\')">'
+    + '<span class="dot ' + dotCls(r.cls) + (r.cls === 'waiting' ? ' pulse' : '') + '"></span>'
+    + '<div class="flex-1 min-w-0">'
+    +   '<div class="flex items-center gap-2 flex-wrap"><span class="text-sm font-semibold text-white">' + esc(r.label) + '</span> ' + badges + '</div>'
+    +   '<div class="text-[11px] text-gray-500 truncate">' + statusLine(r) + (r.agoMs ? ' · ' + ago(r.agoMs) : '') + '</div>'
+    + '</div>'
+    + '<span class="tick"><svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></span>'
+    + '</div>';
+}
+
+function matches(r) {
+  if (chip !== 'all' && r.cls !== chip) return false;
+  if (q && (r.label + ' ' + r.id).toLowerCase().indexOf(q) === -1) return false;
+  return true;
+}
+
 function render() {
   renderChips();
-  var rows = DATA.sources.filter(function (r) {
-    if (chip !== 'all' && r.cls !== chip) return false;
-    if (q && (r.label + ' ' + r.id).toLowerCase().indexOf(q) === -1) return false;
-    return true;
-  });
+  // Task 95: group by type — Movies / Series / Anime sections. A source with
+  // several kinds appears in each matching section; toggle state is keyed by
+  // id, so both copies stay in sync. Anime section = anime-only sources.
   var h = '';
-  for (var i = 0; i < rows.length; i++) {
-    var r = rows[i];
-    var on = !!selected[r.id];
-    var badges = '';
-    for (var k = 0; k < r.kinds.length; k++) badges += '<span class="text-[10px] px-1.5 py-0.5 rounded-md border border-white/10 text-gray-400">' + esc(r.kinds[k]) + '</span> ';
-    h += '<div class="row flex items-center gap-3 px-3 py-2.5 cursor-pointer ' + (on ? 'on' : '') + '" onclick="toggle(\\'' + esc(r.id) + '\\')">'
-      + '<span class="dot ' + dotCls(r.cls) + (r.cls === 'waiting' ? ' pulse' : '') + '"></span>'
-      + '<div class="flex-1 min-w-0">'
-      +   '<div class="flex items-center gap-2 flex-wrap"><span class="text-sm font-semibold text-white">' + esc(r.label) + '</span> ' + badges + '</div>'
-      +   '<div class="text-[11px] text-gray-500 truncate">' + statusLine(r) + (r.agoMs ? ' · ' + ago(r.agoMs) : '') + '</div>'
-      + '</div>'
-      + '<span class="tick"><svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></span>'
+  var shownAny = false;
+  for (var s = 0; s < SECTIONS.length; s++) {
+    var key = SECTIONS[s][0], title = SECTIONS[s][1];
+    var rows = DATA.sources.filter(function (r) { return matches(r) && r.kinds.indexOf(key) !== -1; });
+    if (!rows.length) continue;
+    shownAny = true;
+    var onN = 0; for (var i = 0; i < rows.length; i++) if (selected[rows[i].id]) onN++;
+    h += '<div onclick="toggleSec(\\'' + key + '\\')" class="flex items-center gap-2 px-3 py-2 bg-white/5 cursor-pointer select-none">'
+      + '<span class="text-[11px] font-bold uppercase tracking-wider text-gray-300">' + title + '</span>'
+      + '<span class="text-[11px] text-gray-500">' + onN + '/' + rows.length + '</span>'
+      + '<span class="flex-1"></span>'
+      + '<svg class="w-3.5 h-3.5 text-gray-500 transition-transform ' + (collapsed[key] ? '' : 'rotate-180') + '" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>'
       + '</div>';
+    if (!collapsed[key]) for (var j = 0; j < rows.length; j++) h += rowHtml(rows[j]);
   }
-  if (!rows.length) h = '<div class="px-4 py-6 text-center text-sm text-gray-500">No sources match.</div>';
+  if (!shownAny) h = '<div class="px-4 py-6 text-center text-sm text-gray-500">No sources match.</div>';
   document.getElementById('list').innerHTML = h;
 
   var n = 0; for (var id in selected) if (selected[id]) n++;
@@ -2046,6 +2068,8 @@ function render() {
   document.getElementById('totcount').textContent = DATA.sources.length;
   document.getElementById('installbtn').textContent = n === 0 ? 'Select at least one source' : 'Install in Stremio';
 }
+
+function toggleSec(key) { collapsed[key] = !collapsed[key]; render(); }
 
 function toggle(id) { selected[id] = !selected[id]; render(); }
 function bulk(mode) {
