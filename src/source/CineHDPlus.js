@@ -59,9 +59,23 @@ export class CineHDPlus extends Source {
       return [];
     }
 
+    // Task 92: unlimplay.com aggregator candidate — the site's CURRENT player
+    // (page JS: unlimplayUrl(se, ep) → unlimplay.com/f/embed/tv/{imdb}/{se}/{ep}).
+    // Built BEFORE the site search on purpose: the aggregator is keyed purely
+    // by imdb/season/episode, so delivery does NOT depend on cinehdplus's own
+    // search matching. Shipped as an ADDITIONAL candidate on every path; the
+    // UnlimPlay extractor resolves the server map server-side and honestly
+    // zeroes while the aggregator's own DB is empty (note in UnlimPlay.js).
+    const unlimplayCandidate = await this.buildUnlimplayCandidate(
+      ctx, tmdbId,
+      `${name}${tmdbId.season ? ` ${TmdbId.formatSeasonAndEpisode(tmdbId)}` : ''}`,
+      [CountryCode.mx, CountryCode.es],
+    );
+
     const seriesPageUrl = await this.fetchSeriesPageUrl(ctx, name, year, tmdbId);
     if (!seriesPageUrl) {
-      return [];
+      // Site search failed — the unlimplay path is still live (Task 92)
+      return unlimplayCandidate ? [unlimplayCandidate] : [];
     }
 
     const html = await this.fetcher.text(ctx, seriesPageUrl);
@@ -73,13 +87,6 @@ export class CineHDPlus extends Source {
     const title = `${(($('meta[property="og:title"]').attr('content')) || name).trim()} ${TmdbId.formatSeasonAndEpisode(tmdbId)}`;
 
     const vidkingMeta = tmdbId.season ? null : { name, year, tmdbId: tmdbId.id };
-
-    // Task 92: unlimplay.com aggregator candidate — the site's CURRENT player
-    // (page JS: unlimplayUrl(se, ep) → unlimplay.com/f/embed/tv/{imdb}/{se}/{ep}).
-    // Shipped as an ADDITIONAL candidate on every path; the UnlimPlay
-    // extractor resolves the server map server-side and honestly zeroes while
-    // the aggregator's own DB is empty (state note in UnlimPlay.js).
-    const unlimplayCandidate = await this.buildUnlimplayCandidate(ctx, tmdbId, title, countryCodes);
 
     // ─── Primary: vimeus.com per-episode embeds (2025+ player) ───
     // Task 86: vimeus.com spent 2026-09-24 in a CF 522 (origin dead site-wide,
