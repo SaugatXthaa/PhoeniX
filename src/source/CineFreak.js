@@ -300,13 +300,20 @@ export class CineFreak extends Source {
   // FINGERPRINT NOTES (measured live): the interstitial sits behind a
   // per-request CF gate that prefers curl's plain TLS and challenges
   // got-scraping/undici Chrome fingerprints (opposite of cinecloud.site,
-  // which blocks undici but passes got-scraping). The &go= step is NOT
-  // gated and answers 302 regardless. The origin also throws sporadic
-  // CF 522s — every fetch here retries once, and the 60min token→fileid
-  // cache keeps repeat resolves off the flaky path entirely.
+  // which blocks undici but passes got-scraping). The &go= step honors the
+  // go value for a limited time window (~30-60min measured: a 32min-old go
+  // still 302'd from a clean egress, a 50min-old one got the interstitial
+  // re-served) — irrelevant in practice since the addon always extracts a
+  // FRESH go immediately before use. The origin also throws sporadic CF
+  // 522s. Positives cache 60min (stable token→fileid), failures 10min so a
+  // closed gate phase isn't hammered on every request.
   async resolveGenerateToken(token) {
     const cached = this._tokenCache.get(token);
-    if (cached && Date.now() - cached.ts < 60 * 60 * 1000) return cached.fileId;
+    if (cached) {
+      // positives (fileId) live 60min, negatives (null) only 10min
+      const ttl = cached.fileId ? 60 * 60 * 1000 : 10 * 60 * 1000;
+      if (Date.now() - cached.ts < ttl) return cached.fileId;
+    }
 
     const genUrl = `${BASE_URL}/generate.php?id=${encodeURIComponent(token)}`;
     let goValue = null;
@@ -321,6 +328,12 @@ export class CineFreak extends Source {
       else if (attempt === 1) await new Promise(r => setTimeout(r, 900));
     }
     if (!goValue) {
+      // Task 91: negative-cache the failure for 10min — when the CF gate is
+      // in a closed phase, re-attempting all 6 tokens on EVERY user request
+      // just hammers the gate (acer negative-cache precedent). The next
+      // resolve after expiry gets a fresh chance.
+      if (this._tokenCache.size > 300) this._tokenCache.clear();
+      this._tokenCache.set(token, { ts: Date.now(), fileId: null });
       console.log('[cinefreak] generate v2: no go token after retries (CF gate or flow changed)');
       return null;
     }
