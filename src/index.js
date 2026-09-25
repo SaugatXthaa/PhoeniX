@@ -26,6 +26,10 @@ import { startCacheKeeper, recordUserRequest, getCacheKeeperInfo } from './utils
 // sources (kmmovies CF gate, acer backend cache-fill) + Render egress-IP
 // rotation tracking. Pure telemetry: see utils/EgressWatch.js safety rules.
 import { startEgressWatch, getEgressWatchSummary, getEgressWatchInfo } from './utils/EgressWatch.js';
+// Task 90: /status live page — passive per-source outcome telemetry
+// (recorded inside StreamResolver) merged with the egress watch probes.
+import { getSourceStatus, watchVerdictFor } from './utils/SourceStatus.js';
+import { ANIME_ONLY_SOURCE_IDS } from './utils/StreamResolver.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1739,6 +1743,150 @@ app.get('/debug/source/:sourceId', async (req, res) => {
   }
 });
 
+// Task 90: live status data for the non-technical /status page. READ-ONLY:
+// merges passive per-source outcomes (real request telemetry from
+// StreamResolver) with the Task 89 egress-watch probes. Triggers nothing.
+app.get('/status/data', (req, res) => {
+  const telemetry = getSourceStatus();
+  const watchSummary = getEgressWatchSummary();
+  const rows = sources.map(s => {
+    const t = telemetry[s.id];
+    const w = watchVerdictFor(s.id, watchSummary);
+    const kinds = [
+      ...((s.contentTypes || []).includes('movie') ? ['Movies'] : []),
+      ...((s.contentTypes || []).includes('series') ? ['Series'] : []),
+    ];
+    if (ANIME_ONLY_SOURCE_IDS.has(s.id)) kinds.push('Anime');
+    const row = {
+      id: s.id, label: s.label || s.id, kinds,
+      cls: w ? w.cls : (t ? t.cls : 'idle'),
+      count: t?.count || 0, ms: t?.ms || 0, agoMs: t?.agoMs || 0,
+      lastType: t?.type || '', totals: t?.totals || { ok: 0, zero: 0, err: 0 },
+      note: w ? w.note : '',
+    };
+    return row;
+  });
+  const summary = { working: 0, waiting: 0, issue: 0, idle: 0, total: rows.length };
+  for (const r of rows) summary[r.cls === 'delivering' ? 'working' : r.cls === 'waiting' ? 'waiting' : r.cls === 'issue' ? 'issue' : 'idle']++;
+  res.json({
+    generatedAt: new Date().toISOString(),
+    server: {
+      ip: watchSummary.ip || null,
+      ipSince: watchSummary.ipSince || null,
+      ipChanges: watchSummary.ipChanges || 0,
+      uptimeH: Math.round(process.uptime() / 360) / 10,
+      watchEnabled: watchSummary.enabled !== false,
+    },
+    summary,
+    sources: rows,
+  });
+});
+
+// Task 90: non-technical live status page — dark glass style matching the
+// landing page; polls /status/data every 30s. Renders what already happened;
+// never triggers resolves or probes.
+app.get('/status', (req, res) => {
+  const hostUrl = `https://${req.headers.host}`;
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhoeniX · Live Source Status</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: radial-gradient(ellipse at 50% -10%, #2a1a08 0%, #0a0a0f 55%); min-height: 100vh; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .g { background: #22c55e; box-shadow: 0 0 10px rgba(34,197,94,.7); }
+  .a { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,.7); }
+  .r { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,.7); }
+  .i { background: #475569; }
+  .pulse { animation: p 2s ease-in-out infinite; }
+  @keyframes p { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+</style>
+</head>
+<body class="text-gray-200">
+<div class="max-w-md mx-auto px-4 py-8">
+  <div class="flex items-center gap-3 mb-1">
+    <img src="${hostUrl}/public/logo.png" alt="PhoeniX" class="w-10 h-10 drop-shadow-[0_0_15px_rgba(255,100,0,0.5)]">
+    <h1 class="text-2xl font-black text-white tracking-tight">Live Source Status</h1>
+  </div>
+  <p class="text-xs text-gray-400 mb-4">What each source actually returned on the latest real request. Updates itself every 30&nbsp;seconds.</p>
+  <div id="chips" class="flex flex-wrap gap-2 mb-3 text-xs font-semibold"></div>
+  <div class="rounded-2xl border border-white/10 p-3 mb-4 text-xs text-gray-400" style="background:rgba(15,15,20,0.6);backdrop-filter:blur(20px)">
+    <span id="serverline">Loading server info…</span>
+  </div>
+  <div id="content" class="space-y-5"></div>
+  <p class="text-[11px] text-gray-500 mt-6 leading-relaxed">
+    PhoeniX streams directly from each site — no torrents, ever.
+    "Waiting" sources are blocked or empty <em>on their own websites</em>; the addon re-checks them automatically and they come back on their own.
+  </p>
+</div>
+<script>
+const GROUPS = [
+  ['working', 'Working', 'g'],
+  ['waiting', 'Waiting on their sites', 'a'],
+  ['issue',   'Had an issue', 'r'],
+  ['idle',    'No recent requests', 'i'],
+];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function ago(ms) {
+  if (!ms || ms < 90e3) return 'just now';
+  const m = Math.round(ms / 60e3); if (m < 60) return m + ' min ago';
+  const h = Math.round(m / 60); if (h < 48) return h + ' h ago';
+  return Math.round(h / 24) + ' d ago';
+}
+function dur(ms) { return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms'; }
+function card(r) {
+  let line;
+  if (r.cls === 'delivering') line = '<span class="text-green-400 font-semibold">Working</span> — delivered <span class="text-white font-semibold">' + r.count + '</span> stream' + (r.count === 1 ? '' : 's') + ' · ' + ago(r.agoMs);
+  else if (r.cls === 'waiting') line = '<span class="text-amber-400 font-semibold">Waiting</span> — ' + esc(r.note || 'the site had nothing to offer this time') + (r.agoMs ? ' · last try ' + ago(r.agoMs) : '');
+  else if (r.cls === 'issue') line = '<span class="text-red-400 font-semibold">Timed out</span> · ' + ago(r.agoMs) + ' — usually recovers on the next open';
+  else line = 'No requests yet — lights up on first use';
+  const kinds = r.kinds.map(k => '<span class="text-[10px] uppercase tracking-wide text-gray-500 border border-white/10 rounded px-1 py-px">' + k + '</span>').join(' ');
+  const meta = r.cls === 'delivering' ? ' <span class="text-gray-600">· ' + dur(r.ms) + '</span>' : '';
+  return '<div class="flex items-start gap-2.5 rounded-xl border border-white/10 px-3 py-2.5" style="background:rgba(15,15,20,0.55)">'
+    + '<span class="dot mt-1.5 ' + (GROUPS.find(g => g[0] === r.cls)?.[2] || 'i') + (r.cls === 'waiting' ? ' pulse' : '') + '"></span>'
+    + '<div class="min-w-0 flex-1"><div class="flex items-center gap-2 flex-wrap">' + esc(r.label) + ' ' + kinds + '</div>'
+    + '<div class="text-xs text-gray-400 mt-0.5">' + line + meta + '</div></div></div>';
+}
+function render(d) {
+  const chips = [
+    ['Working', d.summary.working, 'text-green-400 border-green-400/30'],
+    ['Waiting', d.summary.waiting, 'text-amber-400 border-amber-400/30'],
+    ['Issues', d.summary.issue, 'text-red-400 border-red-400/30'],
+    ['Idle', d.summary.idle, 'text-gray-500 border-white/10'],
+  ];
+  document.getElementById('chips').innerHTML = chips.map(([l, n, c]) =>
+    '<span class="rounded-full border px-2.5 py-1 ' + c + '">' + n + ' ' + l + '</span>').join('');
+  const sl = d.server;
+  let since = '';
+  if (sl.ipSince) {
+    const h = Math.floor((Date.now() - new Date(sl.ipSince).getTime()) / 36e5);
+    since = ' · unchanged for ' + (h < 1 ? 'under an hour' : h + ' h');
+  }
+  document.getElementById('serverline').innerHTML =
+    'Server network IP <span class="text-gray-200 font-mono">' + esc(sl.ip || 'checking…') + '</span>' + since +
+    ' · watched every 30 min · addon uptime ' + sl.uptimeH + ' h';
+  const by = {};
+  for (const g of GROUPS) by[g[0]] = [];
+  for (const r of d.sources) (by[r.cls] || by.idle).push(r);
+  for (const g of GROUPS) by[g[0]].sort((a, b) => a.label.localeCompare(b.label));
+  document.getElementById('content').innerHTML = GROUPS.filter(([k]) => by[k].length)
+    .map(([k, title]) => '<div><h2 class="text-sm font-bold text-gray-300 mb-2">' + title + ' <span class="text-gray-500 font-normal">(' + by[k].length + ')</span></h2><div class="space-y-2">'
+    + by[k].map(card).join('') + '</div></div>').join('');
+}
+async function tick() {
+  try { render(await (await fetch('/status/data')).json()); } catch (e) { /* keep last frame */ }
+}
+tick();
+setInterval(tick, 30000);
+</script>
+</body>
+</html>`);
+});
+
 // Task 89: egress watch telemetry — rolling probe history for the upstream-gated
 // sources (kmmovies / acermovies) + egress-IP rotation log. Read-only.
 app.get('/debug/egresswatch', (req, res) => {
@@ -1873,6 +2021,9 @@ app.get('/', (req, res) => {
       <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
       Copy Manifest URL
     </button>
+    <a href="/status" class="mt-3 flex items-center justify-center w-full py-2.5 rounded-2xl text-gray-400 font-medium text-xs transition-all duration-300 hover:text-orange-300 hover:bg-white/5">
+      <span class="dot g mr-2 pulse"></span> Live source status
+    </a>
   </div>
 </div>
 <script>

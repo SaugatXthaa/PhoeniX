@@ -9,6 +9,9 @@ import streamGate from './streamGate.cjs';
 // Task 54: playback-priority — background (post-budget) source starts yield
 // to /proxy + /range-proxy traffic so players never queue behind scraping.
 import playbackGate from './playbackGate.cjs';
+// Task 90: passive per-source outcome recorder for the /status live page —
+// synchronous Map write of primitives, no I/O (see utils/SourceStatus.js).
+import { recordSourceOutcome } from './SourceStatus.js';
 import { createRequire } from 'module';
 
 // Task 49: unified subtitle providers — the atlantic.st site stack (granite
@@ -515,7 +518,7 @@ const BACKGROUND_ONLY_SOURCE_IDS = new Set([
   'videasyto',      // Playwright headless 30-60s
   'verhdlink', 'movix',
 ]);
-const ANIME_ONLY_SOURCE_IDS = new Set([
+export const ANIME_ONLY_SOURCE_IDS = new Set([
   'animeflix', 'anikoto', 'anikage', 'anibd', '2dhive',
   'anidoor', 'animegg', 'hianime', 'animekai', 'animesdigital',
   'itachi', 'anikototv', 'animezey', 'animotvslash',
@@ -804,6 +807,10 @@ export class StreamResolver {
           durationMs: duration,
           queueMs: queueTime,
         });
+        // Task 90: passive telemetry for /status — captures late-settling
+        // background sources too (unlike the _lastSourceTimings stash, which
+        // is only read after the client response ships).
+        recordSourceOutcome(source.id, type, status, resultCount, duration);
         activeCount--;
         // Start next waiting source if any
         const next = waitQueue.shift();
