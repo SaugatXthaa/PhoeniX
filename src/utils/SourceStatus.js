@@ -24,10 +24,19 @@
 const MAX_ENTRIES = 200; // hard cap, defense against registry surprises
 const state = new Map(); // sourceId -> entry
 
+// Task 91: classification window. cls used to mirror the LATEST outcome
+// forever — one cold-boot round of zeros/timeouts pinned healthy sources as
+// "waiting"/"issue" until the next real request for that exact source (which
+// can be hours away on sparse traffic). Now a small ring of recent outcomes
+// drives the class, and everything older than STALE_MS decays back to idle
+// ("no recent requests") so the page always describes the recent past.
+const RING = 4;
+const STALE_MS = 3 * 60 * 60 * 1000; // 3h
+
 function entry(id) {
   let e = state.get(id);
   if (!e && state.size < MAX_ENTRIES) {
-    e = { firstAt: Date.now(), last: null, totals: { ok: 0, zero: 0, err: 0 } };
+    e = { firstAt: Date.now(), last: null, recent: [], totals: { ok: 0, zero: 0, err: 0 } };
     state.set(id, e);
   }
   return e;
@@ -38,29 +47,38 @@ function entry(id) {
 export function recordSourceOutcome(id, type, status, count, durationMs) {
   const e = entry(id);
   if (!e) return; // over cap — skip silently, telemetry must never throw
-  e.last = { at: Date.now(), type: String(type || ''), status: String(status || ''), count: count | 0, ms: durationMs | 0 };
-  if (status === 'ok') { if (count > 0) e.totals.ok++; else e.totals.zero++; }
+  const o = { at: Date.now(), type: String(type || ''), status: String(status || ''), count: count | 0, ms: durationMs | 0 };
+  e.last = o;
+  e.recent.push(o);
+  if (e.recent.length > RING) e.recent.shift();
+  if (o.status === 'ok') { if (o.count > 0) e.totals.ok++; else e.totals.zero++; }
   else e.totals.err++;
 }
 
 // Classification for the page. status: delivering | waiting | issue | idle
 export function getSourceStatus() {
+  const now = Date.now();
   const out = {};
   for (const [id, e] of state) {
-    const last = e.last;
+    const fresh = e.recent.filter(o => now - o.at < STALE_MS);
     let cls = 'idle';
-    if (last) {
-      if (last.status === 'ok' && last.count > 0) cls = 'delivering';
-      else if (last.status === 'ok') cls = 'waiting';
+    if (fresh.length > 0) {
+      // Any delivery inside the freshness window wins — a catalog-gap zero on
+      // the latest title must not bury the fact the source works.
+      if (fresh.some(o => o.status === 'ok' && o.count > 0)) cls = 'delivering';
+      else if (e.last.status === 'ok') cls = 'waiting';
       else cls = 'issue';
     }
+    const last = e.last;
     out[id] = {
       cls,
       count: last?.count || 0,
       ms: last?.ms || 0,
       type: last?.type || '',
-      agoMs: last ? Date.now() - last.at : 0,
+      agoMs: last ? now - last.at : 0,
       totals: { ...e.totals },
+      recentOk: fresh.filter(o => o.status === 'ok' && o.count > 0).length,
+      recentN: fresh.length,
       firstAt: e.firstAt,
     };
   }

@@ -102,6 +102,7 @@ export class CineFreak extends Source {
     this.fetcher = fetcher;
     this.ttl = 10 * 60 * 1000; // 10min
     this._fileCache = new Map(); // cinecloudId → { url, ts }
+    this._tokenCache = new Map(); // generate v2 token → { fileId, ts } (Task 91)
   }
 
   async handleInternal(ctx, _type, id) {
@@ -132,8 +133,14 @@ export class CineFreak extends Source {
       return (b.bytes || 0) - (a.bytes || 0);
     });
     const resolved = await Promise.all(dlLinksSorted.slice(0, 6).map(async dl => {
-      try { return { dl, streamUrl: await this.resolveStreamUrl(dl.cinecloudId) }; }
-      catch { return { dl, streamUrl: null }; }
+      try {
+        // Task 91: legacy links carry the fileid directly; v2 links carry an
+        // opaque generate token that needs the server-side go-flow first.
+        let fileId = dl.cinecloudId;
+        if (!fileId && dl.v2Token) fileId = await this.resolveGenerateToken(dl.v2Token);
+        if (!fileId) return { dl, streamUrl: null };
+        return { dl, streamUrl: await this.resolveStreamUrl(fileId) };
+      } catch { return { dl, streamUrl: null }; }
     }));
     for (const { dl, streamUrl } of resolved) {
       if (!streamUrl) continue;
@@ -227,6 +234,14 @@ export class CineFreak extends Source {
   // Movies: h4.movie-title + a.dlbtn-download inside .dlbtn-container.
   // Series ("Combo Packs Links"): BARE anchors (no class, relative
   // /generate.php?id=… hrefs, quality in the link text "HD 1080p").
+  //
+  // Task 91 (2026-09 site update): the generate id scheme went from plain
+  // base64("https://new5.cinecloud.site/f/{fileid}newgo32") to OPAQUE v2
+  // tokens ("v2…" with base64url chars '-' and '_'). The old id regex
+  // ([A-Za-z0-9+/=]+) truncated them at the first '-' and the local base64
+  // decode produced garbage — the mapping is now server-side. New ids are
+  // resolved through resolveGenerateToken() during the resolve phase; the
+  // legacy decode is kept first for rollback safety.
   async findDownloadLinks(detailUrl) {
     const html = await fetchPage(detailUrl, { headers: { Referer: BASE_URL + '/' } });
     if (!html) return [];
@@ -249,24 +264,98 @@ export class CineFreak extends Source {
       if (!h4Text) h4Text = $(el).text().trim();
       if (h4Text) ({ quality, height, bytes, codec } = parseH4(h4Text));
 
-      // generate.php?id={b64} → https://new5.cinecloud.site/f/{fileid}newgo32
-      const m = href.match(/id=([A-Za-z0-9+/=]+)/);
+      // generate.php?id={...} — full token capture incl. base64url '-'/_'.
+      const m = href.match(/id=([A-Za-z0-9+/=_-]+)/);
       if (!m) return;
-      let decoded = '';
-      try { decoded = Buffer.from(m[1], 'base64').toString('utf8'); } catch { return; }
-      const idMatch = decoded.match(/cinecloud\.site\/f\/([a-z0-9]+)/i);
-      if (!idMatch) return;
-      // Strip the "newgo32" tracking suffix baked into the path
-      const cinecloudId = idMatch[1].replace(/newgo32$/i, '');
-      if (!cinecloudId) return;
-      // /x/ watch links encode the same file id as their /f/ download twin
-      if (seenIds.has(cinecloudId)) return;
-      seenIds.add(cinecloudId);
 
-      links.push({ quality, height, bytes, codec, cinecloudId });
+      // Legacy path (Task 38): base64 decode → cinecloud.site/f/{fileid}
+      let decoded = '';
+      try { decoded = Buffer.from(m[1], 'base64').toString('utf8'); } catch { /* v2 token — not base64 */ }
+      const idMatch = decoded.match(/cinecloud\.site\/f\/([a-z0-9]+)/i);
+      if (idMatch) {
+        // Strip the "newgo32" tracking suffix baked into the path
+        const cinecloudId = idMatch[1].replace(/newgo32$/i, '');
+        if (!cinecloudId || seenIds.has(cinecloudId)) return;
+        seenIds.add(cinecloudId);
+        links.push({ quality, height, bytes, codec, cinecloudId });
+        return;
+      }
+
+      // v2 path (Task 91): opaque token — resolve server-side later.
+      if (seenIds.has(m[1])) return;
+      seenIds.add(m[1]);
+      links.push({ quality, height, bytes, codec, v2Token: m[1] });
     });
 
     return links;
+  }
+
+  // Task 91: v2 generate token → cinecloud fileid (server-side mapping).
+  // Two-step, cookie-free, verified live 2026-09:
+  //   1. GET /generate.php?id={token} → interstitial page whose JS embeds
+  //      go={ts}.{hash} (the "click twice" gate is purely client-side — the
+  //      same page hands us the exact parameter the browser navigates to)
+  //   2. GET /generate.php?id={token}&go={ts}.{hash} → 302 Location:
+  //      https://new5.cinecloud.site/f/{fileid}
+  // FINGERPRINT NOTES (measured live): the interstitial sits behind a
+  // per-request CF gate that prefers curl's plain TLS and challenges
+  // got-scraping/undici Chrome fingerprints (opposite of cinecloud.site,
+  // which blocks undici but passes got-scraping). The &go= step is NOT
+  // gated and answers 302 regardless. The origin also throws sporadic
+  // CF 522s — every fetch here retries once, and the 60min token→fileid
+  // cache keeps repeat resolves off the flaky path entirely.
+  async resolveGenerateToken(token) {
+    const cached = this._tokenCache.get(token);
+    if (cached && Date.now() - cached.ts < 60 * 60 * 1000) return cached.fileId;
+
+    const genUrl = `${BASE_URL}/generate.php?id=${encodeURIComponent(token)}`;
+    let goValue = null;
+    for (let attempt = 1; attempt <= 2 && !goValue; attempt++) {
+      let html = '';
+      try {
+        const buf = await fetchWithCurl(genUrl, { headers: { Referer: BASE_URL + '/' }, maxTimeSec: 12, userAgent: UA });
+        html = buf ? buf.toString('utf8') : '';
+      } catch { /* retry */ }
+      const m = html.match(/\bgo=(\d{9,12}\.[0-9a-fA-F]{8,40})/);
+      if (m) goValue = m[1];
+      else if (attempt === 1) await new Promise(r => setTimeout(r, 900));
+    }
+    if (!goValue) {
+      console.log('[cinefreak] generate v2: no go token after retries (CF gate or flow changed)');
+      return null;
+    }
+
+    const finalUrl = `${genUrl}&go=${goValue}`;
+    let location = '';
+    try {
+      // native fetch with manual redirect — the &go= endpoint is not gated
+      const res = await fetch(finalUrl, {
+        redirect: 'manual',
+        headers: { 'User-Agent': UA, Referer: BASE_URL + '/' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (res.status >= 500) throw new Error(`origin ${res.status}`); // sporadic CF 522s
+      location = res.headers.get('location') || '';
+    } catch {
+      try {
+        const { gotScraping } = await import('got-scraping');
+        const res = await gotScraping(finalUrl, {
+          headers: { 'User-Agent': UA, Referer: BASE_URL + '/' },
+          timeout: { request: 12000 },
+          throwHttpErrors: false,
+          followRedirect: false, // capture the 302 Location itself
+        });
+        location = String(res.headers.location || '');
+      } catch { /* fall through */ }
+    }
+    const m = location && location.match(/cinecloud\.site\/f\/([a-z0-9]+)/i);
+    if (!m) {
+      console.log('[cinefreak] generate v2: no cinecloud fileid in redirect');
+      return null;
+    }
+    if (this._tokenCache.size > 300) this._tokenCache.clear();
+    this._tokenCache.set(token, { ts: Date.now(), fileId: m[1] });
+    return m[1];
   }
 
   // cinecloud file id → direct googleusercontent URL.

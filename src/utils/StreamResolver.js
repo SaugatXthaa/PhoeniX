@@ -534,8 +534,21 @@ export const ANIME_ONLY_SOURCE_IDS = new Set([
 // entirely for movies. Series behavior is unchanged (anime sources are
 // the primary deliverers there). Env escape hatch kept for diagnostics.
 const ANIME_SOURCES_ON_MOVIES = process.env.ANIME_SOURCES_ON_MOVIES === '1';
+
+// Task 91: honor each source's declared contentTypes. Series-only sources can
+// never deliver on movies (cinehdplus needs an episode for every one of its
+// paths) and movie-only sources can never deliver on series (production-
+// measured: uhdmovies 0 @0.8s, verhdlink 0 @1.1s, meinecloud 0 @19.6s — that
+// last one burns a 20s slot on EVERY series request; acermovies' search POSTs
+// on series titles it can never serve also waste rate-limited upstream quota).
+// Sources without a declaration are scheduled for everything (future-proof).
+export function supportsType(source, type) {
+  if (!Array.isArray(source.contentTypes) || source.contentTypes.length === 0) return true;
+  return source.contentTypes.includes(type);
+}
 const isScheduled = (source, requestType) =>
-  ANIME_SOURCES_ON_MOVIES || requestType !== 'movie' || !ANIME_ONLY_SOURCE_IDS.has(source.id);
+  (ANIME_SOURCES_ON_MOVIES || requestType !== 'movie' || !ANIME_ONLY_SOURCE_IDS.has(source.id))
+  && supportsType(source, requestType);
 const waveOf = (sourceId, requestType) => {
   const w1 = WAVE1_SOURCE_ORDER.indexOf(sourceId);
   if (w1 !== -1) return w1; // 0..19 — exact start order within wave 0
@@ -551,7 +564,8 @@ const waveOf = (sourceId, requestType) => {
 // + filter — identical behavior to the previous function-scoped code.
 export function orderSourcesForRequest(sources, requestType) {
   const isScheduled = (source, type) =>
-    ANIME_SOURCES_ON_MOVIES || type !== 'movie' || !ANIME_ONLY_SOURCE_IDS.has(source.id);
+    (ANIME_SOURCES_ON_MOVIES || type !== 'movie' || !ANIME_ONLY_SOURCE_IDS.has(source.id))
+    && supportsType(source, type);
   const waveOf = (sourceId, type) => {
     const w1 = WAVE1_SOURCE_ORDER.indexOf(sourceId);
     if (w1 !== -1) return w1; // 0..19 — exact start order within wave 0
@@ -702,9 +716,12 @@ export class StreamResolver {
     // zero behavior change. The idle Cache-Keeper imports the same function so
     // a keeper-warmed cache matches exactly what this resolve would schedule.
     const sortedSources = orderSourcesForRequest(sources, type);
-    const skippedAnimeCount = sources.length - sortedSources.length;
-    if (skippedAnimeCount > 0) {
-      this.logger.info(`StreamResolver: skipped ${skippedAnimeCount} anime-only sources (movie request)`);
+    const skippedCount = sources.length - sortedSources.length;
+    if (skippedCount > 0) {
+      const animeSkipped = type === 'movie' && !ANIME_SOURCES_ON_MOVIES
+        ? sources.filter(s => ANIME_ONLY_SOURCE_IDS.has(s.id)).length
+        : 0;
+      this.logger.info(`StreamResolver: skipped ${skippedCount} source(s) not applicable for ${type} request (${animeSkipped} anime-only, ${skippedCount - animeSkipped} type-mismatch)`);
     }
 
     let activeCount = 0;

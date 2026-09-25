@@ -1762,6 +1762,7 @@ app.get('/status/data', (req, res) => {
       cls: w ? w.cls : (t ? t.cls : 'idle'),
       count: t?.count || 0, ms: t?.ms || 0, agoMs: t?.agoMs || 0,
       lastType: t?.type || '', totals: t?.totals || { ok: 0, zero: 0, err: 0 },
+      recentOk: t?.recentOk || 0, recentN: t?.recentN || 0,
       note: w ? w.note : '',
     };
     return row;
@@ -1812,7 +1813,7 @@ app.get('/status', (req, res) => {
     <img src="${hostUrl}/public/logo.png" alt="PhoeniX" class="w-10 h-10 drop-shadow-[0_0_15px_rgba(255,100,0,0.5)]">
     <h1 class="text-2xl font-black text-white tracking-tight">Live Source Status</h1>
   </div>
-  <p class="text-xs text-gray-400 mb-4">What each source actually returned on the latest real request. Updates itself every 30&nbsp;seconds.</p>
+  <p class="text-xs text-gray-400 mb-4">What each source actually returned on recent real requests. Updates itself every 30&nbsp;seconds.</p>
   <div id="chips" class="flex flex-wrap gap-2 mb-3 text-xs font-semibold"></div>
   <div class="rounded-2xl border border-white/10 p-3 mb-4 text-xs text-gray-400" style="background:rgba(15,15,20,0.6);backdrop-filter:blur(20px)">
     <span id="serverline">Loading server info…</span>
@@ -1821,6 +1822,7 @@ app.get('/status', (req, res) => {
   <p class="text-[11px] text-gray-500 mt-6 leading-relaxed">
     PhoeniX streams directly from each site — no torrents, ever.
     "Waiting" sources are blocked or empty <em>on their own websites</em>; the addon re-checks them automatically and they come back on their own.
+    Sources nobody has opened lately show as "no recent requests" instead of a stale verdict.
   </p>
 </div>
 <script>
@@ -1839,17 +1841,18 @@ function ago(ms) {
 }
 function dur(ms) { return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms'; }
 function card(r) {
+  const recent = r.recentN > 0 && r.recentOk > 0 ? ' <span class="text-gray-600">· delivered ' + r.recentOk + ' of last ' + r.recentN + ' checks</span>' : '';
   let line;
   if (r.cls === 'delivering') line = '<span class="text-green-400 font-semibold">Working</span> — delivered <span class="text-white font-semibold">' + r.count + '</span> stream' + (r.count === 1 ? '' : 's') + ' · ' + ago(r.agoMs);
   else if (r.cls === 'waiting') line = '<span class="text-amber-400 font-semibold">Waiting</span> — ' + esc(r.note || 'the site had nothing to offer this time') + (r.agoMs ? ' · last try ' + ago(r.agoMs) : '');
   else if (r.cls === 'issue') line = '<span class="text-red-400 font-semibold">Timed out</span> · ' + ago(r.agoMs) + ' — usually recovers on the next open';
-  else line = 'No requests yet — lights up on first use';
+  else line = r.agoMs ? 'No requests in the last 3 h — last try ' + ago(r.agoMs) : 'No requests yet — lights up on first use';
   const kinds = r.kinds.map(k => '<span class="text-[10px] uppercase tracking-wide text-gray-500 border border-white/10 rounded px-1 py-px">' + k + '</span>').join(' ');
   const meta = r.cls === 'delivering' ? ' <span class="text-gray-600">· ' + dur(r.ms) + '</span>' : '';
   return '<div class="flex items-start gap-2.5 rounded-xl border border-white/10 px-3 py-2.5" style="background:rgba(15,15,20,0.55)">'
     + '<span class="dot mt-1.5 ' + (GROUPS.find(g => g[0] === r.cls)?.[2] || 'i') + (r.cls === 'waiting' ? ' pulse' : '') + '"></span>'
     + '<div class="min-w-0 flex-1"><div class="flex items-center gap-2 flex-wrap">' + esc(r.label) + ' ' + kinds + '</div>'
-    + '<div class="text-xs text-gray-400 mt-0.5">' + line + meta + '</div></div></div>';
+    + '<div class="text-xs text-gray-400 mt-0.5">' + line + meta + recent + '</div></div></div>';
 }
 function render(d) {
   const chips = [

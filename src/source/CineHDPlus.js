@@ -20,6 +20,24 @@ const normalizeTitle = (s) => (s || '')
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
+// Task 91: fuzzy tier for title variants the exact matcher can't close
+// ("Duna: Parte dos" vs "Dune: Parte dos"; "El origen" vs "Origen").
+// Accepts article-strip equality (site keeps the article TMDB-es drops) or a
+// token-Dice coefficient ≥ 0.6. CALLERS MUST year-gate the result — this
+// deliberately matches near-titles ("Segundo origen" vs "Origen") that are
+// only safe when the card year equals the TMDB year.
+const STRIP_ARTICLE = /^(el|la|los|las|un|una|o|a) /;
+function _fuzzyTitleMatch(wanted, candidate) {
+  if (!wanted || !candidate) return false;
+  if (wanted === candidate) return true;
+  if (wanted.replace(STRIP_ARTICLE, '') === candidate.replace(STRIP_ARTICLE, '')) return true;
+  const a = new Set(wanted.split(' '));
+  const b = new Set(candidate.split(' '));
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  return a.size + b.size > 0 && (2 * inter) / (a.size + b.size) >= 0.6;
+}
+
 export class CineHDPlus extends Source {
   constructor(fetcher) {
     super();
@@ -41,7 +59,7 @@ export class CineHDPlus extends Source {
       return [];
     }
 
-    const seriesPageUrl = await this.fetchSeriesPageUrl(ctx, name);
+    const seriesPageUrl = await this.fetchSeriesPageUrl(ctx, name, year, tmdbId);
     if (!seriesPageUrl) {
       return [];
     }
@@ -191,12 +209,60 @@ export class CineHDPlus extends Source {
   }
 
   // Case-insensitive match handles TMDB/CineHDPlus capitalization differences (e.g. "La casa de dragón" vs "La Casa del Dragón")
-  async fetchSeriesPageUrl(ctx, name) {
-    // Task 86: production silently zeroed (cinehdplus series probes returned []
-    // with no logs at all) because this function caught every failure invisibly.
-    // Strategy chain with per-step logging: POST form search on .surf → legacy
-    // GET search on .surf (was dead 2025-09, cheap to retry) → POST on the
-    // mirror domain .biz (same DLE catalog, verified comment 2025-09).
+  // Task 91 RE: two live-site failure classes killed the old exact-equality
+  // matcher:
+  //   (a) TITLE VARIANTS — the site lists Dune: Part Two as "Duna: Parte dos"
+  //       (TMDB-es "Dune: Parte dos") and Inception as "Origen" (TMDB-es
+  //       "Origen" searches fine but returns 24 near-matches WITHOUT the
+  //       target page — DLE's full-text quirk). Exact equality can never close
+  //       either class.
+  //   (b) THE FIX — verified live: searching the IMDB id (tt1375666 → exactly
+  //       1 result "Origen"; tt15239678 → exactly 1 result "Duna: Parte dos")
+  //       is deterministic because the site embeds imdb ids in its page bodies
+  //       (same pattern as HindMoviez "Matched via IMDB ID!").
+  // Strategy chain (all with per-step logging):
+  //   0. POST search by IMDB id on .surf — deterministic, taken when it
+  //      returns exactly one candidate; with multiple, the year-matched one
+  //      wins.
+  //   1-3. Name search (post-surf → get-surf → post-biz) with a year-gated
+  //      fuzzy matcher: exact normalized equality always accepted; otherwise
+  //      an article-strip equality or token-Dice ≥ 0.6 candidate is accepted
+  //      ONLY when its card year equals the TMDB year (prevents "Origen" →
+  //      "Segundo origen"/"Sin Origen" wrong-title deliveries).
+  async fetchSeriesPageUrl(ctx, name, year, tmdbId) {
+    // ── Strategy 0: IMDB-id search (deterministic) ──
+    let imdbId = '';
+    try { imdbId = (await getImdbId(this.fetcher, ctx, tmdbId))?.id || ''; } catch { /* fall through to name search */ }
+    if (imdbId) {
+      try {
+        const html = await this.fetcher.textPost(
+          ctx,
+          new URL('/index.php?do=search&subaction=search', 'https://cinehdplus.surf'),
+          `story=${encodeURIComponent(imdbId)}&do=search&subaction=search&search_start=0&full_search=0&result_from=1&result_num=50`,
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+        );
+        const candidates = this._searchCandidates(html);
+        if (candidates.length === 1) {
+          console.log(`[cinehdplus] search imdb: matched via ${imdbId} → ${candidates[0].href}`);
+          return new URL(candidates[0].href);
+        }
+        if (candidates.length > 1) {
+          const byYear = year && candidates.find(c => c.year === year);
+          if (byYear) {
+            console.log(`[cinehdplus] search imdb: ${candidates.length} candidates, year ${year} picked → ${byYear.href}`);
+            return new URL(byYear.href);
+          }
+          console.log(`[cinehdplus] search imdb: ${candidates.length} candidates, no year match — falling to name search`);
+        } else {
+          console.log(`[cinehdplus] search imdb: no results for ${imdbId} — falling to name search`);
+        }
+      } catch (e) {
+        console.log(`[cinehdplus] search imdb fetch failed: ${String(e?.message || e).slice(0, 80)}`);
+      }
+    }
+
+    // ── Strategies 1-3: name search with year-gated fuzzy matching ──
+    const wanted = normalizeTitle(name);
     const attempts = [
       ['post-surf', 'https://cinehdplus.surf', 'POST'],
       ['get-surf', 'https://cinehdplus.surf', 'GET'],
@@ -226,21 +292,41 @@ export class CineHDPlus extends Source {
         console.log(`[cinehdplus] search ${tag}: empty/tiny response (${html.length}B)`);
         continue;
       }
-      const $ = cheerio.load(html);
-      const wanted = normalizeTitle(name);
-      const candidates = $('.card__title a[href]').toArray()
-        .map(el => ({ href: $(el).attr('href'), text: normalizeTitle($(el).text()) }))
-        .filter(c => c.href && c.text && c.text === wanted);
+      const candidates = this._searchCandidates(html);
       if (candidates.length === 0) {
-        console.log(`[cinehdplus] search ${tag}: ${html.length}B, no exact match for "${name}"`);
+        console.log(`[cinehdplus] search ${tag}: ${html.length}B, no result links for "${name}"`);
         continue;
       }
-      // Prefer URLs under the current /peliculas/ path; fall back to first match
-      const picked = candidates.find(c => /\/peliculas\//.test(c.href))?.href || candidates[0]?.href;
-      console.log(`[cinehdplus] search ${tag}: matched "${name}" → ${picked}`);
-      return new URL(picked);
+      // Tier 1: exact normalized equality
+      const exact = candidates.find(c => c.text === wanted);
+      if (exact) {
+        console.log(`[cinehdplus] search ${tag}: exact matched "${name}" → ${exact.href}`);
+        return new URL(exact.href);
+      }
+      // Tier 2: fuzzy (article-strip equality OR token-Dice ≥ 0.6) + card year equals TMDB year
+      const fuzzy = candidates.find(c => _fuzzyTitleMatch(wanted, c.text) && year && c.year === year);
+      if (fuzzy) {
+        console.log(`[cinehdplus] search ${tag}: fuzzy matched "${name}" (year ${year}) → ${fuzzy.href}`);
+        return new URL(fuzzy.href);
+      }
+      console.log(`[cinehdplus] search ${tag}: ${candidates.length} candidate(s), no safe match for "${name}"${year ? ` (year ${year})` : ''}`);
     }
-    console.log(`[cinehdplus] search: all ${attempts.length} strategies exhausted for "${name}"`);
+    console.log(`[cinehdplus] search: all strategies exhausted for "${name}"`);
     return null;
+  }
+
+  // Extract normalized title + href + card year from a DLE search result page.
+  // The year lives in the card container around .card__title (first plausible
+  // 19xx/20xx match wins — verified on live cards 2026-09).
+  _searchCandidates(html) {
+    if (!html) return [];
+    const $ = cheerio.load(html);
+    return $('.card__title a[href]').toArray().map(el => {
+      const href = $(el).attr('href');
+      const text = normalizeTitle($(el).text());
+      const cardHtml = $(el).closest('.card').html() || $(el).parent().parent().html() || '';
+      const ym = /\b(19\d\d|20\d\d)\b/.exec($(cardHtml).text() || cardHtml.replace(/<[^>]+>/g, ' '));
+      return { href, text, year: ym ? parseInt(ym[1], 10) : null };
+    }).filter(c => c.href && c.text);
   }
 }
