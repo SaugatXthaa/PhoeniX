@@ -84,7 +84,7 @@ app.get('/manifest.json', (req, res) => {
     types: ['movie', 'series'],
     idPrefixes: ['tt', 'tmdb:'],
     catalogs: [],
-    behaviorHints: { configurable: false, configurationRequired: false },
+    behaviorHints: { configurable: true, configurationRequired: false },
   });
 });
 
@@ -118,12 +118,25 @@ app.get('/stream/:type/:id.json', async (req, res) => {
 
   // Task 74: feed the idle cache keeper (records hot titles; no-op when disabled)
   recordUserRequest(type, id);
-  logger.log(`[${ADDON_NAME}] stream ${type} ${id}`);
+  logger.log(`[${ADDON_NAME}] stream ${type} ${id}${req.query.sources ? ` (config sources: ${req.query.sources})` : ''}`);
+
+  // Task 94: source selection from the configure UI. Stremio appends the
+  // addon config params to EVERY resource request — arrives as
+  // /stream/...?sources=id1,id2 (pipe separators tolerated too). Fail-open
+  // contract: absent / empty / unknown-ids-only → full registry, so the
+  // legacy no-config install behaves byte-identically to before.
+  let activeSources = sources;
+  const selRaw = String(req.query.sources || '').trim();
+  if (selRaw) {
+    const wanted = new Set(selRaw.split(/[|,]/).map(x => x.trim()).filter(Boolean));
+    const filtered = sources.filter(s => wanted.has(s.id));
+    if (filtered.length) activeSources = filtered;
+  }
 
   try {
     const startTime = Date.now();
     let streams;
-    ({ streams } = await streamResolver.resolve(ctx, sources, type, parsedId));
+    ({ streams } = await streamResolver.resolve(ctx, activeSources, type, parsedId));
     const duration = Date.now() - startTime;
     logger.log(`[${ADDON_NAME}] ${type} ${id} → ${streams.length} streams in ${duration}ms`);
 
@@ -1890,6 +1903,186 @@ setInterval(tick, 30000);
 </html>`);
 });
 
+// Task 94: configuration UI — "Choose Sources" page with real live status
+// dots on the left of every source. Reads /status/data ONLY (last-verdict
+// telemetry; never triggers resolves or probes — same honesty contract as
+// /status). Selection rides to /stream as ?sources=id1,id2 (Stremio appends
+// config params to every resource request). Installing without a selection
+// (or with everything selected) = legacy all-sources behavior.
+app.get('/configure', (req, res) => {
+  const hostUrl = `https://${req.headers.host}`;
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhoeniX · Choose Sources</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: radial-gradient(ellipse at 50% -10%, #2a1a08 0%, #0a0a0f 55%); min-height: 100vh; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .g { background: #22c55e; box-shadow: 0 0 10px rgba(34,197,94,.7); }
+  .a { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,.7); }
+  .r { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,.7); }
+  .i { background: #475569; }
+  .pulse { animation: p 2s ease-in-out infinite; }
+  @keyframes p { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+  .row { transition: background .15s ease; }
+  .row:hover { background: rgba(255,255,255,.04); }
+  .row.on { background: rgba(124,58,237,.10); }
+  .tick { width: 22px; height: 22px; border-radius: 7px; border: 2px solid rgba(255,255,255,.25); flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all .15s ease; }
+  .row.on .tick { background: #7c3aed; border-color: #7c3aed; box-shadow: 0 0 10px rgba(124,58,237,.5); }
+  .tick svg { opacity: 0; transform: scale(.5); transition: all .15s ease; }
+  .row.on .tick svg { opacity: 1; transform: scale(1); }
+  .chip { transition: all .15s ease; cursor: pointer; }
+  .chip.sel { background: rgba(255,255,255,.14); color: #fff; }
+</style>
+</head>
+<body class="text-gray-200">
+<div class="max-w-md mx-auto px-4 pt-8 pb-40">
+  <div class="flex items-center gap-3 mb-1">
+    <img src="${hostUrl}/public/logo.png" alt="PhoeniX" class="w-10 h-10 drop-shadow-[0_0_15px_rgba(255,100,0,0.5)]">
+    <h1 class="text-2xl font-black text-white tracking-tight">Choose Sources</h1>
+  </div>
+  <p class="text-xs text-gray-400 mb-4">Pick which sources the addon uses. The dot on the left of each source is its <span class="text-gray-200 font-semibold">real live status</span> from actual requests — it updates itself every 30&nbsp;seconds.</p>
+
+  <div id="chips" class="flex flex-wrap gap-2 mb-3 text-xs font-semibold"></div>
+
+  <div class="flex gap-2 mb-3">
+    <input id="q" type="text" placeholder="Search sources…" class="flex-1 px-3 py-2 rounded-xl text-sm text-white placeholder-gray-500 border border-white/10 outline-none focus:border-purple-500/60" style="background:rgba(15,15,20,0.6)">
+    <button onclick="bulk('all')" class="px-3 py-2 rounded-xl text-xs font-semibold text-gray-300 border border-white/10 hover:text-white hover:bg-white/5">All</button>
+    <button onclick="bulk('none')" class="px-3 py-2 rounded-xl text-xs font-semibold text-gray-300 border border-white/10 hover:text-white hover:bg-white/5">None</button>
+  </div>
+
+  <div id="list" class="rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden" style="background:rgba(15,15,20,0.6);backdrop-filter:blur(20px)"></div>
+
+  <p class="text-[11px] text-gray-500 mt-4 leading-relaxed">
+    Green = delivering right now · Amber = the site is empty/blocked on its own end and auto-rechecks · Red = timed out · Grey = no recent requests yet.
+    Leaving everything selected is the default full addon. Your picks are applied when you install below — installing again later with a new selection replaces the old one.
+  </p>
+</div>
+
+<div class="fixed bottom-0 left-0 right-0 border-t border-white/10 px-4 py-3" style="background:rgba(10,10,15,0.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)">
+  <div class="max-w-md mx-auto flex items-center gap-3">
+    <div class="text-xs text-gray-400 leading-tight flex-1"><span id="selcount" class="text-white font-bold">–</span> of <span id="totcount">–</span> selected · <button onclick="copyUrl(this)" class="underline hover:text-white">Copy URL</button></div>
+    <button id="installbtn" onclick="install()" class="px-5 py-2.5 rounded-xl text-white font-bold text-sm transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]" style="background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); box-shadow: 0 6px 24px rgba(124,58,237,0.4);">Install in Stremio</button>
+  </div>
+</div>
+
+<script>
+var DATA = null;
+var selected = {};      // id -> true (initial: all on, once data arrives)
+var inited = false;
+var chip = 'all';       // all | delivering | waiting | issue | idle
+var q = '';
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+function ago(ms) { if (!ms || ms < 0) return ''; if (ms < 60000) return 'just now'; var m = Math.round(ms / 60000); if (m < 60) return m + 'm ago'; var h = Math.round(m / 60); if (h < 48) return h + 'h ago'; return Math.round(h / 24) + 'd ago'; }
+function dotCls(cls) { return cls === 'delivering' ? 'g' : cls === 'waiting' ? 'a' : cls === 'issue' ? 'r' : 'i'; }
+function statusLine(r) {
+  if (r.cls === 'delivering') return '<span class="text-green-400">' + r.count + ' stream' + (r.count === 1 ? '' : 's') + '</span>';
+  if (r.cls === 'waiting') return '<span class="text-amber-400">' + esc(r.note || 'waiting on its site') + '</span>';
+  if (r.cls === 'issue') return '<span class="text-red-400">Timed out</span>';
+  return '<span class="text-gray-500">No recent requests</span>';
+}
+
+function fetchStatus() {
+  fetch('/status/data').then(function (r) { return r.json(); }).then(function (d) {
+    DATA = d;
+    if (!inited) {
+      for (var i = 0; i < d.sources.length; i++) selected[d.sources[i].id] = true;
+      inited = true;
+    }
+    render();
+  }).catch(function () { /* keep last render; next tick retries */ });
+}
+
+function countCls(cls) {
+  if (!DATA) return 0;
+  var n = 0;
+  for (var i = 0; i < DATA.sources.length; i++) if (DATA.sources[i].cls === cls) n++;
+  return n;
+}
+
+function renderChips() {
+  var defs = [['all', 'All ' + DATA.sources.length, ''], ['delivering', 'Working ' + countCls('delivering'), 'text-green-400'], ['waiting', 'Waiting ' + countCls('waiting'), 'text-amber-400'], ['issue', 'Issue ' + countCls('issue'), 'text-red-400'], ['idle', 'Idle ' + countCls('idle'), 'text-gray-500']];
+  var h = '';
+  for (var i = 0; i < defs.length; i++) {
+    h += '<button onclick="setChip(\\'' + defs[i][0] + '\\')" class="chip px-3 py-1.5 rounded-full border border-white/10 ' + (chip === defs[i][0] ? 'sel ' : '') + defs[i][2] + '" style="background:rgba(15,15,20,0.6)">' + defs[i][1] + '</button>';
+  }
+  document.getElementById('chips').innerHTML = h;
+}
+
+function setChip(c) { chip = c; render(); }
+
+function render() {
+  renderChips();
+  var rows = DATA.sources.filter(function (r) {
+    if (chip !== 'all' && r.cls !== chip) return false;
+    if (q && (r.label + ' ' + r.id).toLowerCase().indexOf(q) === -1) return false;
+    return true;
+  });
+  var h = '';
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var on = !!selected[r.id];
+    var badges = '';
+    for (var k = 0; k < r.kinds.length; k++) badges += '<span class="text-[10px] px-1.5 py-0.5 rounded-md border border-white/10 text-gray-400">' + esc(r.kinds[k]) + '</span> ';
+    h += '<div class="row flex items-center gap-3 px-3 py-2.5 cursor-pointer ' + (on ? 'on' : '') + '" onclick="toggle(\\'' + esc(r.id) + '\\')">'
+      + '<span class="dot ' + dotCls(r.cls) + (r.cls === 'waiting' ? ' pulse' : '') + '"></span>'
+      + '<div class="flex-1 min-w-0">'
+      +   '<div class="flex items-center gap-2 flex-wrap"><span class="text-sm font-semibold text-white">' + esc(r.label) + '</span> ' + badges + '</div>'
+      +   '<div class="text-[11px] text-gray-500 truncate">' + statusLine(r) + (r.agoMs ? ' · ' + ago(r.agoMs) : '') + '</div>'
+      + '</div>'
+      + '<span class="tick"><svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></span>'
+      + '</div>';
+  }
+  if (!rows.length) h = '<div class="px-4 py-6 text-center text-sm text-gray-500">No sources match.</div>';
+  document.getElementById('list').innerHTML = h;
+
+  var n = 0; for (var id in selected) if (selected[id]) n++;
+  document.getElementById('selcount').textContent = n;
+  document.getElementById('totcount').textContent = DATA.sources.length;
+  document.getElementById('installbtn').textContent = n === 0 ? 'Select at least one source' : 'Install in Stremio';
+}
+
+function toggle(id) { selected[id] = !selected[id]; render(); }
+function bulk(mode) {
+  if (!DATA) return;
+  for (var i = 0; i < DATA.sources.length; i++) selected[DATA.sources[i].id] = (mode === 'all');
+  render();
+}
+document.getElementById('q').addEventListener('input', function (e) { q = e.target.value.trim().toLowerCase(); render(); });
+
+function manifestUrl() {
+  var base = location.origin + '/manifest.json';
+  if (!DATA) return base;
+  var ids = [];
+  for (var i = 0; i < DATA.sources.length; i++) if (selected[DATA.sources[i].id]) ids.push(DATA.sources[i].id);
+  if (ids.length === 0 || ids.length === DATA.sources.length) return base; // default install = all sources
+  return base + '?sources=' + encodeURIComponent(ids.join(','));
+}
+function install() {
+  if (!DATA) return;
+  var n = 0; for (var id in selected) if (selected[id]) n++;
+  if (n === 0) return;
+  var u = manifestUrl();
+  var deep = 'stremio://' + location.host + u.replace(location.origin, '');
+  window.location.href = deep;
+}
+function copyUrl(btn) {
+  var u = manifestUrl();
+  if (navigator.clipboard) navigator.clipboard.writeText(u).then(function () { btn.textContent = 'Copied!'; setTimeout(function () { btn.textContent = 'Copy manifest URL'; }, 1500); });
+}
+
+fetchStatus();
+setInterval(fetchStatus, 30000);
+</script>
+</body>
+</html>`);
+});
+
 // Task 89: egress watch telemetry — rolling probe history for the upstream-gated
 // sources (kmmovies / acermovies) + egress-IP rotation log. Read-only.
 app.get('/debug/egresswatch', (req, res) => {
@@ -2024,6 +2217,10 @@ app.get('/', (req, res) => {
       <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
       Copy Manifest URL
     </button>
+    <a href="/configure" class="mt-3 flex items-center justify-center w-full py-3 rounded-2xl text-gray-300 font-medium text-sm transition-all duration-300 hover:text-white hover:bg-white/5 border border-white/10">
+      <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+      Choose sources · live status
+    </a>
     <a href="/status" class="mt-3 flex items-center justify-center w-full py-2.5 rounded-2xl text-gray-400 font-medium text-xs transition-all duration-300 hover:text-orange-300 hover:bg-white/5">
       <span class="dot g mr-2 pulse"></span> Live source status
     </a>
