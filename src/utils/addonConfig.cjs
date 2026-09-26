@@ -229,11 +229,14 @@ function normalizeConfig(raw, { allSourceIds } = {}) {
   }
   if (Object.keys(caps).length) cfg.qualityCaps = caps;
 
+  // Task 101: template length caps — templates ride inside the compressed
+  // config segment and every Stremio resource URL; anything beyond these
+  // bounds cannot survive a URL roundtrip and would only break installs.
   if (typeof raw.formatter_name === 'string' && raw.formatter_name.trim()) {
-    cfg.formatterName = raw.formatter_name; cfg.hasAny = true;
+    cfg.formatterName = raw.formatter_name.slice(0, 20000); cfg.hasAny = true;
   }
   if (typeof raw.formatter_description === 'string' && raw.formatter_description.trim()) {
-    cfg.formatterDescription = raw.formatter_description; cfg.hasAny = true;
+    cfg.formatterDescription = raw.formatter_description.slice(0, 20000); cfg.hasAny = true;
   }
   return cfg;
 }

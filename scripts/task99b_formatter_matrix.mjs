@@ -40,7 +40,40 @@ async function j(url, opts, timeoutMs = 150000) {
     return { status: r.status, body: await r.json().catch(() => null) };
   } finally { clearTimeout(t); }
 }
-// Independent humanBytes (same contract as formatter.cjs, re-typed for the test)
+// Independent humanBytes helpers (re-typed for the test).
+// humanBytes10/2 = base-10/base-2 — the engine's ::bytes/::sbytes/::bytes2
+// modifiers (AIOStreams canonical: GB = 10^9). humanBytesSite = base-1024
+// with decimal-style labels — the convention site size labels use ("65.9 GB"
+// meaning GiB). Comparing formatter output against videoSize must use the
+// same base the template's modifier uses; mixing the two is exactly the bug
+// class this suite exists to catch.
+// Exact mirrors of the engine's formatSmartBytes (sbytes family) and
+// formatBytes (bytes/bytes2 families) — see src/utils/formatter.cjs.
+function humanBytes10(n) {
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(n) / Math.log(1000));
+  const raw = n / Math.pow(1000, i);
+  const int = Math.floor(raw);
+  let out;
+  if (int >= 100) out = String(Math.round(raw));
+  else if (int >= 10) out = raw % 1 === 0 ? raw.toFixed(0) : raw.toFixed(1);
+  else out = String(parseFloat(raw.toFixed(2)));
+  return `${out} ${units[i]}`;
+}
+function humanBytes2(n) {
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  const i = Math.floor(Math.log(n) / Math.log(1024));
+  return `${parseFloat((n / Math.pow(1024, i)).toFixed(2))} ${units[i]}`;
+}
+// mirror of formatBytes(v, 1000) — the ::bytes modifier (2 decimals, base-10)
+function humanBytesPlain10(n) {
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(n) / Math.log(1000));
+  return `${parseFloat((n / Math.pow(1000, i)).toFixed(2))} ${units[i]}`;
+}
 function humanBytes(n) {
   if (!Number.isFinite(n) || n <= 0) return '';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -65,10 +98,14 @@ const PRESETS = loadPresets();
 
 // per-preset expectation tables (engine values: 4K | 1440p | 1080p | 720p | 480p | 360p | '')
 const GLYPHS = {
-  prism: { set: ['🔥 4K UHD', '🖥️ QHD', '🚀 FHD', '💿 HD', '💩 SD', '🎞️ Stream'], fallbackOk: false },
-  tamtaro: { set: ['  4K ', '  QHD ', '  FHD ', '  HD '], fallbackOk: true }, // unknown res → empty render → default name
-  'light-google-drive': { re: /^PhoeniX(?: (4K|1440p|1080p|720p|480p|360p))?$/ },
-  minimalistic: { set: ['✨ 4K', '🖥️ 1440p', '🧿 1080p', '💿 720p', 'N/A', '480p', '360p'], fallbackOk: false },
+  // Task 100/101: keys follow the shipped FORMATTER_PRESETS exactly.
+  torrentio: { re: /^.*PhoeniX (?:2160p|1440p|1080p|720p|480p|360p|Unknown)(?:\n.*)?$/s, fallbackOk: true },
+  torbox: { re: /^.*PhoeniX(?: \((?:2160p|1440p|1080p|720p|480p|360p)\))?$/s, fallbackOk: true },
+  gdrive: { re: /^.*PhoeniX(?: (?:2160p|1440p|1080p|720p|480p|360p))?$/s, fallbackOk: true },
+  lightgdrive: { re: /^.*PhoeniX(?: (?:2160p|1440p|1080p|720p|480p|360p))?$/s, fallbackOk: true },
+  minimalisticgdrive: { re: /^(?:✨ 4K|📀 2K|🧿1080p|💿720p|480p|360p|N\/A)\n/m, fallbackOk: true },
+  prism: { set: ['🔥4K UHD', '✨ QHD', '🚀 FHD', '💿 HD', '💩 Low Quality', '💩 Unknown'], fallbackOk: false },
+  tamtaro: { re: /^\s*(?:4K|2K|QHD|FHD|HD|1080P|720P|480P|360P)/m, fallbackOk: true }, // unknown res → empty render → default name
 };
 
 // ── matrix definition ────────────────────────────────────────────────────
@@ -118,10 +155,13 @@ async function controlFor(combo) {
 
 function checkName(preset, card) {
   const exp = GLYPHS[preset];
-  if (exp.re) return exp.re.test(card.name || '');
-  if (exp.set.includes(card.name || '')) return true;
-  if (exp.fallbackOk && card.name && !LEAK.test(card.name)) return true; // empty-render fallback
-  return false;
+  const name = card.name || '';
+  // fail-open default names (engine returns the card's original text) are
+  // acceptable whenever the preset opts in — even for regex expectations
+  const fallback = exp.fallbackOk && name && !LEAK.test(name);
+  if (exp.re) return exp.re.test(name) || fallback;
+  if (exp.set.includes(name)) return true;
+  return fallback;
 }
 
 function checkDescription(preset, card) {
@@ -131,44 +171,60 @@ function checkDescription(preset, card) {
   if (!ls.length) return { ok: false, why: 'empty description' };
   if (LEAK.test(title)) return { ok: false, why: 'token leakage' };
   if (preset === 'prism') {
+    // Task-100 authentic preset: footer badge line ends "…🔍PhoeniX";
+    // size line "📦 <base-10 of videoSize>" (sbytes modifier).
     const last = lastNonEmpty(title);
-    const m = /^📡 (.+) · PhoeniX$/.exec(last);
-    if (!m) return { ok: false, why: `last line not "📡 <src>[ · server] · PhoeniX": ${JSON.stringify(last.slice(0, 60))}` };
-    const parts = m[1].split(' · ');
-    if (!registryLabels.has(parts[0])) return { ok: false, why: `unknown source label "${parts[0]}"` };
+    if (!/🔍PhoeniX$/.test(last)) return { ok: false, why: `last line not the 🔍PhoeniX footer: ${JSON.stringify(last.slice(0, 60))}` };
     if (vs) {
-      const want = `📦 ${humanBytes(vs)}`;
+      const want = `📦 ${humanBytes10(vs)}`;
       if (!ls.some(l => l === want)) return { ok: false, why: `size line missing/wrong: want ${JSON.stringify(want)} got [${ls.map(l => JSON.stringify(l.slice(0, 24))).join(', ')}]` };
     } else if (ls.some(l => l.startsWith('📦'))) return { ok: false, why: 'size line present but card has no videoSize' };
     return { ok: true };
   }
   if (preset === 'tamtaro') {
-    const last = lastNonEmpty(title);
-    const m = /^(?:📦 (.+?) )?📡 (.+) · PhoeniX$/.exec(last);
-    if (!m) return { ok: false, why: `last line not "[📦 size ]📡 src · PhoeniX": ${JSON.stringify(last.slice(0, 60))}` };
-    if (!registryLabels.has(m[2])) return { ok: false, why: `unknown source label "${m[2]}"` };
-    if (vs && humanBytes(vs) !== m[1]) return { ok: false, why: `size mismatch: want ${humanBytes(vs)} got ${m[1]}` };
-    if (!vs && m[1]) return { ok: false, why: 'size rendered but card has no videoSize' };
+    // Task-100 authentic preset: sizes render as a bare base-10 line
+    // (sbytes), footer carries "PhoeniX", subtitle-code line may follow.
+    if (vs) {
+      const want = humanBytes10(vs);
+      if (!ls.some(l => l === want || l.startsWith(`${want} `) || l.startsWith(`${want}/`))) return { ok: false, why: `base-10 size line missing: want ${JSON.stringify(want)} got [${ls.map(l => JSON.stringify(l.slice(0, 24))).join(', ')}]` };
+    } else if (ls.some(l => /^\d+(?:\.\d+)? (?:GB|MB|KB|TB)$/.test(l))) return { ok: false, why: 'bare size line but card has no videoSize' };
+    if (!ls.some(l => l.includes('PhoeniX'))) return { ok: false, why: 'no PhoeniX footer line' };
     return { ok: true };
   }
-  if (preset === 'light-google-drive') {
-    if (!ls.some(l => l.startsWith('📁 '))) return { ok: false, why: 'no 📁 title line' };
+  if (preset === 'gdrive' || preset === 'lightgdrive') {
+    if (preset === 'lightgdrive' && !ls.some(l => l.startsWith('📁 '))) return { ok: false, why: 'no 📁 title line' };
     if (vs) {
-      const want = `📦 ${humanBytes(vs)}`;
-      if (!ls.some(l => l === want)) return { ok: false, why: `size line missing/wrong: want ${JSON.stringify(want)}` };
+      const want = `📦 ${humanBytes10(vs)}`;
+      if (!ls.some(l => l === want)) return { ok: false, why: `size line missing/wrong: want ${JSON.stringify(want)} got [${ls.map(l => JSON.stringify(l.slice(0, 24))).join(', ')}]` };
     } else if (ls.some(l => l.startsWith('📦'))) return { ok: false, why: 'size line present but card has no videoSize' };
     return { ok: true };
   }
-  if (preset === 'minimalistic') {
-    // {stream.title} carries the resolver's natural multi-line description;
-    // the template appends " · <size>" to the tail. Multi-line is correct —
-    // check the suffix at the end, not a line count.
+  if (preset === 'minimalisticgdrive') {
     if (vs) {
-      const want = ` · ${humanBytes(vs)}`;
-      if (!title.endsWith(want)) return { ok: false, why: `missing size suffix ${JSON.stringify(want)}: ${JSON.stringify(title.slice(-40))}` };
-    }
+      const want = `📦 ${humanBytes10(vs)}`;
+      if (!ls.some(l => l === want)) return { ok: false, why: `size line missing/wrong: want ${JSON.stringify(want)} got [${ls.map(l => JSON.stringify(l.slice(0, 24))).join(', ')}]` };
+    } else if (ls.some(l => l.startsWith('📦'))) return { ok: false, why: 'size line present but card has no videoSize' };
     return { ok: true };
   }
+  if (preset === 'torrentio') {
+    // bytes2 = base-2 → exact "💾<x> GiB" line when the card has a size
+    if (vs) {
+      const want = `💾${humanBytes2(vs)} `;
+      if (!ls.some(l => l === want.trimEnd())) return { ok: false, why: `💾 size line missing/wrong: want ${JSON.stringify(want.trimEnd())} got [${ls.map(l => JSON.stringify(l.slice(0, 24))).join(', ')}]` };
+    } else if (ls.some(l => l.startsWith('💾'))) return { ok: false, why: '💾 size line but card has no videoSize' };
+    return { ok: true };
+  }
+  if (preset === 'torbox') {
+    if (!ls.some(l => l.startsWith('Quality: '))) return { ok: false, why: 'no "Quality:" line' };
+    if (vs) {
+      // torbox uses ::bytes = formatBytes(v, 1000) — 2-decimal base-10
+      const want = `Size: ${humanBytesPlain10(vs)}`;
+      if (!ls.some(l => l === want || l.startsWith(`${want} /`))) return { ok: false, why: `Size line wrong: want ${JSON.stringify(want)} got [${ls.map(l => JSON.stringify(l.slice(0, 30))).join(', ')}]` };
+    } else if (ls.some(l => /^Size: \d/.test(l))) return { ok: false, why: 'Size populated but card has no videoSize' };
+    return { ok: true };
+  }
+  // (dead 'minimalistic'/'light-google-drive' branches removed in Task 101 —
+  //  those preset ids no longer exist in the shipped UI)
   return { ok: false, why: 'unknown preset' };
 }
 

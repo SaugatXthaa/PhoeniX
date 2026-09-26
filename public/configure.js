@@ -46,6 +46,7 @@ const ICON = "public/logo.png";
 const LS = {
   theme: "phoenix-theme",
   savedTemplates: "phoenix-formatter-templates",
+  scenario: "phoenix-formatter-scenario",
   config: "phoenix-config",
   sidebar: "phoenix-sidebar",
   versions: "phoenix-versions",
@@ -141,6 +142,123 @@ function detectFormatterPreset(name, description) {
     if (preset.name === name && preset.description === description) return presetKey;
   }
   return null;
+}
+
+// ── Task 101: scenario configuration (AIOStreams-style preview) ──
+// Four starting points — every field the engine actually reads is editable,
+// so each template construct ({stream.source}, {stream.resolution},
+// {stream.size::bytes}, languages, proxied, metadata.season/episode, …) can
+// be exercised from the UI. No usenet scenario: this addon serves
+// direct/HTTP-hosted streams only, so a usenet release would be fake input.
+const SCENARIO_FIELD_DEFAULTS = {
+  // Source
+  sourceLabel: "", serverName: "", addonName: "PhoeniX",
+  fallbackName: "", fallbackTitle: "", url: "",
+  // Stream
+  title: "", height: 2160, sizeGb: "", bitrateKbps: "", quality: "",
+  codec: "", audioCodec: "", audioChannels: "", hdr: "", releaseGroup: "",
+  format: "mp4", languages: "", subtitles: "", network: "",
+  // Request
+  requestType: "movie", requestId: "tt15239678",
+};
+const PREVIEW_SCENARIOS = [
+  {
+    id: "remux4k", label: "Movie — 4K Remux",
+    fields: {
+      sourceLabel: "4KHDHub", serverName: "10Gbps", addonName: "PhoeniX",
+      fallbackName: "🐦‍🔥 PhoeniX · 4K · 4KHDHub · 10Gbps",
+      fallbackTitle: "Dune Part Two · 2024 · HDR · DTS-HD MA 5.1 · 48.1 GB",
+      url: "https://dl.example.com/Dune.Part.Two.2024.2160p.BluRay.Remux.HEVC.mkv",
+      title: "Dune Part Two", height: 2160, sizeGb: 48.1, bitrateKbps: "", quality: "BluRay Remux",
+      codec: "HEVC", audioCodec: "TrueHD", audioChannels: "5.1", hdr: "DV,HDR10", releaseGroup: "FRAM",
+      format: "mkv", languages: "en,hi", subtitles: "en", network: "",
+      requestType: "movie", requestId: "tt15239678",
+    },
+  },
+  {
+    id: "webdl1080", label: "Movie — 1080p Web-DL",
+    fields: {
+      sourceLabel: "HDHub4u", serverName: "", addonName: "PhoeniX",
+      fallbackName: "🐦‍🔥 PhoeniX · 1080p · HDHub4u",
+      fallbackTitle: "The Batman · 2022 · WEB-DL · DD5.1 · 3.0 GB",
+      url: "https://cdn.example/The.Batman.2022.1080p.WEB-DL.mp4",
+      title: "The Batman", height: 1080, sizeGb: 3.0, bitrateKbps: "", quality: "Web-DL",
+      codec: "AVC", audioCodec: "DD+", audioChannels: "5.1", hdr: "", releaseGroup: "HDHub4u",
+      format: "mp4", languages: "hi,en", subtitles: "", network: "",
+      requestType: "movie", requestId: "tt1877830",
+    },
+  },
+  {
+    id: "qhd1440", label: "Movie — 1440p QHD (proxied)",
+    fields: {
+      sourceLabel: "VidLink", serverName: "", addonName: "PhoeniX",
+      fallbackName: "🐦‍🔥 PhoeniX · 1440p · VidLink",
+      fallbackTitle: "Interstellar · 2014 · WEB-DL · 6.5 GB",
+      url: "https://addon.example/proxy?url=https%3A%2F%2Fcdn.example%2Finter.m3u8",
+      title: "Interstellar", height: 1440, sizeGb: 6.5, bitrateKbps: "", quality: "Web-DL",
+      codec: "x264", audioCodec: "", audioChannels: "", hdr: "HDR", releaseGroup: "",
+      format: "hls", languages: "en", subtitles: "", network: "",
+      requestType: "movie", requestId: "tt0816692",
+    },
+  },
+  {
+    id: "season-pack", label: "Series — Season pack",
+    fields: {
+      sourceLabel: "UHDMovies", serverName: "", addonName: "PhoeniX",
+      fallbackName: "🐦‍🔥 PhoeniX · 4K · UHDMovies",
+      fallbackTitle: "Series Title · S02 · Complete · 78.2 GB",
+      url: "https://dl.example.com/Series.Title.S02.COMPLETE.2160p.WEB-DL.DV.HDR10.DDP5.1.H.265.mkv",
+      title: "Series Title", height: 2160, sizeGb: 84, bitrateKbps: "", quality: "Web-DL",
+      codec: "HEVC", audioCodec: "DD+", audioChannels: "5.1", hdr: "DV,HDR10", releaseGroup: "",
+      format: "mkv", languages: "en", subtitles: "en", network: "",
+      requestType: "series", requestId: "tt0903747:2:",
+    },
+  },
+  {
+    id: "anime", label: "Anime episode — Series",
+    fields: {
+      sourceLabel: "HiAnime", serverName: "MegaPlay", addonName: "PhoeniX",
+      fallbackName: "🐦‍🔥 PhoeniX · 1080p · HiAnime · MegaPlay",
+      fallbackTitle: "Sousou no Frieren · S2E1 · Sub+Dub",
+      url: "https://addon.example/proxy?url=https%3A%2F%2Fcdn.example%2Ffrieren.m3u8",
+      title: "Sousou no Frieren", height: 1080, sizeGb: "", bitrateKbps: "", quality: "Web-DL",
+      codec: "HEVC", audioCodec: "AAC", audioChannels: "", hdr: "", releaseGroup: "SubsPlease",
+      format: "hls", languages: "ja,en", subtitles: "en", network: "",
+      requestType: "series", requestId: "tt209867:2:1",
+    },
+  },
+];
+const scenarioWithDefaults = (fields) => ({ ...SCENARIO_FIELD_DEFAULTS, ...(fields || {}) });
+const parseScenarioCodes = (value) => String(value || "").split(",").map((c) => c.trim()).filter(Boolean).slice(0, 8);
+const GB = 1024 ** 3;
+// Wire shape for /api/formatter-preview — mirrors exactly what the resolver
+// passes into fieldsForStream for a real card.
+function buildScenarioSample(fields) {
+  return {
+    label: fields.requestType === "series" ? "Scenario · episode" : "Scenario · movie",
+    meta: {
+      height: Number(fields.height) || 0,
+      bytes: Math.round((Number(fields.sizeGb) > 0 ? Number(fields.sizeGb) : 0) * GB),
+      bandwidth: Math.round((Number(fields.bitrateKbps) > 0 ? Number(fields.bitrateKbps) : 0) * 1000),
+      title: fields.title,
+      sourceLabel: fields.sourceLabel,
+      serverName: fields.serverName,
+      streamingPlatform: fields.network,
+      sourceType: fields.quality,
+      format: fields.format,
+      codec: fields.codec,
+      audioCodec: fields.audioCodec,
+      audioChannels: fields.audioChannels,
+      hdr: fields.hdr,
+      releaseGroup: fields.releaseGroup,
+      countryCodes: parseScenarioCodes(fields.languages),
+      subtitles: parseScenarioCodes(fields.subtitles).map((c) => ({ lang: c })),
+    },
+    stream: { name: fields.fallbackName, title: fields.fallbackTitle },
+    url: fields.url,
+    requestType: fields.requestType,
+    requestId: fields.requestId,
+  };
 }
 
 const initialSelectedQualities = Object.fromEntries(qualities.map(({ key }) => [key, true]));
@@ -372,6 +490,30 @@ function App() {
   const [templateLabel, setTemplateLabel] = useState("");
   const [templateLibraryMsg, setTemplateLibraryMsg] = useState("");
   const importFileRef = useRef(null);
+  // Task 101: formatter sub-tabs + scenario-driven preview (AIOStreams-style).
+  const [formatterUiTab, setFormatterUiTab] = useState("editor");
+  const [previewFieldTab, setPreviewFieldTab] = useState("source");
+  const [previewScenarioId, setPreviewScenarioId] = useState(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(LS.scenario) || "null");
+      return PREVIEW_SCENARIOS.some((s) => s.id === raw?.scenarioId) ? raw.scenarioId : PREVIEW_SCENARIOS[0].id;
+    } catch { return PREVIEW_SCENARIOS[0].id; }
+  });
+  const [scenarioFields, setScenarioFields] = useState(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(LS.scenario) || "null");
+      if (raw && typeof raw.fields === "object" && raw.fields) {
+        const base = scenarioWithDefaults(PREVIEW_SCENARIOS.find((s) => s.id === raw.scenarioId)?.fields);
+        return { ...base, ...Object.fromEntries(Object.entries(raw.fields).map(([k, v]) => [k, typeof v === "number" ? String(v) : String(v ?? "")])) };
+      }
+    } catch {}
+    return scenarioWithDefaults(PREVIEW_SCENARIOS[0].fields);
+  });
+  const [scenarioPreview, setScenarioPreview] = useState(null);
+  const scenarioPreviewTimerRef = useRef(null);
+  // Delete confirmation — every saved-template deletion routes through this
+  // dialog so a mistapped ✕ can never wipe a template.
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   const [copyState, setCopyState] = useState("Copy Addon URL");
   const [qualityDrawerOpen, setQualityDrawerOpen] = useState(false);
@@ -473,8 +615,17 @@ function App() {
   }
   useEffect(() => {
     scheduleFormatterPreview();
+    scheduleScenarioPreview();
     return () => { if (formatterPreviewTimerRef.current) clearTimeout(formatterPreviewTimerRef.current); };
   }, [formatterName, formatterDescription]);
+  // Scenario edits (and entering the Preview tab) refresh the scenario card.
+  useEffect(() => {
+    scheduleScenarioPreview();
+    return () => { if (scenarioPreviewTimerRef.current) clearTimeout(scenarioPreviewTimerRef.current); };
+  }, [scenarioFields, previewScenarioId]);
+  useEffect(() => {
+    if (formatterUiTab === "preview") scheduleScenarioPreview();
+  }, [formatterUiTab]);
 
   async function handleUseDefaultFormatter() {
     try {
@@ -561,8 +712,18 @@ function App() {
   }
   function deleteTemplate(id) {
     const entry = savedTemplates.find((t) => t.id === id);
+    if (!entry) return;
+    // Confirmation first — the user asked for an explicit guard against
+    // deleting a saved format by mistake.
+    setDeleteConfirm({ id, label: entry.label });
+  }
+  function confirmDeleteTemplate() {
+    const { id, label } = deleteConfirm || {};
+    setDeleteConfirm(null);
+    if (!id) return;
+    const entry = savedTemplates.find((t) => t.id === id);
     persistTemplates(savedTemplates.filter((t) => t.id !== id));
-    setTemplateLibraryMsg(entry ? `Deleted "${entry.label}".` : "Template deleted.");
+    setTemplateLibraryMsg(entry ? `Deleted "${entry.label ?? label}".` : "Template deleted.");
   }
   function exportTemplatesFile() {
     const payload = {
@@ -617,6 +778,64 @@ function App() {
     } catch {
       setTemplateLibraryMsg("Import failed — that file is not valid JSON.");
     }
+  }
+
+  // ── Task 101: scenario-driven preview ──
+  // Persist the edited scenario (bump SCENARIO_VERSION when the shape changes).
+  useEffect(() => {
+    try { localStorage.setItem(LS.scenario, JSON.stringify({ version: 1, scenarioId: previewScenarioId, fields: scenarioFields })); } catch {}
+  }, [previewScenarioId, scenarioFields]);
+  function updateScenarioField(key, value) {
+    setScenarioFields((prev) => ({ ...prev, [key]: value }));
+  }
+  function applyScenario(id) {
+    const scenario = PREVIEW_SCENARIOS.find((s) => s.id === id);
+    if (!scenario) return;
+    setPreviewScenarioId(id);
+    // A scenario replaces the whole field set, so switching never leaves
+    // stale values behind (same semantics as the AIOStreams preview).
+    setScenarioFields(scenarioWithDefaults(scenario.fields));
+  }
+  function resetScenario() {
+    applyScenario(previewScenarioId);
+  }
+  async function runScenarioPreview(name, description, fields) {
+    if (!String(name).trim() && !String(description).trim()) {
+      setScenarioPreview(null);
+      return;
+    }
+    try {
+      const response = await fetch("/api/formatter-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description, samples: [buildScenarioSample(fields)] }),
+      });
+      const result = await response.json().catch(() => ({}));
+      setScenarioPreview(result.ok ? result : `Error: ${result.error || "preview failed"}`);
+    } catch {
+      setScenarioPreview("Error: preview failed");
+    }
+  }
+  function scheduleScenarioPreview(overrides) {
+    const name = overrides?.name ?? formatterName;
+    const description = overrides?.description ?? formatterDescription;
+    const fields = overrides?.fields ?? scenarioFields;
+    if (scenarioPreviewTimerRef.current) clearTimeout(scenarioPreviewTimerRef.current);
+    scenarioPreviewTimerRef.current = setTimeout(() => runScenarioPreview(name, description, fields), 400);
+  }
+  function scenarioInput(key, label, hint) {
+    return h("label", { key, className: "scenario-field" },
+      h("span", { className: "scenario-field-label" }, label),
+      h("input", { value: scenarioFields[key] ?? "", onChange: (e) => updateScenarioField(key, e.target.value), spellCheck: false, "aria-label": label }),
+      hint ? h("span", { className: "scenario-field-hint" }, hint) : null,
+    );
+  }
+  function scenarioSelect(key, label, options) {
+    return h("label", { key, className: "scenario-field" },
+      h("span", { className: "scenario-field-label" }, label),
+      h("select", { value: String(scenarioFields[key] ?? ""), onChange: (e) => updateScenarioField(key, e.target.value), "aria-label": label },
+        options.map(([value, text]) => h("option", { key: value, value }, text))),
+    );
   }
 
   const selectedProviderCount = providers().filter(({ key }) => selectedSources?.[key]).length;
@@ -1179,65 +1398,140 @@ function App() {
               h("section", { className: "section", style: { marginTop: "16px" } },
                 h("div", { className: "section-header" },
                   h("h3", { className: "section-title" }, h(SlidersHorizontal, { size: 14 }), "Custom formatter"),
-                  h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
+                ),
+                // Task 101: AIOStreams-style sub-sections — Editor (templates),
+                // Saved (library, unlimited), Preview (scenario configuration).
+                h("div", { className: "segmented", style: { maxWidth: "420px" }, role: "tablist", "aria-label": "Formatter sections" },
+                  [
+                    ["editor", "Editor"],
+                    ["saved", savedTemplates.length ? `Saved (${savedTemplates.length})` : "Saved"],
+                    ["preview", "Preview"],
+                  ].map(([tabId, label]) => h("button", { type: "button", key: tabId, role: "tab", "aria-selected": formatterUiTab === tabId, className: `segmented-btn${formatterUiTab === tabId ? " is-active" : ""}`, onClick: () => setFormatterUiTab(tabId) }, label)),
+                ),
+                // ── Editor tab ──
+                formatterUiTab === "editor" ? h("div", null,
+                  h("div", { style: { display: "flex", gap: "8px", alignItems: "center", marginTop: "12px" } },
                     h("button", { className: "clear-button", type: "button", onClick: () => { setFormatterJsonOpen((v) => !v); setFormatterJsonError(""); } }, "Import JSON"),
                     h("button", { className: "clear-button", type: "button", onClick: () => { setFormatterName(""); setFormatterDescription(""); setFormatterPreset(null); setFormatterPreview(null); } }, "Clear"),
                   ),
-                ),
-                formatterJsonOpen
-                  ? h("div", { style: { marginTop: "10px" } },
-                      h("textarea", { value: formatterJsonText, onChange: (e) => { setFormatterJsonText(e.target.value); setFormatterJsonError(""); }, rows: 4, spellCheck: false, placeholder: 'Paste a shared formatter, e.g. {"name": "…", "description": "…"}', style: textareaStyle }),
-                      formatterJsonError ? h("p", { style: { margin: "6px 0 0", color: "var(--danger)", fontSize: "0.78rem" } }, formatterJsonError) : null,
-                      h("div", { style: { display: "flex", gap: "8px", marginTop: "8px" } },
-                        h("button", { type: "button", className: "preset-chip", onClick: applyFormatterJsonImport }, "Apply"),
-                        h("button", { type: "button", className: "clear-button", onClick: () => { setFormatterJsonOpen(false); setFormatterJsonText(""); setFormatterJsonError(""); } }, "Cancel"),
-                      ),
-                    )
-                  : null,
-                h("div", { className: "preset-bar", role: "group", "aria-label": "Formatter template" },
-                  h("button", { type: "button", className: `preset-chip${formatterPreset === "default" ? " is-active" : ""}`, onClick: handleUseDefaultFormatter }, "Default"),
-                  Object.entries(FORMATTER_PRESETS).map(([presetKey, preset]) => h("button", { key: presetKey, type: "button", className: `preset-chip${formatterPreset === presetKey ? " is-active" : ""}`, onClick: () => applyFormatterPreset(presetKey) }, preset.label)),
-                ),
-                // Task 100: saved-template library — save unlimited personal
-                // templates, reload them any time, move them via JSON files.
-                h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", marginTop: "12px" } },
-                  h("input", { value: templateLabel, onChange: (e) => setTemplateLabel(e.target.value), placeholder: "Name this template…", "aria-label": "Template name", style: { flex: "1 1 160px", minWidth: "140px", padding: "6px 10px", fontSize: "0.82rem" } }),
-                  h("button", { type: "button", className: "preset-chip", onClick: saveCurrentTemplate }, "Save current"),
-                  h("button", { type: "button", className: "clear-button", onClick: exportTemplatesFile, disabled: savedTemplates.length === 0, style: { opacity: savedTemplates.length === 0 ? 0.45 : 1 } }, "Export file"),
-                  h("button", { type: "button", className: "clear-button", onClick: () => importFileRef.current?.click() }, "Import file"),
-                  h("input", { ref: importFileRef, type: "file", accept: "application/json,.json", style: { display: "none" }, "aria-hidden": "true", onChange: importTemplatesFile }),
-                ),
-                savedTemplates.length
-                  ? h("div", { className: "preset-bar", role: "list", "aria-label": "Saved templates" },
-                      savedTemplates.map((t) => h("span", { key: t.id, role: "listitem", style: { display: "inline-flex", alignItems: "center", gap: "4px", border: "1px solid var(--line)", borderRadius: "6px", padding: "2px 4px 2px 10px", background: "var(--surface-2)" } },
-                        h("button", { type: "button", className: "preset-chip", style: { padding: "2px 6px" }, title: "Load this template", onClick: () => loadTemplate(t.id) }, t.label),
-                        h("button", { type: "button", className: "clear-button", style: { padding: "2px 6px", fontSize: "0.72rem" }, "aria-label": `Delete ${t.label}`, title: "Delete", onClick: () => deleteTemplate(t.id) }, "✕"),
-                      )),
-                    )
-                  : h("p", { style: { margin: "8px 0 0", color: "var(--subtle)", fontSize: "0.76rem" } }, "No saved templates yet — set templates above and press Save current, or Import a file."),
-                templateLibraryMsg ? h("p", { style: { margin: "6px 0 0", color: "var(--muted)", fontSize: "0.78rem" } }, templateLibraryMsg) : null,
-                h("label", { style: { display: "block", fontSize: "0.8rem", color: "var(--muted)", margin: "10px 0 4px" } }, "Name template"),
-                h("textarea", { value: formatterName, onChange: (e) => { setFormatterName(e.target.value); setFormatterPreset(null); setFormatterPreview(null); }, rows: 4, spellCheck: false, placeholder: "{stream.resolution} • {stream.source}", style: textareaStyle }),
-                h("label", { style: { display: "block", fontSize: "0.8rem", color: "var(--muted)", margin: "10px 0 4px" } }, "Description template"),
-                h("textarea", { value: formatterDescription, onChange: (e) => { setFormatterDescription(e.target.value); setFormatterPreset(null); setFormatterPreview(null); }, rows: 4, spellCheck: false, placeholder: "{stream.title} • {stream.size::bytes} • {addon.name}", style: textareaStyle }),
-                h("p", { style: { margin: "10px 0 0", color: "var(--subtle)", fontSize: "0.78rem" } },
-                  "Template syntax: {stream.resolution}, {stream.size::bytes}, {stream.languages}, {stream.quality}, {stream.filename}, conditionals like {field::exists[\"A\"||\"B\"]}, chains with ::and::/::or::, optional groups {? … ?}, and {tools.newLine}. Leave empty for the default look. Save favourites above, and move them between devices with Export/Import file."),
-                formatterPreview != null && typeof formatterPreview === "object" && formatterPreview.ok && Array.isArray(formatterPreview.samples)
-                  ? h("div", { className: "formatter-preview" },
-                      formatterPreview.samples.map((sample) =>
-                        h("div", { key: sample.label, className: "stream-card" },
-                          h("div", { className: "stream-card-head" },
-                            h("span", { className: "stream-card-badge" }, sample.label),
-                            sample.error ? h("span", { className: "stream-card-error" }, sample.error) : null,
-                          ),
-                          sample.name ? h("div", { className: "stream-card-name" }, sample.name) : null,
-                          sample.description ? h("div", { className: "stream-card-desc" }, sample.description) : null,
+                  formatterJsonOpen
+                    ? h("div", { style: { marginTop: "10px" } },
+                        h("textarea", { value: formatterJsonText, onChange: (e) => { setFormatterJsonText(e.target.value); setFormatterJsonError(""); }, rows: 4, spellCheck: false, placeholder: 'Paste a shared formatter, e.g. {"name": "…", "description": "…"}', style: textareaStyle }),
+                        formatterJsonError ? h("p", { style: { margin: "6px 0 0", color: "var(--danger)", fontSize: "0.78rem" } }, formatterJsonError) : null,
+                        h("div", { style: { display: "flex", gap: "8px", marginTop: "8px" } },
+                          h("button", { type: "button", className: "preset-chip", onClick: applyFormatterJsonImport }, "Apply"),
+                          h("button", { type: "button", className: "clear-button", onClick: () => { setFormatterJsonOpen(false); setFormatterJsonText(""); setFormatterJsonError(""); } }, "Cancel"),
                         ),
-                      ),
-                    )
-                  : typeof formatterPreview === "string"
-                    ? h("p", { style: { margin: "10px 0 0", color: "var(--danger)", fontSize: "0.78rem" } }, formatterPreview)
+                      )
                     : null,
+                  h("div", { className: "preset-bar", role: "group", "aria-label": "Formatter template" },
+                    h("button", { type: "button", className: `preset-chip${formatterPreset === "default" ? " is-active" : ""}`, onClick: handleUseDefaultFormatter }, "Default"),
+                    Object.entries(FORMATTER_PRESETS).map(([presetKey, preset]) => h("button", { key: presetKey, type: "button", className: `preset-chip${formatterPreset === presetKey ? " is-active" : ""}`, onClick: () => applyFormatterPreset(presetKey) }, preset.label)),
+                  ),
+                  h("label", { style: { display: "block", fontSize: "0.8rem", color: "var(--muted)", margin: "10px 0 4px" } }, "Name template"),
+                  h("textarea", { value: formatterName, onChange: (e) => { setFormatterName(e.target.value); setFormatterPreset(null); setFormatterPreview(null); }, rows: 4, spellCheck: false, placeholder: "{stream.resolution} • {stream.source}", style: textareaStyle }),
+                  h("label", { style: { display: "block", fontSize: "0.8rem", color: "var(--muted)", margin: "10px 0 4px" } }, "Description template"),
+                  h("textarea", { value: formatterDescription, onChange: (e) => { setFormatterDescription(e.target.value); setFormatterPreset(null); setFormatterPreview(null); }, rows: 4, spellCheck: false, placeholder: "{stream.title} • {stream.size::bytes} • {addon.name}", style: textareaStyle }),
+                  h("p", { style: { margin: "10px 0 0", color: "var(--subtle)", fontSize: "0.78rem" } },
+                    "Template syntax: {stream.resolution}, {stream.size::bytes}, {stream.languages}, {stream.quality}, {stream.filename}, conditionals like {field::exists[\"A\"||\"B\"]}, chains with ::and::/::or::, optional groups {? … ?}, and {tools.newLine}. Leave empty for the default look. Keep favourites in the Saved tab, and exercise every field from the Preview tab."),
+                  formatterPreview != null && typeof formatterPreview === "object" && formatterPreview.ok && Array.isArray(formatterPreview.samples)
+                    ? h("div", { className: "formatter-preview" },
+                        formatterPreview.samples.map((sample) =>
+                          h("div", { key: sample.label, className: "stream-card" },
+                            h("div", { className: "stream-card-head" },
+                              h("span", { className: "stream-card-badge" }, sample.label),
+                              sample.error ? h("span", { className: "stream-card-error" }, sample.error) : null,
+                            ),
+                            sample.name ? h("div", { className: "stream-card-name" }, sample.name) : null,
+                            sample.description ? h("div", { className: "stream-card-desc" }, sample.description) : null,
+                          ),
+                        ),
+                      )
+                    : typeof formatterPreview === "string"
+                      ? h("p", { style: { margin: "10px 0 0", color: "var(--danger)", fontSize: "0.78rem" } }, formatterPreview)
+                      : null,
+                ) : null,
+                // ── Saved tab — unlimited personal templates ──
+                formatterUiTab === "saved" ? h("div", null,
+                  h("p", { style: { margin: "12px 0 0", color: "var(--subtle)", fontSize: "0.78rem" } }, "Save as many templates as you like — there is no limit. Load one any time, and move them between devices with Export/Import file."),
+                  h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", marginTop: "10px" } },
+                    h("input", { value: templateLabel, onChange: (e) => setTemplateLabel(e.target.value), placeholder: "Name this template…", "aria-label": "Template name", style: { flex: "1 1 160px", minWidth: "140px", padding: "6px 10px", fontSize: "0.82rem" } }),
+                    h("button", { type: "button", className: "preset-chip", onClick: saveCurrentTemplate }, "Save current"),
+                    h("button", { type: "button", className: "clear-button", onClick: exportTemplatesFile, disabled: savedTemplates.length === 0, style: { opacity: savedTemplates.length === 0 ? 0.45 : 1 } }, "Export file"),
+                    h("button", { type: "button", className: "clear-button", onClick: () => importFileRef.current?.click() }, "Import file"),
+                    h("input", { ref: importFileRef, type: "file", accept: "application/json,.json", style: { display: "none" }, "aria-hidden": "true", onChange: importTemplatesFile }),
+                  ),
+                  savedTemplates.length
+                    ? h("div", { className: "preset-bar", role: "list", "aria-label": "Saved templates" },
+                        savedTemplates.map((t) => h("span", { key: t.id, role: "listitem", style: { display: "inline-flex", alignItems: "center", gap: "4px", border: "1px solid var(--line)", borderRadius: "6px", padding: "2px 4px 2px 10px", background: "var(--surface-2)" } },
+                          h("button", { type: "button", className: "preset-chip", style: { padding: "2px 6px" }, title: "Load this template", onClick: () => loadTemplate(t.id) }, t.label),
+                          h("button", { type: "button", className: "clear-button", style: { padding: "2px 6px", fontSize: "0.72rem" }, "aria-label": `Delete ${t.label}`, title: "Delete", onClick: () => deleteTemplate(t.id) }, "✕"),
+                        )),
+                      )
+                    : h("p", { style: { margin: "8px 0 0", color: "var(--subtle)", fontSize: "0.76rem" } }, "No saved templates yet — set templates in the Editor tab and press Save current, or Import a file."),
+                  templateLibraryMsg ? h("p", { style: { margin: "6px 0 0", color: "var(--muted)", fontSize: "0.78rem" } }, templateLibraryMsg) : null,
+                ) : null,
+                // ── Preview tab — scenario configuration (AIOStreams-style) ──
+                formatterUiTab === "preview" ? h("div", null,
+                  h("p", { style: { margin: "12px 0 0", color: "var(--subtle)", fontSize: "0.78rem" } }, "Pick a scenario, tweak any field, and see exactly what the formatter produces for that stream. Every field the formatter can read is editable."),
+                  h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", marginTop: "10px" } },
+                    h("select", { value: previewScenarioId, "aria-label": "Preview scenario", onChange: (e) => applyScenario(e.target.value), style: { padding: "7px 10px", border: "1px solid var(--line)", borderRadius: "6px", background: "var(--surface-3)", color: "var(--text)", fontSize: "0.86rem" } },
+                      PREVIEW_SCENARIOS.map((scenario) => h("option", { key: scenario.id, value: scenario.id }, scenario.label)),
+                    ),
+                    h("button", { type: "button", className: "clear-button", onClick: resetScenario, title: "Restore this scenario's original values" }, "Reset"),
+                  ),
+                  h("div", { className: "segmented", style: { maxWidth: "420px", marginTop: "10px" }, role: "tablist", "aria-label": "Scenario fields" },
+                    [["source", "Source"], ["stream", "Stream"], ["request", "Request"]].map(([tabId, label]) => h("button", { type: "button", key: tabId, role: "tab", "aria-selected": previewFieldTab === tabId, className: `segmented-btn${previewFieldTab === tabId ? " is-active" : ""}`, onClick: () => setPreviewFieldTab(tabId) }, label)),
+                  ),
+                  h("div", { className: "scenario-grid", style: { marginTop: "10px" } },
+                    previewFieldTab === "source" ? [
+                      ["sourceLabel", "Source label", "4KHDHub — shows as {stream.source}"],
+                      ["serverName", "Server", "10Gbps — shows as {stream.server}"],
+                      ["addonName", "Addon name", "PhoeniX — {addon.name}"],
+                      ["fallbackName", "Fallback card name", "Shown when a template fails (fail-open)"],
+                      ["fallbackTitle", "Fallback card description", "Shown when a template fails (fail-open)"],
+                      ["url", "Stream URL", "/proxy URLs mark the card proxied"],
+                    ].map(([key, label, hint]) => scenarioInput(key, label, hint))
+                    : previewFieldTab === "stream" ? [
+                      ["title", "Title", "Dune Part Two — {stream.title}"],
+                      ["height", "Resolution", "", "select", [["2160", "2160p (4K)"], ["1440", "1440p (QHD)"], ["1080", "1080p (FHD)"], ["720", "720p"], ["480", "480p"], ["360", "360p"], ["0", "Unknown"]]],
+                      ["sizeGb", "Size (GB)", "48.1 — {stream.size::bytes}"],
+                      ["bitrateKbps", "Bitrate (kbps)", "20000 — {stream.bitrate::sbitrate}"],
+                      ["quality", "Quality type", "BluRay Remux / Web-DL — {stream.quality}"],
+                      ["codec", "Video codec", "HEVC / AVC / x264 — {stream.encode}"],
+                      ["audioCodec", "Audio codec", "TrueHD / DD+ / AAC"],
+                      ["audioChannels", "Audio channels", "5.1 / 7.1 / 2.0"],
+                      ["hdr", "HDR tags", "DV,HDR10 — {stream.visualTags}"],
+                      ["releaseGroup", "Release group", "FRAM — {stream.releaseGroup}"],
+                      ["format", "Container", "", "select", [["mp4", "MP4"], ["mkv", "MKV"], ["hls", "HLS"], ["ts", "TS"], ["webm", "WebM"]]],
+                      ["languages", "Languages", "en,hi — {stream.languages}"],
+                      ["subtitles", "Subtitle languages", "en — {stream.subtitles}"],
+                      ["network", "Network", "Netflix — {stream.network}"],
+                    ].map(([key, label, hint, kind, options]) => kind === "select" ? scenarioSelect(key, label, options) : scenarioInput(key, label, hint))
+                    : [
+                        scenarioSelect("requestType", "Request type", [["movie", "Movie"], ["series", "Series"]]),
+                        scenarioInput("requestId", "IMDb id", "Series: tt0903747:2:5 fills season 2 · episode 5"),
+                      ],
+                  ),
+                  !formatterName.trim() && !formatterDescription.trim()
+                    ? h("p", { style: { margin: "10px 0 0", color: "var(--subtle)", fontSize: "0.78rem" } }, "Both templates are empty — set a template in the Editor tab to see the preview.")
+                    : scenarioPreview != null && typeof scenarioPreview === "object" && scenarioPreview.ok && Array.isArray(scenarioPreview.samples) && scenarioPreview.samples.length
+                      ? h("div", { className: "formatter-preview" },
+                          scenarioPreview.samples.map((sample) =>
+                            h("div", { key: sample.label, className: "stream-card" },
+                              h("div", { className: "stream-card-head" },
+                                h("span", { className: "stream-card-badge" }, sample.label),
+                                sample.error ? h("span", { className: "stream-card-error" }, sample.error) : null,
+                              ),
+                              sample.name ? h("div", { className: "stream-card-name" }, sample.name) : null,
+                              sample.description ? h("div", { className: "stream-card-desc" }, sample.description) : null,
+                            ),
+                          ),
+                        )
+                      : typeof scenarioPreview === "string"
+                        ? h("p", { style: { margin: "10px 0 0", color: "var(--danger)", fontSize: "0.78rem" } }, scenarioPreview)
+                        : null,
+                ) : null,
               ),
             ),
             h("div", { className: "stack" },
@@ -1322,6 +1616,23 @@ function App() {
                 h("button", { className: "button", type: "button", onClick: copyAddonUrl, style: { flex: 1 } }, h(Clipboard, { size: 16 }), copyState),
               ),
               h("p", { className: "install-modal-copy", style: { margin: 0 } }, "Installing again with different settings replaces the previous configuration — no uninstall needed."),
+            ),
+          ),
+        ) : null,
+        // Task 101: delete confirmation — deleting a saved template always
+        // asks first, so a mistapped ✕ can never wipe it.
+        deleteConfirm ? h("div", { className: "install-modal-backdrop", onMouseDown: (event) => { if (event.target === event.currentTarget) setDeleteConfirm(null); } },
+          h("section", { className: "install-modal", role: "alertdialog", "aria-modal": "true", "aria-labelledby": "delete-modal-title", style: { maxWidth: "400px" } },
+            h("div", { className: "install-modal-header" },
+              h("h2", { id: "delete-modal-title", className: "install-modal-title" }, "Delete template?"),
+              h("button", { className: "button ghost install-modal-close", type: "button", onClick: () => setDeleteConfirm(null) }, "Cancel"),
+            ),
+            h("div", { className: "install-modal-state" },
+              h("p", { className: "install-modal-copy", style: { marginBottom: "12px" } }, `"${deleteConfirm.label}" will be removed from your saved templates. This cannot be undone.`),
+            ),
+            h("div", { className: "install-modal-actions" },
+              h("button", { className: "button", type: "button", onClick: () => setDeleteConfirm(null) }, "Cancel"),
+              h("button", { className: "button primary", type: "button", style: { background: "var(--danger)", color: "#fff" }, onClick: confirmDeleteTemplate }, "Delete"),
             ),
           ),
         ) : null,

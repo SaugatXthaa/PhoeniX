@@ -2038,13 +2038,78 @@ const FORMATTER_SAMPLES = [
   },
 ];
 
+// Task 101: scenario-driven preview — the configure UI can send fully
+// editable scenario inputs (AIOStreams-style "Preview" tab) instead of the
+// built-in samples. Every field is validated/coerced against exactly what
+// fieldsForStream reads; malformed entries are dropped, and if nothing valid
+// remains the built-in samples render (same fail-open contract as the engine).
+function previewString(value, cap) {
+  if (value == null) return '';
+  const out = String(value).trim();
+  return out.slice(0, cap);
+}
+function previewNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+function previewCodes(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((c) => previewString(c, 12).toLowerCase())
+    .filter((c) => c && /^[a-z][a-z-]{1,11}$/.test(c))
+    .slice(0, 8);
+}
+function normalisePreviewSample(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const metaIn = typeof raw.meta === 'object' && raw.meta ? raw.meta : {};
+  const label = previewString(raw.label, 60) || 'Scenario';
+  const meta = {
+    height: Math.min(previewNumber(metaIn.height), 4320),
+    bytes: previewNumber(metaIn.bytes),
+    bandwidth: previewNumber(metaIn.bandwidth),
+    title: previewString(metaIn.title, 300),
+    sourceLabel: previewString(metaIn.sourceLabel, 60),
+    serverName: previewString(metaIn.serverName, 60),
+    streamingPlatform: previewString(metaIn.streamingPlatform, 60),
+    sourceType: previewString(metaIn.sourceType, 60),
+    format: previewString(metaIn.format, 12),
+    codec: previewString(metaIn.codec, 24),
+    audioCodec: previewString(metaIn.audioCodec, 24),
+    audioChannels: previewString(metaIn.audioChannels, 12),
+    hdr: previewString(metaIn.hdr, 60),
+    releaseGroup: previewString(metaIn.releaseGroup, 60),
+    countryCodes: previewCodes(metaIn.countryCodes),
+    subtitles: previewCodes(metaIn.subtitles).map((c) => ({ lang: c })),
+  };
+  const streamIn = typeof raw.stream === 'object' && raw.stream ? raw.stream : {};
+  const sample = {
+    label,
+    meta,
+    stream: {
+      name: previewString(streamIn.name, 300),
+      title: previewString(streamIn.title, 300),
+    },
+    url: previewString(raw.url, 2000),
+    requestType: raw.requestType === 'series' ? 'series' : 'movie',
+    requestId: previewString(raw.requestId, 60),
+  };
+  // sanity: a sample with no display text at all would render empty cards
+  if (!sample.stream.name && !sample.stream.title && !sample.meta.title) return null;
+  return sample;
+}
+
 app.post('/api/formatter-preview', (req, res) => {
-  const nameTemplate = typeof req.body?.name === 'string' ? req.body.name : '';
-  const descriptionTemplate = typeof req.body?.description === 'string' ? req.body.description : '';
+  const nameTemplate = typeof req.body?.name === 'string' ? req.body.name.slice(0, 20000) : '';
+  const descriptionTemplate = typeof req.body?.description === 'string' ? req.body.description.slice(0, 20000) : '';
   if (!nameTemplate.trim() && !descriptionTemplate.trim()) {
     return res.json({ ok: true, samples: [], defaults: FORMATTER_DEFAULTS });
   }
-  const samples = FORMATTER_SAMPLES.map((sample) => {
+  let source = FORMATTER_SAMPLES;
+  if (Array.isArray(req.body?.samples)) {
+    const cleaned = req.body.samples.slice(0, 8).map(normalisePreviewSample).filter(Boolean);
+    if (cleaned.length) source = cleaned;
+  }
+  const samples = source.map((sample) => {
     try {
       const formatted = formatter.formatStream({
         nameTemplate,

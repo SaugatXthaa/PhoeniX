@@ -338,6 +338,56 @@
         margin-top: 10px;
       }
 
+      /* Task 101: scenario configuration grid (formatter Preview tab) */
+      .scenario-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 12px;
+      }
+
+      .scenario-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .scenario-field-label {
+        font-size: 0.72rem;
+        color: var(--subtle);
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      .scenario-field input,
+      .scenario-field select {
+        width: 100%;
+        padding: 7px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--surface-3);
+        color: var(--text);
+        font-size: 0.86rem;
+      }
+
+      .scenario-field input:focus,
+      .scenario-field select:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      .scenario-field-hint {
+        font-size: 0.7rem;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+
+      @media (max-width: 720px) {
+        .scenario-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
       .stream-card {
         border: 1px solid var(--line);
         border-radius: 10px;
