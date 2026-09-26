@@ -49,7 +49,8 @@ import { AniKage } from './AniKage.js';
 import { AniBD } from './AniBD.js';
 import { TwoDhive } from './TwoDhive.js';
 import { AniDoor } from './AniDoor.js';
-import { NowHDTime } from './NowHDTime.js';
+// nowhdtime REMOVED 2026-09 (Task 96) — nhdapi.com 401s Render's egress at the
+//   resolve step (server-held key class); zero deliveries from prod ever.
 import { Pantyflix } from './Pantyflix.js';
 import { AnimeGG } from './AnimeGG.js';
 import { Peckle } from './Peckle.js';
@@ -98,15 +99,16 @@ import { ReAnime } from './ReAnime.js';
 //   Aggregates multiple upstream providers (flixsix.com MP4, vcdnx.com HLS,
 //   peakstorm.top 4K). Scraper has built-in retry for cold-start 504s.
 import { DesiFlix } from './DesiFlix.js';
-// persianstremio — Persian-language movies/TV with dual-audio (🇺🇸|🇮🇷)
-//   Direct MP4/MKV from cinamadownload.top, aslmd.sbs, abrtech.top
-import { PersianStremio } from './PersianStremio.js';
+// persianstremio REMOVED 2026-09 (Task 96) — Cloudflare 503 challenge on
+//   vercel.app gates Render's egress since Task 95 measurement; sandbox passes
+//   but prod never resolves — zero deliveries from prod.
 // videasy.to — movies/TV via Playwright headless browser (speedracelight API)
 //   9 providers, direct playable HLS/MP4 up to 4K with subtitles
 //   SEPARATE from 'videasy' (which uses player.videasy.net without Playwright)
 import { VideasyTo } from './VideasyTo.js';
-// kmmovies.pics — movies/TV with direct playable MKV (up to 4K) via R2 + Pixeldrain
-import { KMMovies } from './KMMovies.js';
+// kmmovies REMOVED 2026-09 (Task 96) — w3.magiclinks.lol CF-gates Render's
+//   egress at the resolve step (Tasks 86→88, egress IP never rotated);
+//   zero deliveries from prod since Task 86.
 // movielinkbd.net — movies/series/kdrama/animes/cartoons via WP REST API +
 //   KiteCloud host resolved to DIRECT googleusercontent MKV (up to 1080p
 //   upstream, dual/multi embedded audio, Task 58 reverse engineering)
@@ -171,8 +173,7 @@ export const createSources = (fetcher) => {
     // all-wish.me — Animesuge clone with Laravel AJAX → megaplay.buzz (sub/dub)
     // anidoor.me — public sources.json templates + AniList GraphQL (sub/dub)
     new AniDoor(fetcher),
-    // nowhdtime.to — movies/series/anime/kdrama via nhdapi.com HLS proxy API
-    new NowHDTime(fetcher),
+    // nowhdtime REMOVED 2026-09 (Task 96) — nhdapi.com gates Render egress.
     // pantyflix.org — movies/series/anime via /api/streamrip/download (direct MP4/MKV)
     new Pantyflix(fetcher),
     // animegg.org — anime sub+dub direct MP4 (720p/1080p)
@@ -226,8 +227,7 @@ export const createSources = (fetcher) => {
     new ReAnime(fetcher),
     // desiflix — movies/TV/anime via manifest.desitvhub.eu.org (multi-provider aggregation)
     new DesiFlix(fetcher),
-    // persianstremio — Persian dual-audio movies/TV (cinamadownload.top, aslmd.sbs)
-    new PersianStremio(fetcher),
+    // persianstremio REMOVED 2026-09 (Task 96) — CF 503 challenge gates Render egress.
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)
@@ -270,8 +270,7 @@ export const createSources = (fetcher) => {
     new AllWish(fetcher),
     // videasy.to — movies/TV via speedracelight API (9 providers, up to 4K, subtitles)
     new VideasyTo(fetcher),
-    // kmmovies.pics — movies/TV with direct playable MKV (up to 4K) via R2 + Pixeldrain
-    new KMMovies(fetcher),
+    // kmmovies REMOVED 2026-09 (Task 96) — magiclinks.lol CF-gates Render egress.
     // atlantic.st — movies/TV/anime via Aphrodite (4K, signed) + Artemis
     // (Orbit 4K multi-audio / Nova muxed), granite+natsuki subtitles, all
     // cards live-validated before shipping (Task 48)

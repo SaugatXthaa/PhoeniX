@@ -218,7 +218,10 @@ async function runChecks(child, logFile, bootLines) {
   //   (user request; evidence-locked dead upstreams, Task 83/84)
   // Task 85c: 70 → 69 — antarctica removed (user request; source + provider
   //   deleted, was the wave-0 50-card TorBox-cache source)
-  check('boot source count = 69', srcM && srcM[1] === '69', `got ${srcM?.[1]}`);
+  // Task 96: 69 → 66 — kmmovies + nowhdtime + persianstremio removed (user
+  //   request; hard egress gates on Render, zero deliveries ever — see
+  //   memory.md §25 for the evidence trail)
+  check('boot source count = 66', srcM && srcM[1] === '66', `got ${srcM?.[1]}`);
   // Task 25: 30 → 31 — VidZee extractor registered (ported file existed but
   // was never wired into createExtractors; vidzee source shipped 0 streams).
   // Task 28: 31 → 32 — MixDrop extractor (verhdlink mixdrop mirrors → direct MP4)
@@ -240,6 +243,9 @@ async function runChecks(child, logFile, bootLines) {
   check('no animeworldindia/anineko/stellarrip in registry', !ids.includes('animeworldindia') && !ids.includes('anineko') && !ids.includes('stellarrip'));
   // Task 85c: antarctica removed (user request) — must not reappear.
   check('no antarctica in registry', !ids.includes('antarctica'));
+  // Task 96: kmmovies + nowhdtime + persianstremio removed (user request;
+  //   hard Render-egress gates, zero deliveries ever) — must not reappear.
+  check('no kmmovies/nowhdtime/persianstremio in registry', !ids.includes('kmmovies') && !ids.includes('nowhdtime') && !ids.includes('persianstremio'));
 
   // crash-class errors in boot log (upstream fetch noise during warmup excluded)
   const crashy = bootLines.split('\n').filter(l => /Cannot find module|SyntaxError|ReferenceError|TypeError|failed to load scraper/i.test(l));
@@ -289,13 +295,18 @@ async function runChecks(child, logFile, bootLines) {
   check('no removed-source leakage in catalogs', leaked.length === 0, `${leaked.length} hits`);
 
   // /proxy 206 MKV range check — find a direct (non-m3u8) video URL in catalogs
+  // Task 96: deletion of kmmovies/persianstremio (their R2/pixeldrain/MP4
+  // cards used to dominate the first candidates) + workers.dev IP-gating
+  // (403/502 through /proxy from ANY datacenter vantage — Task 49 class)
+  // made the old first-4 pool flaky. Widen to 8 and skip the gated class;
+  // the check's PURPOSE (any real card proxies with 206 + EBML) is intact.
   const allStreams = [...(mv.json?.streams || []), ...(sr.json?.streams || [])];
   const direct = allStreams.filter(s => {
     const u = s.url || '';
-    return /^https?:\/\//.test(u) && !/\.m3u8($|\?)/i.test(u) && !/\/proxy\?/.test(u);
+    return /^https?:\/\//.test(u) && !/\.m3u8($|\?)/i.test(u) && !/\/proxy\?/.test(u) && !/(^|\.)workers\.dev$/i.test(new URL(u).hostname || '');
   });
   let proxyOk = false, proxyDetail = 'no direct candidate';
-  for (const cand of direct.slice(0, 4)) {
+  for (const cand of direct.slice(0, 8)) {
     try {
       const res = await fetch(`${base}/proxy?url=${encodeURIComponent(cand.url)}`, { headers: { Range: 'bytes=0-1023' }, signal: AbortSignal.timeout(20000) });
       const head = Buffer.from(await res.arrayBuffer()).subarray(0, 4);

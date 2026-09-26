@@ -6,6 +6,10 @@ import { getClosestResolution } from './resolution.js';
 import { flagFromCountryCode, languageFromCountryCode } from './language.js';
 import { SubtitleFetcher } from './SubtitleFetcher.js';
 import streamGate from './streamGate.cjs';
+// Task 96: seekGate — google-family targets get a 1KB-capped Range probe
+// (fire-and-forget, verdict-cached); 'seekable' verdicts upgrade the card to
+// the DIRECT url so the player gets google's native 206 (true fast seek).
+import seekGate from './seekGate.cjs';
 // Task 54: playback-priority — background (post-budget) source starts yield
 // to /proxy + /range-proxy traffic so players never queue behind scraping.
 import playbackGate from './playbackGate.cjs';
@@ -490,10 +494,14 @@ const WAVE2_SOURCE_IDS = new Set([
   // cache a multi-instance Render deployment often never sees again).
   // Task 70: desiflix REPROMOTED to wave-0 (see WAVE1_SOURCE_ORDER) —
   // wave-2 starts land at ~25-40s on cold resolves and never finish.
-  'hindmoviez', 'cinebyrocks', 'nowhdtime', 'zxcstream',
+  // nowhdtime REMOVED Task 96 (nhdapi gates Render egress — zero prod
+  //   deliveries; source + provider deleted).
+  'hindmoviez', 'cinebyrocks', 'zxcstream',
   'imdbplay', 'framextv',
   // Task 70: 'vixsrc' and 'peckle' promoted to wave-0 (user-named class).
-  'kmmovies', 'vidzee', 'pantyflix',
+  // kmmovies REMOVED Task 96 (magiclinks CF-gates Render egress — zero prod
+  //   deliveries since Task 86; source + provider deleted).
+  'vidzee', 'pantyflix',
   'netlio', 'rivestream', 'cinehdplus',
   // Task 61: persianstremio promoted BACKGROUND_ONLY → wave 2 — same
   // class and same evidence standard as desiflix above. Isolated fresh
@@ -503,7 +511,8 @@ const WAVE2_SOURCE_IDS = new Set([
   // multi-instance Render deployment its background cache was routinely
   // invisible to the next request → registered yet never visible. Wave-2
   // start (~13s queue) + 11.3s chain lands it IN-request.
-  'persianstremio',
+  // persianstremio REMOVED Task 96 (CF 503 challenge on vercel.app from
+  //   Render egress — zero prod deliveries; source + provider deleted).
 ]);
 const BACKGROUND_ONLY_SOURCE_IDS = new Set([
   // never land within the 15s budget (measured) or known-dead upstreams;
@@ -808,6 +817,9 @@ export class StreamResolver {
           if (r?.url) {
             const effHost = streamGate.gateHostOf(r.url.href);
             if (effHost && streamGate.isGatedHost(effHost)) streamGate.kick(r.url.href);
+            // Task 96: same fire-and-forget pattern for google-family seek
+            // probes — kick() ignores non-google targets itself.
+            seekGate.kick(r.url.href);
           }
         }
       } catch (error) {
@@ -953,12 +965,12 @@ export class StreamResolver {
     // verdicts — gated-dead cards (vimeos 403-html, nexabloom, zips, dead
     // trees) would ship on EVERY warm request. Bounded: max 3s and never past
     // the client budget (the partial contract stays intact).
-    if (streamGate.pendingCount() > 0) {
+    if (streamGate.pendingCount() > 0 || seekGate.pendingCount() > 0) {
       const remainingBudget = CLIENT_BUDGET_MS - (Date.now() - resolveT0);
       const waitMs = Math.max(0, Math.min(3000, remainingBudget - 1500));
       if (waitMs > 0) {
         await Promise.race([
-          streamGate.pendingSettled(),
+          Promise.all([streamGate.pendingSettled(), seekGate.pendingSettled()]),
           new Promise(resolve => setTimeout(resolve, waitMs)),
         ]);
       }
@@ -1197,7 +1209,9 @@ export class StreamResolver {
       // ffmpeg player fetches them directly.
       let finalUrl = urlResult.url;
       let finalMeta = urlResult.meta;
-      const isAlreadyProxied = finalUrl.href.includes('/proxy?') || finalUrl.href.includes('/range-proxy?');
+      // Task 96: `let` — the seekGate upgrade below flips it when a
+      // range-proxy card is rewritten to its direct 206 target.
+      let isAlreadyProxied = finalUrl.href.includes('/proxy?') || finalUrl.href.includes('/range-proxy?');
 
       // Task 92: pixeldrain "?download" → Content-Disposition: attachment
       // (measured live: the bare /api/file/{id} answers `inline` with identical
@@ -1207,6 +1221,27 @@ export class StreamResolver {
       // DOWNLOAD instead of playback. Central sanitize at card assembly.
       if (!isAlreadyProxied && /(^|\.)pixeldrain\.(dev|com)$/i.test(finalUrl.hostname) && finalUrl.searchParams.has('download')) {
         finalUrl = new URL(finalUrl.href.replace(/\?download=?(?:&|$)/, m => m.endsWith('&') ? '?' : ''));
+      }
+
+      // Task 96: SeekGate upgrade — when the google-family target behind a
+      // /range-proxy card has a cached 'seekable' verdict (upstream answered
+      // 206 + Content-Range to the 1KB probe), ship the DIRECT url with
+      // requestHeaders instead: the player's residential IP then gets
+      // google's native 206 → TRUE fast seek (the pixeldrain/R2 class
+      // behavior the user asked for). Without a verdict — or on 'linear' —
+      // the card keeps today's /range-proxy 302 form byte-identically.
+      // Runs BEFORE hasProxyHeaders is computed so the proxyHeaders
+      // behaviorHints branch below engages (Task 49 pattern).
+      if (isAlreadyProxied && finalUrl.pathname === '/range-proxy' && seekGate.verdictSync(finalUrl.href) === 'seekable') {
+        const inner = finalUrl.searchParams.get('url');
+        if (inner && /^https?:\/\//i.test(inner)) {
+          finalUrl = new URL(inner);
+          isAlreadyProxied = false;
+          if (!urlResult.requestHeaders) {
+            urlResult.requestHeaders = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' };
+          }
+          this.logger.info(`StreamResolver: seekGate upgraded range-proxy card to direct 206 target (native seek): ${finalUrl.hostname}`);
+        }
       }
 
 

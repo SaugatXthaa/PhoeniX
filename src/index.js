@@ -17,6 +17,8 @@ import { reanimeSegmentKey } from './utils/site-secrets.cjs';
 // Task 54: playback-priority gate — /proxy + /range-proxy raise it while
 // serving so the resolver's post-budget background work can yield to playback.
 import playbackGate from './utils/playbackGate.cjs';
+// Task 96: seek verdicts for google-family targets (see /debug/seekgate).
+import seekGate from './utils/seekGate.cjs';
 // Task 74: idle cache keeper — see utils/cacheKeeper.js. Keeps the per-source
 // caches of user-opened titles warm while the instance is idle, so an
 // UptimeRobot-kept-alive instance delivers warm-round card sets on round 1.
@@ -2113,6 +2115,13 @@ app.get('/debug/egresswatch', (req, res) => {
   res.json(getEgressWatchInfo());
 });
 
+// Task 96: seekGate verdict state — which google-family targets probed
+// 'seekable' (206, cards upgraded to direct) vs 'linear' (200, cards stay
+// /range-proxy 302). Read-only, mirrors /debug/egresswatch.
+app.get('/debug/seekgate', (req, res) => {
+  res.json(seekGate._debug());
+});
+
 // Raw native-fetch probe from THIS server — diagnoses egress-IP/TLS blocks.
 // Task 38: stellarrip/stellar/uhdmovies/bollyflix resolve 0 in production while
 // identical code + got-scraping /proxy probes succeed; this endpoint isolates
@@ -2122,6 +2131,12 @@ app.get('/debug/egresswatch', (req, res) => {
 //   — diagnosing POST-class APIs (acer api2, animekai POST search) needs the
 //   exact status/body from production egress; GET-only rawfetch reported
 //   misleading "Cannot GET /api/search" signatures.
+// Task 96: capped-Range mode — &range=bytes=X-Y&maxbytes=N sends a Range
+// header upstream and reads AT MOST maxbytes body bytes (stream reader, then
+// cancel). Exists because the Task 92 workers.dev flap + Task 95 seek audit
+// needed Range-probe answers from PROD vantage (403-vs-206 classes differ by
+// egress IP), and r.text() on an 18GB video would OOM the instance. The read
+// cap makes probing video URLs safe.
 app.get('/debug/rawfetch', async (req, res) => {
   const rawUrl = req.query.url;
   if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
@@ -2130,10 +2145,13 @@ app.get('/debug/rawfetch', async (req, res) => {
   const method = String(req.query.method || 'GET').toUpperCase();
   const body = req.query.body;
   const ct = req.query.ct;
+  const rangeHeader = req.query.range && /^bytes=\d+-\d*$/i.test(String(req.query.range)) ? String(req.query.range) : null;
+  const maxBytes = Math.min(parseInt(req.query.maxbytes, 10) || 0, 65536);
   const extraHeaders = {};
   if (ct) extraHeaders['Content-Type'] = ct;
   if (req.query.origin) extraHeaders['Origin'] = req.query.origin;
   if (req.query.referer) extraHeaders['Referer'] = req.query.referer;
+  if (rangeHeader) extraHeaders['Range'] = rangeHeader;
   const t0 = Date.now();
   try {
     const r = await fetch(rawUrl, {
@@ -2141,9 +2159,29 @@ app.get('/debug/rawfetch', async (req, res) => {
       ...(method !== 'GET' && body ? { body } : {}),
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', 'Accept': 'text/html,*/*', ...extraHeaders },
       signal: AbortSignal.timeout(12000),
-      redirect: 'follow',
+      redirect: req.query.noredirect ? 'manual' : 'follow',
     });
-    const text = await r.text();
+    // Task 96: capped read — stream at most maxBytes, then cancel the body so
+    // an 18GB upstream can never be buffered.
+    let text = '';
+    if (maxBytes > 0 && r.body) {
+      const reader = r.body.getReader();
+      let got = 0;
+      try {
+        while (got < maxBytes) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          text += Buffer.from(value).toString('latin1', 0, Math.min(value.length, maxBytes - got));
+          got += value.length;
+        }
+      } catch {}
+      // reader.cancel() also cancels the underlying stream — do NOT also
+      // call r.body.cancel(): it rejects (stream locked) as an UNHANDLED
+      // promise rejection, and sync try/catch cannot catch it.
+      try { await reader.cancel(); } catch {}
+    } else {
+      text = await r.text();
+    }
     return res.json({
       url: rawUrl,
       ok: r.ok,
@@ -2152,6 +2190,9 @@ app.get('/debug/rawfetch', async (req, res) => {
       durationMs: Date.now() - t0,
       bytes: text.length,
       ct: r.headers.get('content-type') || undefined,
+      contentRange: r.headers.get('content-range') || undefined,
+      acceptRanges: r.headers.get('accept-ranges') || undefined,
+      contentDisposition: r.headers.get('content-disposition') || undefined,
       head: text.slice(0, 300),
     });
   } catch (e) {
