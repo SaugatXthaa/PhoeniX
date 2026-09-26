@@ -40,7 +40,19 @@ const FIELDS = [
   'stream.provider', 'stream.type', 'addon.name',
 ];
 
-const MAX_RENDER = 400;
+const MAX_RENDER = 1200;
+
+// Render budget: if a template's output exceeds MAX_RENDER (huge release
+// titles from some sources), cut cleanly at the last line boundary inside
+// the budget and mark the cut with an ellipsis — never leave a half-rendered
+// word / broken token mid-line (the old hard slice(0, 400) chopped the
+// "📡 source · addon" footer off long titles and corrupted the tail).
+function capRender(out) {
+  if (out.length <= MAX_RENDER) return out;
+  const cut = out.slice(0, MAX_RENDER);
+  const nl = cut.lastIndexOf('\n');
+  return (nl > MAX_RENDER * 0.5 ? cut.slice(0, nl) : cut).trimEnd() + ' …';
+}
 
 function humanBytes(n) {
   if (!Number.isFinite(n) || n <= 0) return '';
@@ -139,7 +151,7 @@ function renderTemplate(template, values) {
     out += ch;
     i++;
   }
-  return out.slice(0, MAX_RENDER);
+  return capRender(out);
 }
 
 function applyModifier(value, mod) {

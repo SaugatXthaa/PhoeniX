@@ -92,12 +92,12 @@ const timeoutOptions = [
 const FORMATTER_PRESETS = {
   prism: {
     label: "Prism",
-    name: `{stream.resolution::exists["{stream.resolution::replace('2160p','🔥 4K UHD')::replace('1080p','🚀 FHD')::replace('720p','💿 HD')::replace('480p','💩 SD')::replace('360p','💩 SD')}"||"🎞️ Stream"]}`,
+    name: `{stream.resolution::exists["{stream.resolution::replace('4K','🔥 4K UHD')::replace('1440p','🖥️ QHD')::replace('1080p','🚀 FHD')::replace('720p','💿 HD')::replace('480p','💩 SD')::replace('360p','💩 SD')}"||"🎞️ Stream"]}`,
     description: `{stream.title::exists["{stream.title::title}"||""]}{stream.size::exists["\n📦 {stream.size}"||""]}{stream.languages::exists["\n🗣️ {stream.languages}"||""]}\n📡 {stream.source}{stream.server::exists[" · {stream.server}"||""]} · {addon.name}`,
   },
   tamtaro: {
     label: "TamTaro",
-    name: `{stream.resolution::exists["{stream.resolution::replace('2160p','  4K ')::replace('1080p','  FHD ')::replace('720p','  HD ')}"||""]}`,
+    name: `{stream.resolution::exists["{stream.resolution::replace('4K','  4K ')::replace('1440p','  QHD ')::replace('1080p','  FHD ')::replace('720p','  HD ')}"||""]}`,
     description: `{stream.title}\n{stream.size::exists["📦 {stream.size} "||""]}📡 {stream.source} · {addon.name}`,
   },
   "light-google-drive": {
@@ -107,7 +107,7 @@ const FORMATTER_PRESETS = {
   },
   minimalistic: {
     label: "Minimalistic",
-    name: `{stream.resolution::exists["{stream.resolution::replace('2160p','✨ 4K')::replace('1080p','🧿 1080p')::replace('720p','💿 720p')}"||"N/A"]}`,
+    name: `{stream.resolution::exists["{stream.resolution::replace('4K','✨ 4K')::replace('1440p','🖥️ 1440p')::replace('1080p','🧿 1080p')::replace('720p','💿 720p')}"||"N/A"]}`,
     description: `{stream.title}{stream.size::exists[" · {stream.size}"||""]}`,
   },
 };
