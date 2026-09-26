@@ -99,9 +99,11 @@ import { ReAnime } from './ReAnime.js';
 //   Aggregates multiple upstream providers (flixsix.com MP4, vcdnx.com HLS,
 //   peakstorm.top 4K). Scraper has built-in retry for cold-start 504s.
 import { DesiFlix } from './DesiFlix.js';
-// persianstremio REMOVED 2026-09 (Task 96) — Cloudflare 503 challenge on
-//   vercel.app gates Render's egress since Task 95 measurement; sandbox passes
-//   but prod never resolves — zero deliveries from prod.
+// persianstremio — Persian-language movies/TV with dual-audio (🇺🇸|🇮🇷)
+//   Direct MP4/MKV from cinamadownload.top, aslmd.sbs, abrtech.top
+// Task 97: RESTORED at user request — the vercel.app CF gate has cleared
+//   (user confirms it works perfectly); zero code drift vs pre-Task-96.
+import { PersianStremio } from './PersianStremio.js';
 // videasy.to — movies/TV via Playwright headless browser (speedracelight API)
 //   9 providers, direct playable HLS/MP4 up to 4K with subtitles
 //   SEPARATE from 'videasy' (which uses player.videasy.net without Playwright)
@@ -227,7 +229,8 @@ export const createSources = (fetcher) => {
     new ReAnime(fetcher),
     // desiflix — movies/TV/anime via manifest.desitvhub.eu.org (multi-provider aggregation)
     new DesiFlix(fetcher),
-    // persianstremio REMOVED 2026-09 (Task 96) — CF 503 challenge gates Render egress.
+    // persianstremio — Persian dual-audio movies/TV (cinamadownload.top, aslmd.sbs)
+    new PersianStremio(fetcher),
     // anichan.net — anime sub+dub HLS (AniList ID, /api/watch/m3u8, 1080p)
     new AniChan(fetcher),
     // animesuge.at — anime sub+dub HLS via megaplay.buzz (1080p)

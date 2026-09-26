@@ -221,7 +221,9 @@ async function runChecks(child, logFile, bootLines) {
   // Task 96: 69 → 66 — kmmovies + nowhdtime + persianstremio removed (user
   //   request; hard egress gates on Render, zero deliveries ever — see
   //   memory.md §25 for the evidence trail)
-  check('boot source count = 66', srcM && srcM[1] === '66', `got ${srcM?.[1]}`);
+  // Task 97: 66 → 67 — persianstremio RESTORED at user request (upstream
+  //   vercel.app CF gate cleared; user confirms it works perfectly)
+  check('boot source count = 67', srcM && srcM[1] === '67', `got ${srcM?.[1]}`);
   // Task 25: 30 → 31 — VidZee extractor registered (ported file existed but
   // was never wired into createExtractors; vidzee source shipped 0 streams).
   // Task 28: 31 → 32 — MixDrop extractor (verhdlink mixdrop mirrors → direct MP4)
@@ -243,9 +245,11 @@ async function runChecks(child, logFile, bootLines) {
   check('no animeworldindia/anineko/stellarrip in registry', !ids.includes('animeworldindia') && !ids.includes('anineko') && !ids.includes('stellarrip'));
   // Task 85c: antarctica removed (user request) — must not reappear.
   check('no antarctica in registry', !ids.includes('antarctica'));
-  // Task 96: kmmovies + nowhdtime + persianstremio removed (user request;
-  //   hard Render-egress gates, zero deliveries ever) — must not reappear.
-  check('no kmmovies/nowhdtime/persianstremio in registry', !ids.includes('kmmovies') && !ids.includes('nowhdtime') && !ids.includes('persianstremio'));
+  // Task 96: kmmovies + nowhdtime removed (user request; hard Render-egress
+  //   gates, zero deliveries ever) — must not reappear.
+  // Task 97: persianstremio REMOVED from this absence check — restored at
+  //   user request (upstream gate cleared).
+  check('no kmmovies/nowhdtime in registry', !ids.includes('kmmovies') && !ids.includes('nowhdtime'));
 
   // crash-class errors in boot log (upstream fetch noise during warmup excluded)
   const crashy = bootLines.split('\n').filter(l => /Cannot find module|SyntaxError|ReferenceError|TypeError|failed to load scraper/i.test(l));

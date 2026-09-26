@@ -123,8 +123,11 @@ const NUVIO_SOURCE_IDS = new Set([
   // precedent). Without joining this set the playlist URL matched NO
   // extractor and was silently dropped.
   'vixsrc',
-  // persianstremio REMOVED 2026-09 (Task 96) — source deleted (CF 503 gate
-  //   on Render egress; zero prod deliveries).
+  // persianstremio — Persian dual-audio direct MP4/MKV (needs Referer:
+  // persianstremio.vercel.app for cinamadownload.top / aslmd.sbs URLs)
+  // Task 97: RESTORED at user request (Task 96 removal reverted for this
+  //   source only; kmmovies/nowhdtime stay deleted).
+  'persianstremio',
   // Orphan Nuvio sources (registered in batch) — all use buildStreamResults
   //   - videasyto: speedracelight API (direct playable, no Referer)
   //   (kmmovies removed Task 96 — source deleted, magiclinks CF gate)

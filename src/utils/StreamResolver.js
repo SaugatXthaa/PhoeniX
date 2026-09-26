@@ -513,6 +513,9 @@ const WAVE2_SOURCE_IDS = new Set([
   // start (~13s queue) + 11.3s chain lands it IN-request.
   // persianstremio REMOVED Task 96 (CF 503 challenge on vercel.app from
   //   Render egress — zero prod deliveries; source + provider deleted).
+  // Task 97: RESTORED at user request — upstream gate cleared (user confirms
+  //   it works perfectly); back in wave-2, same slot as pre-Task-96.
+  'persianstremio',
 ]);
 const BACKGROUND_ONLY_SOURCE_IDS = new Set([
   // never land within the 15s budget (measured) or known-dead upstreams;
