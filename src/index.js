@@ -32,6 +32,13 @@ import { startEgressWatch, getEgressWatchSummary, getEgressWatchInfo } from './u
 // (recorded inside StreamResolver) merged with the egress watch probes.
 import { getSourceStatus, watchVerdictFor } from './utils/SourceStatus.js';
 import { ANIME_ONLY_SOURCE_IDS } from './utils/StreamResolver.js';
+// Task 98: same-to-same configure UI — addon config layer (URL-segment
+// decode + query normalization), real-time per-source health monitor
+// (background prober feeding /api/status), and the custom formatter engine.
+import { startSourceMonitor, getMonitorStatus, getMonitorInfo } from './utils/SourceMonitor.js';
+import addonConfig from './utils/addonConfig.cjs';
+const { decodeSegment, configFromQuery, normalizeConfig, SOURCE_TAGS } = addonConfig;
+const formatter = createRequire(import.meta.url)('./utils/formatter.cjs');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -68,8 +75,45 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve static files (logo)
+// Serve static files (logo) + the configure UI assets (css/js)
 app.use('/public', express.static(join(__dirname, '..', 'public')));
+
+// ──────────── Task 98: shared manifest/config helpers ────────────
+// The addon config keys advertised in the manifest (Stremio's native
+// configure screen) — mirror of what the custom /configure UI builds.
+function manifestConfigArray() {
+  const cfg = [];
+  for (const s of sources) {
+    cfg.push({ key: `source_${s.id}`, type: 'checkbox', title: s.label || s.id, default: 'checked' });
+  }
+  for (const [rank, label] of [[2160, '4K'], [1080, '1080p'], [720, '720p'], [480, '480p'], [360, '360p']]) {
+    cfg.push({ key: `res_${rank}`, type: 'checkbox', title: label, default: 'checked' });
+  }
+  cfg.push({ key: 'subtitles_disabled', type: 'checkbox', title: 'Disable subtitles', default: 'unchecked' });
+  cfg.push({ key: 'disable_direct', type: 'checkbox', title: 'Hide non-seekable streams', default: 'unchecked' });
+  cfg.push({ key: 'min_size_gb', type: 'number', title: 'Minimum filesize (GB)' });
+  cfg.push({ key: 'max_size_gb', type: 'number', title: 'Maximum filesize (GB)' });
+  cfg.push({ key: 'formatter_name', type: 'text', title: 'Formatter: stream name template' });
+  cfg.push({ key: 'formatter_description', type: 'text', title: 'Formatter: stream description template' });
+  return cfg;
+}
+
+// Attach a decoded addon config (from the /<segment>/ path prefix) to req.
+// Only strips the prefix when the remainder is a resource path this addon
+// serves — everything else falls through untouched (404s stay 404s).
+// NOTE: the raw (still percent-encoded) segment is passed to decodeSegment —
+// it performs its own single decode. Re-handling via app.handle re-runs the
+// middleware chain, but the rewritten req.url no longer matches the regex,
+// so the second pass is a plain next().
+function segmentConfigMiddleware(req, res, next) {
+  const m = /^\/([^/]+)(\/(?:manifest\.json|stream\/.+|subtitles\/.+))$/.exec(req.url.split('?')[0]);
+  if (!m) return next();
+  const raw = decodeSegment(m[1]);
+  req.url = m[2] + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '');
+  req.rawConfig = raw || {};
+  return app.handle(req, res, next);
+}
+app.use(segmentConfigMiddleware);
 
 // ============== MANIFEST ==============
 app.get('/manifest.json', (req, res) => {
@@ -82,10 +126,25 @@ app.get('/manifest.json', (req, res) => {
     name: ADDON_NAME,
     description: 'Stream movies, series and anime in HD.',
     logo: `${hostUrl}/public/logo.png?v=${VERSION}`,
-    resources: ['stream'],
+    resources: [
+      'stream',
+      // Task 98: real subtitles resource — the unified Task 49 providers
+      // (granite VTT + natsuki SRT) served standalone. The configure UI's
+      // "Disable subtitles" toggle removes this resource from configured
+      // installs and strips per-card tracks.
+      {
+        name: 'subtitles',
+        types: ['movie', 'series'],
+        idPrefixes: ['tt', 'tmdb:'],
+      },
+    ],
     types: ['movie', 'series'],
     idPrefixes: ['tt', 'tmdb:'],
     catalogs: [],
+    // Task 98: the config schema — same key set the custom /configure UI
+    // builds. Lets Stremio's native addon-configure work too, and marks the
+    // addon configurable for configured installs.
+    config: manifestConfigArray(),
     behaviorHints: { configurable: true, configurationRequired: false },
   });
 });
@@ -118,19 +177,35 @@ app.get('/stream/:type/:id.json', async (req, res) => {
     config: { multi: 'on', en: 'on' },
   };
 
+  // Task 98: configured installs carry their settings as query params
+  // (Stremio appends every config key to every resource request) and/or as
+  // the decoded /<segment>/ prefix (req.rawConfig). Query wins. The
+  // normalized config rides ctx.addonConfig into the resolver; an empty
+  // config is a no-op (legacy installs stay byte-identical).
+  const rawAddonConfig = { ...(req.rawConfig || {}), ...configFromQuery(req.query) };
+  const normalizedAddonConfig = normalizeConfig(rawAddonConfig, { allSourceIds: new Set(sources.map(s => s.id)) });
+  ctx.addonConfig = normalizedAddonConfig;
+
   // Task 74: feed the idle cache keeper (records hot titles; no-op when disabled)
   recordUserRequest(type, id);
-  logger.log(`[${ADDON_NAME}] stream ${type} ${id}${req.query.sources ? ` (config sources: ${req.query.sources})` : ''}`);
+  logger.log(`[${ADDON_NAME}] stream ${type} ${id}${req.query.sources ? ` (config sources: ${req.query.sources})` : ''}${normalizedAddonConfig.hasAny ? ' (addon config: on)' : ''}`);
 
   // Task 94: source selection from the configure UI. Stremio appends the
   // addon config params to EVERY resource request — arrives as
   // /stream/...?sources=id1,id2 (pipe separators tolerated too). Fail-open
   // contract: absent / empty / unknown-ids-only → full registry, so the
   // legacy no-config install behaves byte-identically to before.
+  // Task 98: configured installs instead use source_<id>=on keys (the
+  // same-to-same UI's schema). The sources= param keeps precedence for
+  // compatibility with installs made through the Task 94 page.
   let activeSources = sources;
   const selRaw = String(req.query.sources || '').trim();
   if (selRaw) {
     const wanted = new Set(selRaw.split(/[|,]/).map(x => x.trim()).filter(Boolean));
+    const filtered = sources.filter(s => wanted.has(s.id));
+    if (filtered.length) activeSources = filtered;
+  } else if (Array.isArray(normalizedAddonConfig.sourceIds)) {
+    const wanted = new Set(normalizedAddonConfig.sourceIds);
     const filtered = sources.filter(s => wanted.has(s.id));
     if (filtered.length) activeSources = filtered;
   }
@@ -1801,109 +1876,183 @@ app.get('/status/data', (req, res) => {
 // Task 90: non-technical live status page — dark glass style matching the
 // landing page; polls /status/data every 30s. Renders what already happened;
 // never triggers resolves or probes.
+// Task 98: live status page — same-to-same dashboard adaptation (dark/light
+// theme, metric row, filter chips, per-provider rows). Reads /api/status
+// (monitor + passive telemetry) every 30s; triggers nothing itself.
 app.get('/status', (req, res) => {
-  const hostUrl = `https://${req.headers.host}`;
-  res.setHeader('Content-Type', 'text/html');
-  res.send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PhoeniX · Live Source Status</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<style>
-  body { background: radial-gradient(ellipse at 50% -10%, #2a1a08 0%, #0a0a0f 55%); min-height: 100vh; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-  .g { background: #22c55e; box-shadow: 0 0 10px rgba(34,197,94,.7); }
-  .a { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,.7); }
-  .r { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,.7); }
-  .i { background: #475569; }
-  .pulse { animation: p 2s ease-in-out infinite; }
-  @keyframes p { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
-</style>
-</head>
-<body class="text-gray-200">
-<div class="max-w-md mx-auto px-4 py-8">
-  <div class="flex items-center gap-3 mb-1">
-    <img src="${hostUrl}/public/logo.png" alt="PhoeniX" class="w-10 h-10 drop-shadow-[0_0_15px_rgba(255,100,0,0.5)]">
-    <h1 class="text-2xl font-black text-white tracking-tight">Live Source Status</h1>
-  </div>
-  <p class="text-xs text-gray-400 mb-4">What each source actually returned on recent real requests. Updates itself every 30&nbsp;seconds.</p>
-  <div id="chips" class="flex flex-wrap gap-2 mb-3 text-xs font-semibold"></div>
-  <div class="rounded-2xl border border-white/10 p-3 mb-4 text-xs text-gray-400" style="background:rgba(15,15,20,0.6);backdrop-filter:blur(20px)">
-    <span id="serverline">Loading server info…</span>
-  </div>
-  <div id="content" class="space-y-5"></div>
-  <p class="text-[11px] text-gray-500 mt-6 leading-relaxed">
-    PhoeniX streams directly from each site — no torrents, ever.
-    "Waiting" sources are blocked or empty <em>on their own websites</em>; the addon re-checks them automatically and they come back on their own.
-    Sources nobody has opened lately show as "no recent requests" instead of a stale verdict.
-  </p>
-</div>
-<script>
-const GROUPS = [
-  ['working', 'Working', 'g'],
-  ['waiting', 'Waiting on their sites', 'a'],
-  ['issue',   'Had an issue', 'r'],
-  ['idle',    'No recent requests', 'i'],
-];
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function ago(ms) {
-  if (!ms || ms < 90e3) return 'just now';
-  const m = Math.round(ms / 60e3); if (m < 60) return m + ' min ago';
-  const h = Math.round(m / 60); if (h < 48) return h + ' h ago';
-  return Math.round(h / 24) + ' d ago';
-}
-function dur(ms) { return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms'; }
-function card(r) {
-  const recent = r.recentN > 0 && r.recentOk > 0 ? ' <span class="text-gray-600">· delivered ' + r.recentOk + ' of last ' + r.recentN + ' checks</span>' : '';
-  let line;
-  if (r.cls === 'delivering') line = '<span class="text-green-400 font-semibold">Working</span> — delivered <span class="text-white font-semibold">' + r.count + '</span> stream' + (r.count === 1 ? '' : 's') + ' · ' + ago(r.agoMs);
-  else if (r.cls === 'waiting') line = '<span class="text-amber-400 font-semibold">Waiting</span> — ' + esc(r.note || 'the site had nothing to offer this time') + (r.agoMs ? ' · last try ' + ago(r.agoMs) : '');
-  else if (r.cls === 'issue') line = '<span class="text-red-400 font-semibold">Timed out</span> · ' + ago(r.agoMs) + ' — usually recovers on the next open';
-  else line = r.agoMs ? 'No requests in the last 3 h — last try ' + ago(r.agoMs) : 'No requests yet — lights up on first use';
-  const kinds = r.kinds.map(k => '<span class="text-[10px] uppercase tracking-wide text-gray-500 border border-white/10 rounded px-1 py-px">' + k + '</span>').join(' ');
-  const meta = r.cls === 'delivering' ? ' <span class="text-gray-600">· ' + dur(r.ms) + '</span>' : '';
-  return '<div class="flex items-start gap-2.5 rounded-xl border border-white/10 px-3 py-2.5" style="background:rgba(15,15,20,0.55)">'
-    + '<span class="dot mt-1.5 ' + (GROUPS.find(g => g[0] === r.cls)?.[2] || 'i') + (r.cls === 'waiting' ? ' pulse' : '') + '"></span>'
-    + '<div class="min-w-0 flex-1"><div class="flex items-center gap-2 flex-wrap">' + esc(r.label) + ' ' + kinds + '</div>'
-    + '<div class="text-xs text-gray-400 mt-0.5">' + line + meta + recent + '</div></div></div>';
-}
-function render(d) {
-  const chips = [
-    ['Working', d.summary.working, 'text-green-400 border-green-400/30'],
-    ['Waiting', d.summary.waiting, 'text-amber-400 border-amber-400/30'],
-    ['Issues', d.summary.issue, 'text-red-400 border-red-400/30'],
-    ['Idle', d.summary.idle, 'text-gray-500 border-white/10'],
-  ];
-  document.getElementById('chips').innerHTML = chips.map(([l, n, c]) =>
-    '<span class="rounded-full border px-2.5 py-1 ' + c + '">' + n + ' ' + l + '</span>').join('');
-  const sl = d.server;
-  let since = '';
-  if (sl.ipSince) {
-    const h = Math.floor((Date.now() - new Date(sl.ipSince).getTime()) / 36e5);
-    since = ' · unchanged for ' + (h < 1 ? 'under an hour' : h + ' h');
-  }
-  document.getElementById('serverline').innerHTML =
-    'Server network IP <span class="text-gray-200 font-mono">' + esc(sl.ip || 'checking…') + '</span>' + since +
-    ' · watched every 30 min · addon uptime ' + sl.uptimeH + ' h';
-  const by = {};
-  for (const g of GROUPS) by[g[0]] = [];
-  for (const r of d.sources) (by[r.cls] || by.idle).push(r);
-  for (const g of GROUPS) by[g[0]].sort((a, b) => a.label.localeCompare(b.label));
-  document.getElementById('content').innerHTML = GROUPS.filter(([k]) => by[k].length)
-    .map(([k, title]) => '<div><h2 class="text-sm font-bold text-gray-300 mb-2">' + title + ' <span class="text-gray-500 font-normal">(' + by[k].length + ')</span></h2><div class="space-y-2">'
-    + by[k].map(card).join('') + '</div></div>').join('');
-}
-async function tick() {
-  try { render(await (await fetch('/status/data')).json()); } catch (e) { /* keep last frame */ }
-}
-tick();
-setInterval(tick, 30000);
-</script>
-</body>
-</html>`);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(join(__dirname, '..', 'public', 'status.html'));
 });
+
+// ══════════════════ Task 98: same-to-same configure UI APIs ══════════════════
+
+// Real subtitles resource — the Task 49 unified providers (granite VTT +
+// natsuki SRT) served standalone, the same track set per-card subtitles use.
+// Response shape: { subtitles: [{ id, lang, url }] } (Stremio contract).
+// Advertised in the manifest; a configured install with subtitles_disabled=on
+// never sees cards carry tracks (resolver skips the merge), so the toggle is
+// real end-to-end.
+app.get('/subtitles/:type/:id.json', async (req, res) => {
+  const { type, id } = req.params;
+  if (type !== 'movie' && type !== 'series') return res.json({ subtitles: [] });
+  try {
+    let parsedId;
+    if (id.startsWith('tmdb:')) parsedId = TmdbId.fromString(id.replace('tmdb:', ''));
+    else if (id.startsWith('tt')) parsedId = ImdbId.fromString(id);
+    else return res.status(400).json({ error: `Unsupported ID: ${id}` });
+
+    const subs = await Promise.race([
+      fetchUnifiedSubs({
+        tmdbId: parsedId.id,
+        imdbId: /^tt\d+$/.test(String(parsedId.id)) ? parsedId.id : null,
+        type,
+        season: parsedId.season,
+        episode: parsedId.episode,
+        hostUrl: new URL(`https://${req.headers.host}`),
+        fetcher,
+        ctx: { id: 'subs-route' },
+      }),
+      new Promise(resolve => setTimeout(() => resolve([]), 12_000)),
+    ]);
+    const out = (Array.isArray(subs) ? subs : [])
+      .slice(0, 48)
+      .map((s, i) => ({
+        id: `phoenix-${i}`,
+        lang: String(s?.lang || 'Unknown'),
+        ...(s?.url ? { url: s.url } : {}),
+      }))
+      .filter(s => s.url);
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.json({ subtitles: out });
+  } catch (e) {
+    logger.error(`[${ADDON_NAME}] subtitles error: ${e?.message || e}`);
+    res.json({ subtitles: [] });
+  }
+});
+
+// Real-time source status — the payload the configure UI's per-source dots
+// and the /status page render. Three honest states:
+//   up       — the background monitor's most recent real probe of this source
+//              returned results (or passive user traffic delivered recently)
+//   down     — the latest real probe/traffic produced nothing or errored
+//   unknown  — the source has not been probed since this boot (never guessed)
+// Passive telemetry (Task 90) is merged at read time: a source the monitor
+// has not reached yet but that just delivered on a real user request shows
+// what actually happened instead of a stale "unknown".
+app.get('/api/status', (req, res) => {
+  const monitor = getMonitorStatus();
+  const telemetry = getSourceStatus();
+  const watchSummary = getEgressWatchSummary();
+  const providers = {};
+  for (const s of sources) {
+    const m = monitor.providers[s.id] || null;
+    const t = telemetry[s.id] || null;
+    // merge: monitor verdict first (fresh, real probe); passive outcome can
+    // upgrade a not-yet-probed source and annotate response time / counts.
+    let status = m?.status || 'unknown';
+    let streamsFound = m?.totalStreamsFound || 0;
+    let responseTimeMs = m?.responseTimeMs || null;
+    let lastCheck = m?.lastCheck || null;
+    let error = m?.error || null;
+    if (t) {
+      if (status === 'unknown' && t.agoMs && t.agoMs < 3 * 60 * 60 * 1000) {
+        if (t.cls === 'delivering') { status = 'up'; lastCheck = new Date(Date.now() - t.agoMs).toISOString(); streamsFound = t.count; responseTimeMs = t.ms; }
+        else if (t.cls === 'issue') { status = 'down'; lastCheck = new Date(Date.now() - t.agoMs).toISOString(); error = error || 'Last real request failed'; }
+        // 'waiting' (responded, zero streams) does NOT upgrade to up — the
+        // monitor's own probe will classify it honestly; only annotate timing.
+        else if (t.cls === 'waiting') { lastCheck = lastCheck || new Date(Date.now() - t.agoMs).toISOString(); responseTimeMs = responseTimeMs || t.ms; }
+      }
+    }
+    // egress-watch verdicts override for the two actively-watched gates
+    const w = watchVerdictFor(s.id, watchSummary);
+    if (w) status = w.cls === 'delivering' ? 'up' : (m?.status === 'down' ? 'down' : status);
+    providers[s.id] = {
+      id: s.id,
+      name: s.label || s.id,
+      status,
+      lastCheck,
+      workingMovies: m?.workingMovies || [],
+      testedMovies: m?.testedMovies || [],
+      error,
+      totalStreamsFound: streamsFound,
+      responseTimeMs,
+      monitorError: m?.monitorError || null,
+      lastMonitorAttempt: m?.lastMonitorAttempt || null,
+    };
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    providers,
+    lastUpdated: monitor.lastUpdated,
+    sweepCount: monitor.sweepCount,
+    monitoring: monitor.monitoring,
+    version: VERSION,
+  });
+});
+
+// Source registry for the configure UI — ids, labels, content types and the
+// curated display tags. The page's provider order + provider cards read this.
+app.get('/sources.json', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=600');
+  res.json(sources.map(s => ({
+    id: s.id,
+    label: s.label || s.id,
+    contentTypes: s.contentTypes || [],
+    animeOnly: ANIME_ONLY_SOURCE_IDS.has(s.id),
+    tags: SOURCE_TAGS[s.id] || [],
+  })));
+});
+
+// Live formatter preview — the configure UI debounces template edits here and
+// renders the returned sample cards, so what you see is what the resolver
+// will produce. `defaults` powers the "Default" preset chip.
+const FORMATTER_DEFAULTS = {
+  name: '🐦‍🔥 PhoeniX · {stream.resolution::exists["{stream.resolution}"||""]}{stream.source::exists[" · {stream.source}"||""]}',
+  description: '{stream.title}',
+};
+const FORMATTER_SAMPLES = [
+  {
+    label: '4K Remux',
+    meta: { height: 2160, bytes: 51_611_776_512, sourceLabel: '4KHDHub', serverName: '10Gbps', countryCodes: ['en', 'hi'], format: 'mp4', title: 'Dune.Part.Two.2024.2160p.BluRay.REMUX.HDR.DTS-HD.MA.5.1' },
+    stream: { name: '🐦‍🔥 PhoeniX · 4K · 4KHDHub · 10Gbps', title: 'Dune Part Two · 2024 · HDR · DTS-HD MA 5.1 · 48.1 GB' },
+  },
+  {
+    label: '1080p Web-DL',
+    meta: { height: 1080, bytes: 3_221_225_472, sourceLabel: 'HDHub4u', serverName: '', countryCodes: ['hi', 'en'], format: 'mp4', title: 'The Batman 2022 1080p WEB-DL DD5.1 H.264-HDHub4u' },
+    stream: { name: '🐦‍🔥 PhoeniX · 1080p · HDHub4u', title: 'The Batman · 2022 · WEB-DL · DD5.1 · 3.0 GB' },
+  },
+  {
+    label: 'HLS Anime',
+    meta: { height: 1080, bytes: 0, sourceLabel: 'HiAnime', serverName: 'MegaPlay', countryCodes: ['ja', 'en'], format: 'hls', title: 'Sousou no Frieren · S2E1 · Sub+Dub' },
+    stream: { name: '🐦‍🔥 PhoeniX · 1080p · HiAnime · MegaPlay', title: 'Sousou no Frieren · S2E1 · Sub+Dub' },
+  },
+];
+
+app.post('/api/formatter-preview', (req, res) => {
+  const nameTemplate = typeof req.body?.name === 'string' ? req.body.name : '';
+  const descriptionTemplate = typeof req.body?.description === 'string' ? req.body.description : '';
+  if (!nameTemplate.trim() && !descriptionTemplate.trim()) {
+    return res.json({ ok: true, samples: [], defaults: FORMATTER_DEFAULTS });
+  }
+  const samples = FORMATTER_SAMPLES.map((sample) => {
+    try {
+      const formatted = formatter.formatStream({
+        nameTemplate,
+        descriptionTemplate,
+        meta: sample.meta,
+        stream: sample.stream,
+        addonName: ADDON_NAME,
+      });
+      return { label: sample.label, name: formatted.name, description: formatted.description, error: null };
+    } catch (e) {
+      return { label: sample.label, name: sample.stream.name, description: sample.stream.title, error: String(e?.message || e) };
+    }
+  });
+  res.json({ ok: true, samples, defaults: FORMATTER_DEFAULTS });
+});
+
+// ──────────── Task 98: configure + status pages (see public/*.js|css) ────────────
 
 // Task 94: configuration UI — "Choose Sources" page with real live status
 // dots on the left of every source. Reads /status/data ONLY (last-verdict
@@ -1911,202 +2060,17 @@ setInterval(tick, 30000);
 // /status). Selection rides to /stream as ?sources=id1,id2 (Stremio appends
 // config params to every resource request). Installing without a selection
 // (or with everything selected) = legacy all-sources behavior.
+// Task 98: same-to-same configuration UI — sidebar dashboard (Overview /
+// Sources / Filtering / Playback / Status / Account), live per-source status
+// dots, per-source quality caps, filesize bounds, grouping/timeout, custom
+// formatter with live preview, local config versions. The page assets are
+// public/configure.css + public/configure.js; APIs: /sources.json,
+// /api/status, /api/formatter-preview. No donation UI, no external service
+// references anywhere in the page.
 app.get('/configure', (req, res) => {
-  const hostUrl = `https://${req.headers.host}`;
-  res.setHeader('Content-Type', 'text/html');
-  res.send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PhoeniX · Choose Sources</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<style>
-  body { background: radial-gradient(ellipse at 50% -10%, #2a1a08 0%, #0a0a0f 55%); min-height: 100vh; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-  .g { background: #22c55e; box-shadow: 0 0 10px rgba(34,197,94,.7); }
-  .a { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,.7); }
-  .r { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,.7); }
-  .i { background: #475569; }
-  .pulse { animation: p 2s ease-in-out infinite; }
-  @keyframes p { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
-  .row { transition: background .15s ease; }
-  .row:hover { background: rgba(255,255,255,.04); }
-  .row.on { background: rgba(124,58,237,.10); }
-  .tick { width: 22px; height: 22px; border-radius: 7px; border: 2px solid rgba(255,255,255,.25); flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all .15s ease; }
-  .row.on .tick { background: #7c3aed; border-color: #7c3aed; box-shadow: 0 0 10px rgba(124,58,237,.5); }
-  .tick svg { opacity: 0; transform: scale(.5); transition: all .15s ease; }
-  .row.on .tick svg { opacity: 1; transform: scale(1); }
-  .chip { transition: all .15s ease; cursor: pointer; }
-  .chip.sel { background: rgba(255,255,255,.14); color: #fff; }
-</style>
-</head>
-<body class="text-gray-200">
-<div class="max-w-md mx-auto px-4 pt-8 pb-40">
-  <div class="flex items-center gap-3 mb-1">
-    <img src="${hostUrl}/public/logo.png" alt="PhoeniX" class="w-10 h-10 drop-shadow-[0_0_15px_rgba(255,100,0,0.5)]">
-    <h1 class="text-2xl font-black text-white tracking-tight">Choose Sources</h1>
-  </div>
-  <p class="text-xs text-gray-400 mb-4">Pick which sources the addon uses. The dot on the left of each source is its <span class="text-gray-200 font-semibold">real live status</span> from actual requests — it updates itself every 30&nbsp;seconds.</p>
-
-  <div id="chips" class="flex flex-wrap gap-2 mb-3 text-xs font-semibold"></div>
-
-  <div class="flex gap-2 mb-3">
-    <input id="q" type="text" placeholder="Search sources…" class="flex-1 px-3 py-2 rounded-xl text-sm text-white placeholder-gray-500 border border-white/10 outline-none focus:border-purple-500/60" style="background:rgba(15,15,20,0.6)">
-    <button onclick="bulk('all')" class="px-3 py-2 rounded-xl text-xs font-semibold text-gray-300 border border-white/10 hover:text-white hover:bg-white/5">All</button>
-    <button onclick="bulk('none')" class="px-3 py-2 rounded-xl text-xs font-semibold text-gray-300 border border-white/10 hover:text-white hover:bg-white/5">None</button>
-  </div>
-
-  <div id="list" class="rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden" style="background:rgba(15,15,20,0.6);backdrop-filter:blur(20px)"></div>
-
-  <p class="text-[11px] text-gray-500 mt-4 leading-relaxed">
-    Green = delivering right now · Amber = the site is empty/blocked on its own end and auto-rechecks · Red = timed out · Grey = no recent requests yet.
-    Leaving everything selected is the default full addon. Your picks are applied when you install below — installing again later with a new selection replaces the old one.
-  </p>
-</div>
-
-<div class="fixed bottom-0 left-0 right-0 border-t border-white/10 px-4 py-3" style="background:rgba(10,10,15,0.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)">
-  <div class="max-w-md mx-auto flex items-center gap-3">
-    <div class="text-xs text-gray-400 leading-tight flex-1"><span id="selcount" class="text-white font-bold">–</span> of <span id="totcount">–</span> selected · <button onclick="copyUrl(this)" class="underline hover:text-white">Copy URL</button></div>
-    <button id="installbtn" onclick="install()" class="px-5 py-2.5 rounded-xl text-white font-bold text-sm transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]" style="background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); box-shadow: 0 6px 24px rgba(124,58,237,0.4);">Install in Stremio</button>
-  </div>
-</div>
-
-<script>
-var DATA = null;
-var selected = {};      // id -> true (initial: all on, once data arrives)
-var inited = false;
-var chip = 'all';       // all | delivering | waiting | issue | idle
-var q = '';
-
-function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
-function ago(ms) { if (!ms || ms < 0) return ''; if (ms < 60000) return 'just now'; var m = Math.round(ms / 60000); if (m < 60) return m + 'm ago'; var h = Math.round(m / 60); if (h < 48) return h + 'h ago'; return Math.round(h / 24) + 'd ago'; }
-function dotCls(cls) { return cls === 'delivering' ? 'g' : cls === 'waiting' ? 'a' : cls === 'issue' ? 'r' : 'i'; }
-function statusLine(r) {
-  if (r.cls === 'delivering') return '<span class="text-green-400">' + r.count + ' stream' + (r.count === 1 ? '' : 's') + '</span>';
-  if (r.cls === 'waiting') return '<span class="text-amber-400">' + esc(r.note || 'waiting on its site') + '</span>';
-  if (r.cls === 'issue') return '<span class="text-red-400">Timed out</span>';
-  return '<span class="text-gray-500">No recent requests</span>';
-}
-
-function fetchStatus() {
-  fetch('/status/data').then(function (r) { return r.json(); }).then(function (d) {
-    DATA = d;
-    if (!inited) {
-      for (var i = 0; i < d.sources.length; i++) selected[d.sources[i].id] = true;
-      inited = true;
-    }
-    render();
-  }).catch(function () { /* keep last render; next tick retries */ });
-}
-
-function countCls(cls) {
-  if (!DATA) return 0;
-  var n = 0;
-  for (var i = 0; i < DATA.sources.length; i++) if (DATA.sources[i].cls === cls) n++;
-  return n;
-}
-
-function renderChips() {
-  var defs = [['all', 'All ' + DATA.sources.length, ''], ['delivering', 'Working ' + countCls('delivering'), 'text-green-400'], ['waiting', 'Waiting ' + countCls('waiting'), 'text-amber-400'], ['issue', 'Issue ' + countCls('issue'), 'text-red-400'], ['idle', 'Idle ' + countCls('idle'), 'text-gray-500']];
-  var h = '';
-  for (var i = 0; i < defs.length; i++) {
-    h += '<button onclick="setChip(\\'' + defs[i][0] + '\\')" class="chip px-3 py-1.5 rounded-full border border-white/10 ' + (chip === defs[i][0] ? 'sel ' : '') + defs[i][2] + '" style="background:rgba(15,15,20,0.6)">' + defs[i][1] + '</button>';
-  }
-  document.getElementById('chips').innerHTML = h;
-}
-
-function setChip(c) { chip = c; render(); }
-
-var SECTIONS = [['Movies', '🎬 Movies'], ['Series', '📺 Series'], ['Anime', '🍿 Anime']];
-var collapsed = { Movies: false, Series: false, Anime: false };
-
-function rowHtml(r) {
-  var on = !!selected[r.id];
-  var badges = '';
-  for (var k = 0; k < r.kinds.length; k++) badges += '<span class="text-[10px] px-1.5 py-0.5 rounded-md border border-white/10 text-gray-400">' + esc(r.kinds[k]) + '</span> ';
-  return '<div class="row flex items-center gap-3 px-3 py-2.5 cursor-pointer ' + (on ? 'on' : '') + '" onclick="toggle(\\'' + esc(r.id) + '\\')">'
-    + '<span class="dot ' + dotCls(r.cls) + (r.cls === 'waiting' ? ' pulse' : '') + '"></span>'
-    + '<div class="flex-1 min-w-0">'
-    +   '<div class="flex items-center gap-2 flex-wrap"><span class="text-sm font-semibold text-white">' + esc(r.label) + '</span> ' + badges + '</div>'
-    +   '<div class="text-[11px] text-gray-500 truncate">' + statusLine(r) + (r.agoMs ? ' · ' + ago(r.agoMs) : '') + '</div>'
-    + '</div>'
-    + '<span class="tick"><svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></span>'
-    + '</div>';
-}
-
-function matches(r) {
-  if (chip !== 'all' && r.cls !== chip) return false;
-  if (q && (r.label + ' ' + r.id).toLowerCase().indexOf(q) === -1) return false;
-  return true;
-}
-
-function render() {
-  renderChips();
-  // Task 95: group by type — Movies / Series / Anime sections. A source with
-  // several kinds appears in each matching section; toggle state is keyed by
-  // id, so both copies stay in sync. Anime section = anime-only sources.
-  var h = '';
-  var shownAny = false;
-  for (var s = 0; s < SECTIONS.length; s++) {
-    var key = SECTIONS[s][0], title = SECTIONS[s][1];
-    var rows = DATA.sources.filter(function (r) { return matches(r) && r.kinds.indexOf(key) !== -1; });
-    if (!rows.length) continue;
-    shownAny = true;
-    var onN = 0; for (var i = 0; i < rows.length; i++) if (selected[rows[i].id]) onN++;
-    h += '<div onclick="toggleSec(\\'' + key + '\\')" class="flex items-center gap-2 px-3 py-2 bg-white/5 cursor-pointer select-none">'
-      + '<span class="text-[11px] font-bold uppercase tracking-wider text-gray-300">' + title + '</span>'
-      + '<span class="text-[11px] text-gray-500">' + onN + '/' + rows.length + '</span>'
-      + '<span class="flex-1"></span>'
-      + '<svg class="w-3.5 h-3.5 text-gray-500 transition-transform ' + (collapsed[key] ? '' : 'rotate-180') + '" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>'
-      + '</div>';
-    if (!collapsed[key]) for (var j = 0; j < rows.length; j++) h += rowHtml(rows[j]);
-  }
-  if (!shownAny) h = '<div class="px-4 py-6 text-center text-sm text-gray-500">No sources match.</div>';
-  document.getElementById('list').innerHTML = h;
-
-  var n = 0; for (var id in selected) if (selected[id]) n++;
-  document.getElementById('selcount').textContent = n;
-  document.getElementById('totcount').textContent = DATA.sources.length;
-  document.getElementById('installbtn').textContent = n === 0 ? 'Select at least one source' : 'Install in Stremio';
-}
-
-function toggleSec(key) { collapsed[key] = !collapsed[key]; render(); }
-
-function toggle(id) { selected[id] = !selected[id]; render(); }
-function bulk(mode) {
-  if (!DATA) return;
-  for (var i = 0; i < DATA.sources.length; i++) selected[DATA.sources[i].id] = (mode === 'all');
-  render();
-}
-document.getElementById('q').addEventListener('input', function (e) { q = e.target.value.trim().toLowerCase(); render(); });
-
-function manifestUrl() {
-  var base = location.origin + '/manifest.json';
-  if (!DATA) return base;
-  var ids = [];
-  for (var i = 0; i < DATA.sources.length; i++) if (selected[DATA.sources[i].id]) ids.push(DATA.sources[i].id);
-  if (ids.length === 0 || ids.length === DATA.sources.length) return base; // default install = all sources
-  return base + '?sources=' + encodeURIComponent(ids.join(','));
-}
-function install() {
-  if (!DATA) return;
-  var n = 0; for (var id in selected) if (selected[id]) n++;
-  if (n === 0) return;
-  var u = manifestUrl();
-  var deep = 'stremio://' + location.host + u.replace(location.origin, '');
-  window.location.href = deep;
-}
-function copyUrl(btn) {
-  var u = manifestUrl();
-  if (navigator.clipboard) navigator.clipboard.writeText(u).then(function () { btn.textContent = 'Copied!'; setTimeout(function () { btn.textContent = 'Copy manifest URL'; }, 1500); });
-}
-
-fetchStatus();
-setInterval(fetchStatus, 30000);
-</script>
-</body>
-</html>`);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(join(__dirname, '..', 'public', 'configure.html'));
 });
 
 // Task 89: egress watch telemetry — rolling probe history for the upstream-gated
@@ -2211,101 +2175,11 @@ app.get('/', (req, res) => {
   // Task 74: keepalive probe counter — makes UptimeRobot pings observable.
   rootHits++;
   lastRootHitAt = new Date().toISOString();
-  const hostUrl = `https://${req.headers.host}`;
-  const manifestUrl = `${hostUrl}/manifest.json`;
-  res.setHeader('Content-Type', 'text/html');
-  res.send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PhoeniX</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<style>
-  body {
-    margin: 0;
-    min-height: 100vh;
-    background: linear-gradient(135deg, #0a0a0f 0%, #1a0a1a 30%, #0f0a15 50%, #1a0a0f 70%, #0a0a0f 100%);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-  }
-  .phoenix-bg {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 80vmin;
-    height: 80vmin;
-    opacity: 0.06;
-    background-image: url('${hostUrl}/public/logo.png');
-    background-size: contain;
-    background-position: center;
-    background-repeat: no-repeat;
-    filter: drop-shadow(0 0 60px rgba(255, 100, 0, 0.3));
-    animation: glow 4s ease-in-out infinite alternate;
-  }
-  @keyframes glow {
-    from { opacity: 0.04; filter: drop-shadow(0 0 40px rgba(255, 80, 0, 0.2)); }
-    to { opacity: 0.08; filter: drop-shadow(0 0 80px rgba(255, 120, 0, 0.4)); }
-  }
-  .ember {
-    position: fixed;
-    bottom: -10px;
-    width: 4px;
-    height: 4px;
-    background: rgba(255, 140, 0, 0.6);
-    border-radius: 50%;
-    animation: rise 3s linear infinite;
-    pointer-events: none;
-  }
-  @keyframes rise {
-    to { transform: translateY(-100vh) translateX(20px); opacity: 0; }
-  }
-</style>
-</head>
-<body>
-<div class="phoenix-bg"></div>
-<div id="embers"></div>
-<div class="relative z-10 flex flex-col items-center px-6 w-full max-w-md">
-  <img src="${hostUrl}/public/logo.png" alt="PhoeniX" class="w-20 h-20 mb-3 drop-shadow-[0_0_25px_rgba(255,100,0,0.5)]">
-  <h1 class="text-5xl font-black text-white tracking-tight mb-1">PhoeniX</h1>
-  <p class="text-sm text-orange-400/70 font-medium mb-8 tracking-wider uppercase">Stream movies, series & anime in HD</p>
-  <div class="w-full rounded-3xl border border-white/10 p-6" style="background: rgba(15,15,20,0.6); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);">
-    <a href="stremio://${hostUrl.replace('https://','')}/manifest.json" class="flex items-center justify-center w-full py-3.5 rounded-2xl text-white font-bold text-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]" style="background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); box-shadow: 0 8px 30px rgba(124,58,237,0.4);">
-      <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10 0C4.477 0 0 4.477 0 10c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.014-1.699-2.782.602-3.369-1.34-3.369-1.34-.455-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.071 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.57 9.57 0 0110 4.836a9.59 9.59 0 012.504.336c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.579.688.481A10.001 10.001 0 0020 10c0-5.523-4.477-10-10-10z"/></svg>
-      Install in Stremio
-    </a>
-    <button onclick="navigator.clipboard.writeText('${manifestUrl}').then(()=>{this.innerText='Copied!';setTimeout(()=>this.innerText='Copy Manifest URL',2000)})" class="mt-3 flex items-center justify-center w-full py-3 rounded-2xl text-gray-300 font-medium text-sm transition-all duration-300 hover:text-white hover:bg-white/5 border border-white/10">
-      <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
-      Copy Manifest URL
-    </button>
-    <a href="/configure" class="mt-3 flex items-center justify-center w-full py-3 rounded-2xl text-gray-300 font-medium text-sm transition-all duration-300 hover:text-white hover:bg-white/5 border border-white/10">
-      <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
-      Choose sources · live status
-    </a>
-    <a href="/status" class="mt-3 flex items-center justify-center w-full py-2.5 rounded-2xl text-gray-400 font-medium text-xs transition-all duration-300 hover:text-orange-300 hover:bg-white/5">
-      <span class="dot g mr-2 pulse"></span> Live source status
-    </a>
-  </div>
-</div>
-<script>
-  // Ember particles
-  const embers = document.getElementById('embers');
-  for(let i=0;i<15;i++){
-    const e=document.createElement('div');
-    e.className='ember';
-    e.style.left=Math.random()*100+'vw';
-    e.style.animationDuration=(2+Math.random()*3)+'s';
-    e.style.animationDelay=Math.random()*3+'s';
-    e.style.width=e.style.height=(2+Math.random()*4)+'px';
-    embers.appendChild(e);
-  }
-</script>
-</body>
-</html>`);
+  // Task 98: the configure dashboard IS the landing page now (same-to-same
+  // with the reference addon). Keepalive counters stay untouched.
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(join(__dirname, '..', 'public', 'configure.html'));
 });
 
 // ============== START ==============
@@ -2348,6 +2222,12 @@ app.listen(PORT, HOST, () => {
       : ImdbId.fromString(rawId),
     logger,
   });
+
+  // Task 98: real-time source status monitor — sequential background prober
+  // (one source every ~25s, playback-yielding) feeding /api/status and the
+  // configure UI's per-source dots. Starts 20s after boot; see the module's
+  // safety rules. PHOENIX_SOURCE_MONITOR=0 disables.
+  startSourceMonitor(sources, ANIME_ONLY_SOURCE_IDS);
 });
 
 process.on('SIGTERM', () => process.exit(0));

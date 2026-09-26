@@ -1,12 +1,12 @@
 /**
  * 2Peckle / ShowBox Scraper — Node.js
  * ====================================
- * 2Peckle is a PenguPlay provider that wraps ShowBox.
+ * 2Peckle is a provider first seen on the reference addon that wraps ShowBox.
  * ShowBox itself is just a curated index of FebBox share links.
  *
  * Architecture (verified live 2026-08-10):
  *
- *   ┌─ pengu.uk/2peckle ────────────────────────────────────┐
+ *   ┌─ wrapper-host/2peckle ────────────────────────────────────┐
  *   │  Server-side wrapper with FebBox account pool          │
  *   │  (the "100 GB shared cookie-quota")                    │
  *   └─┬──────────────────────────────────────────────────────┘
@@ -47,7 +47,7 @@
  *     - Resolve TMDB -> ShowBox ID via the proxy
  *     - List files in FebBox shares (file names, sizes, qualities)
  *   But cannot resolve direct stream URLs — they'll be `null`.
- *   (This is what PenguPlay does server-side with their cookie pool.)
+ *   (This is what the reference addon does server-side with their cookie pool.)
  *
  * Install:
  *   npm install axios cheerio

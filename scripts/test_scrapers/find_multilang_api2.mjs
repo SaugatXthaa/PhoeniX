@@ -70,7 +70,7 @@ for (const url of anikageUrls) {
   } catch { /* skip */ }
 }
 
-// 5. Check 5Clover — PenguPlay lists "5Clover (Hidden)" which might be related
+// 5. Check 5Clover — the reference addon lists "5Clover (Hidden)" which might be related
 console.log('\n=== Check 5Clover ===');
 const cloverUrls = [
   'https://5clover.to',

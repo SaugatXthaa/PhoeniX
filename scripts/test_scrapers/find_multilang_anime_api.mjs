@@ -39,8 +39,8 @@ for (const url of aniwatchUrls) {
   } catch (e) { console.log(`${url}: ERR`); }
 }
 
-// 3. Check Miruro — PenguPlay lists "miruro" as a source too
-console.log('\n=== Miruro (listed in PenguPlay sources) ===');
+// 3. Check Miruro — the reference addon lists "miruro" as a source too
+console.log('\n=== Miruro (listed in the reference addon sources) ===');
 const miruroUrls = [
   'https://miruro.to',
   'https://api.miruro.to',
@@ -79,12 +79,12 @@ for (const url of allMangaUrls) {
   } catch (e) { console.log(`${url}: ERR`); }
 }
 
-// 5. Check if the pengu.uk backend itself has any public API we can probe
-console.log('\n=== Probe pengu.uk backend for source list ===');
+// 5. Check if the wrapper-host backend itself has any public API we can probe
+console.log('\n=== Probe wrapper-host backend for source list ===');
 // The /stream endpoint requires auth, but maybe there's a /sources or /providers endpoint
 for (const path of ['/api/sources', '/api/providers', '/api/anime', '/api/antova', '/api/source/antova']) {
   try {
-    const r = await gotScraping.get(`https://pengu.uk${path}`, {
+    const r = await gotScraping.get(`https://wrapper-host${path}`, {
       headers: { ...hg.getHeaders({ httpVersion: '2' }), 'Accept': 'application/json' },
       timeout: { request: 5000 }, throwHttpErrors: false,
     });

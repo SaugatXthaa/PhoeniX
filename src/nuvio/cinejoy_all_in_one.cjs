@@ -358,7 +358,7 @@ async function validateStreamUrl(url, headers) {
 // shegu.st, cinejoy.to) REQUIRE Referer + Origin headers to be present on the
 // HTTP request, otherwise they 403. Stremio's runtime sends these headers on
 // the user's behalf when `behaviorHints.proxyHeaders.request` is set — this is
-// the native Stremio mechanism and replaces the old external pengu.uk proxy.
+// the native Stremio mechanism and replaces the old external wrapper-host proxy.
 function proxyHeaders() {
   return {
     request: {

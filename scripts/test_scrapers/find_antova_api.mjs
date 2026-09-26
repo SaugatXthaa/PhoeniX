@@ -70,10 +70,10 @@ for (const url of anilibriaEndpoints) {
 }
 
 // Check if there's a separate "antova" API that provides multi-language anime
-console.log('\n=== Search GitHub for penguplay/antova source code ===');
-// The PenguPlay source might be on GitHub
+console.log('\n=== Search GitHub for reference-addon/antova source code ===');
+// The the reference addon source might be on GitHub
 const githubUrls = [
-  'https://api.github.com/search/repositories?q=penguplay+stremio',
+  'https://api.github.com/search/repositories?q=reference-addon+stremio',
   'https://api.github.com/search/code?q=antova+stremio+addon',
 ];
 for (const url of githubUrls) {

@@ -14,7 +14,9 @@
 // (2026-09-17: site migrated cinejoy.to → cinejoy.pk; backend api.shegu.st →
 //  api.wing.st — both now handled inside cinejoy_all_in_one.cjs)
 //
-// The scraper wraps URLs with pengu.uk proxy — we unwrap them and route
+// The upstream API wraps stream URLs through its own URL-wrapper host — we
+// unwrap them and route them through the addon's own playback paths.
+// (The wrapper path is host-agnostic: /hls/cinejoy/resource/{base64url}/…)
 // through our own /proxy endpoint instead.
 
 import path from 'path';
@@ -50,11 +52,11 @@ function getScraperModule() {
   return _scraperMod;
 }
 
-// Unwrap pengu.uk proxy URL to get the original URL + headers
-function unwrapPenguProxy(url) {
-  if (!url || !url.includes('pengu.uk/')) return { url, referer: 'https://cinejoy.pk/' };
+// Unwrap the site's proxy URL to get the original URL + headers
+function unwrapSiteProxy(url) {
+  if (!url || !url.includes('/hls/cinejoy/resource/')) return { url, referer: 'https://cinejoy.pk/' };
   try {
-    // pengu.uk/hls/cinejoy/resource/{base64url}/media.m3u8
+    // <wrapper-host>/hls/cinejoy/resource/{base64url}/media.m3u8
     const match = url.match(/\/resource\/([^/]+)/);
     if (match) {
       const decoded = Buffer.from(match[1], 'base64url').toString('utf8');
@@ -142,7 +144,7 @@ export class CineJoyAllInOne extends Source {
 
     if (!Array.isArray(streams) || streams.length === 0) return [];
 
-    // Convert scraper streams to our format — unwrap pengu proxy URLs
+    // Convert scraper streams to our format — unwrap wrapped proxy URLs
     // and set Referer for NuvioExtractor routing
     const results = [];
     for (const s of streams) {
@@ -151,8 +153,8 @@ export class CineJoyAllInOne extends Source {
       // Skip iframe streams (cinejoy.to embed pages) — they don't play in Stremio
       if (s.type === 'iframe' || s.behaviorHints?.notWebVideo) continue;
 
-      // Unwrap pengu.uk proxy to get original URL + Referer
-      const { url: rawUrl, referer } = unwrapPenguProxy(s.url);
+      // Unwrap the site's proxy wrapper to get original URL + Referer
+      const { url: rawUrl, referer } = unwrapSiteProxy(s.url);
       if (!rawUrl || !rawUrl.startsWith('http')) continue;
 
       const height = parseHeight(s.quality);

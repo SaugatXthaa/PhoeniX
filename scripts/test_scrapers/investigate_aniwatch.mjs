@@ -1,4 +1,4 @@
-// Investigate AniWatch API — likely the backend for PenguPlay's "antova" source
+// Investigate AniWatch API — likely the backend for the reference addon's "antova" source
 import { gotScraping } from 'got-scraping';
 import { HeaderGenerator } from 'header-generator';
 import fs from 'fs';

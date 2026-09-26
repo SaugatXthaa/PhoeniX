@@ -10,7 +10,7 @@ const queries = [
   'stremio+anime+dub+spanish',
   'stremio+addon+anime+multiaudio',
   'stremio+crunchyroll+addon',
-  'penguplay+source+code',
+  'reference-addon+source+code',
   'antova+anime+api',
 ];
 for (const q of queries) {

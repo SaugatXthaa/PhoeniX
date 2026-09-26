@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101114">
+    <meta
+      name="description"
+      content="Live status of every PhoeniX streaming source: uptime, stream counts, response times."
+    >
+    <link rel="icon" href="public/logo.png" type="image/png">
+    <title>PhoeniX Status</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #101114;
+        --surface: #17191f;
+        --surface-2: #20232b;
+        --surface-3: #292d37;
+        --text: #f4f7fb;
+        --muted: #a7afbd;
+        --subtle: #7f8897;
+        --line: #343a46;
+        --line-strong: #4e5668;
+        --accent: #a9c2ff;
+        --accent-2: #c8d6f5;
+        --danger: #ff6262;
+        --success: #4cc38a;
+        --warning: #e5a153;
+        --shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+      }
+
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --bg: #f4f6fa;
+        --surface: #ffffff;
+        --surface-2: #edf1f7;
+        --surface-3: #e4eaf3;
+        --text: #151821;
+        --muted: #5d6675;
+        --subtle: #7b8493;
+        --line: #d5dce8;
+        --line-strong: #aeb8ca;
+        --accent: #6f8fd8;
+        --accent-2: #8da4dc;
+        --danger: #b4232d;
+        --success: #2f9e66;
+        --warning: #b57420;
+        --shadow: 0 24px 60px rgba(38, 50, 76, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
+      }
+
+      button {
+        font: inherit;
+        color: inherit;
+      }
+
+      .app-shell {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 40px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .brand img {
+        width: 40px;
+        height: 40px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-2);
+      }
+
+      .brand-mark {
+        display: grid;
+        gap: 2px;
+      }
+
+      .brand-name {
+        font-size: 1.04rem;
+        font-weight: 800;
+      }
+
+      .brand-subtitle {
+        color: var(--muted);
+        font-size: 0.82rem;
+        font-weight: 600;
+      }
+
+      .top-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 10px;
+      }
+
+      .icon-button,
+      .button {
+        min-height: 40px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        color: var(--text);
+        background: color-mix(in srgb, var(--surface) 90%, transparent);
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+        transition:
+          border-color 140ms ease,
+          background 140ms ease,
+          transform 140ms ease;
+      }
+
+      .icon-button {
+        width: 40px;
+        padding: 0;
+      }
+
+      .icon-button.is-spinning svg {
+        animation: spin 900ms linear infinite;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      .button {
+        padding: 0 14px;
+      }
+
+      .button:disabled,
+      .icon-button:disabled {
+        opacity: 0.48;
+        cursor: not-allowed;
+      }
+
+      .button:not(:disabled):hover,
+      .icon-button:not(:disabled):hover {
+        border-color: var(--line-strong);
+        transform: translateY(-1px);
+      }
+
+      .metric-row {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        background: color-mix(in srgb, var(--surface) 92%, transparent);
+        box-shadow: var(--shadow);
+      }
+
+      .metric-value {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 1.4rem;
+        font-weight: 800;
+      }
+
+      .metric-value.is-up { color: var(--success); }
+      .metric-value.is-down { color: var(--danger); }
+
+      .metric-label {
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .section {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--surface) 92%, transparent);
+        box-shadow: var(--shadow);
+        padding: 18px;
+      }
+
+      .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 800;
+      }
+
+      .section-meta {
+        color: var(--muted);
+        font-size: 0.84rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .preset-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .preset-chip {
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        background: var(--surface-2);
+        color: var(--text);
+        padding: 5px 14px;
+        font-size: 0.78rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: border-color 120ms ease, background 120ms ease;
+        white-space: nowrap;
+      }
+
+      .preset-chip:hover {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 10%, transparent);
+      }
+
+      .preset-chip.is-active {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 16%, transparent);
+        color: var(--accent);
+      }
+
+      .provider-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .provider-card {
+        display: grid;
+        grid-template-columns: 200px 90px 1fr 110px;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface-2);
+        padding: 12px 14px;
+      }
+
+      .provider-name-cell {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .status-dot {
+        width: 9px;
+        height: 9px;
+        flex-shrink: 0;
+        border-radius: 999px;
+        background: var(--subtle);
+      }
+
+      .status-dot.is-up { background: var(--success); }
+      .status-dot.is-down { background: var(--danger); }
+      .status-dot.is-unknown { background: var(--warning); }
+
+      .provider-name {
+        color: var(--text);
+        font-weight: 800;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 3px 10px;
+        border-radius: 99px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+      }
+
+      .status-pill.is-up {
+        color: var(--success);
+        background: color-mix(in srgb, var(--success) 14%, transparent);
+        border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+      }
+
+      .status-pill.is-down {
+        color: var(--danger);
+        background: color-mix(in srgb, var(--danger) 14%, transparent);
+        border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+      }
+
+      .status-pill.is-unknown {
+        color: var(--warning);
+        background: color-mix(in srgb, var(--warning) 14%, transparent);
+        border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+      }
+
+      .provider-detail {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 6px;
+        min-width: 0;
+      }
+
+      .provider-tag {
+        display: inline-block;
+        padding: 1px 7px;
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        font-size: 0.67rem;
+        font-weight: 600;
+        line-height: 1.4;
+        color: var(--muted);
+        background: color-mix(in srgb, var(--subtle) 8%, transparent);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 160px;
+      }
+
+      .provider-tag.more {
+        color: var(--subtle);
+      }
+
+
+      .provider-error {
+        color: var(--danger);
+        font-size: 0.78rem;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .provider-stats {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 2px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .provider-streams {
+        color: var(--text);
+        font-weight: 800;
+        font-size: 0.9rem;
+      }
+
+      .provider-timing {
+        color: var(--muted);
+        font-size: 0.74rem;
+        font-weight: 700;
+      }
+
+      .footer {
+        margin-top: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px;
+        color: var(--subtle);
+        font-size: 0.82rem;
+        font-weight: 600;
+      }
+
+      .footer-links {
+        display: flex;
+        gap: 18px;
+      }
+
+      .footer-links a {
+        color: var(--muted);
+        text-decoration: none;
+      }
+
+      .footer-links a:hover {
+        color: var(--accent);
+      }
+
+      .empty-state {
+        padding: 32px 0;
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.88rem;
+        font-weight: 600;
+      }
+
+      @media (max-width: 900px) {
+        .metric-row {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .provider-card {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+
+        .provider-stats {
+          align-items: flex-start;
+          text-align: left;
+          flex-direction: row;
+          gap: 10px;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .app-shell {
+          width: min(100% - 20px, 1180px);
+          padding-top: 18px;
+        }
+
+        .brand-subtitle {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.3.1";
+      import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
+      import {
+        Activity,
+        Clock3,
+        Film,
+        Moon,
+        RefreshCw,
+        Signal,
+        Sun,
+      } from "https://esm.sh/lucide-react@0.468.0?deps=react@18.3.1";
+
+      const h = React.createElement;
+
+      // Same display names as the configure page (public/index.html), minus
+      // the "(New!)" badge which doesn't make sense on a status table.
+      const PROVIDER_NAMES = {};
+
+      const FILTERS = [
+        { id: "all", label: "All" },
+        { id: "up", label: "Up" },
+        { id: "down", label: "Down" },
+      ];
+
+      function displayName(provider) {
+        return PROVIDER_NAMES[provider.id] || provider.name || provider.id;
+      }
+
+      function formatRelativeTime(isoString) {
+        if (!isoString) return "Never checked";
+        const diffMs = Date.now() - new Date(isoString).getTime();
+        const minutes = Math.floor(diffMs / 60000);
+        if (minutes < 1) return "Just now";
+        if (minutes < 60) return `${minutes}m ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ago`;
+        return `${Math.floor(hours / 24)}d ago`;
+      }
+
+      function IconButton({ children, label, onClick, spinning, disabled }) {
+        return h(
+          "button",
+          {
+            className: `icon-button${spinning ? " is-spinning" : ""}`,
+            type: "button",
+            onClick,
+            disabled,
+            "aria-label": label,
+            title: label,
+          },
+          children,
+        );
+      }
+
+      function StatusPill({ status }) {
+        const kind = status === "up" || status === "down" ? status : "unknown";
+        const label = kind === "unknown" ? "Unknown" : kind === "up" ? "Up" : "Down";
+        return h("span", { className: `status-pill is-${kind}` }, label);
+      }
+
+      function ProviderRow({ provider }) {
+        const kind = provider.status === "up" || provider.status === "down" ? provider.status : "unknown";
+        const movies = provider.workingMovies || [];
+        const shown = movies.slice(0, 4);
+        const overflow = movies.length - shown.length;
+
+        return h(
+          "div",
+          { className: "provider-card" },
+          h(
+            "div",
+            { className: "provider-name-cell" },
+            h("span", { className: `status-dot is-${kind}` }),
+            h("span", { className: "provider-name" }, displayName(provider)),
+          ),
+          h(StatusPill, { status: provider.status }),
+          provider.error
+            ? h("span", { className: "provider-error", title: provider.error }, provider.error)
+            : h(
+                "div",
+                { className: "provider-detail" },
+                shown.length
+                  ? shown.map((movie) =>
+                      h("span", { className: "provider-tag", key: movie.id, title: movie.label }, movie.label),
+                    )
+                  : h("span", { className: "provider-tag" }, "No working titles"),
+                overflow > 0 ? h("span", { className: "provider-tag more" }, `+${overflow} more`) : null,
+              ),
+          h(
+            "div",
+            { className: "provider-stats" },
+            h("span", { className: "provider-streams" }, `${provider.totalStreamsFound || 0} streams`),
+            h(
+              "span",
+              { className: "provider-timing" },
+              [
+                provider.responseTimeMs ? `${provider.responseTimeMs}ms` : null,
+                formatRelativeTime(provider.lastCheck),
+              ].filter(Boolean).join(" · "),
+            ),
+          ),
+        );
+      }
+
+      function App() {
+        const [theme, setTheme] = useState(() => localStorage.getItem("phoenix-theme") || "dark");
+        const [status, setStatus] = useState(null);
+        const [filter, setFilter] = useState("all");
+        const [refreshing, setRefreshing] = useState(false);
+
+        useEffect(() => {
+          document.documentElement.dataset.theme = theme;
+          document.querySelector('meta[name="theme-color"]')?.setAttribute(
+            "content",
+            theme === "dark" ? "#101114" : "#f4f6fa",
+          );
+          localStorage.setItem("phoenix-theme", theme);
+        }, [theme]);
+
+        async function load() {
+          setRefreshing(true);
+          try {
+            const response = await fetch("/api/status", { cache: "no-store" });
+            setStatus(await response.json());
+          } catch {
+            // keep showing the last known-good status
+          } finally {
+            setRefreshing(false);
+          }
+        }
+
+        useEffect(() => {
+          load();
+          const interval = window.setInterval(load, 30_000);
+          return () => window.clearInterval(interval);
+        }, []);
+
+        const providers = useMemo(() => {
+          const list = Object.values(status?.providers || {});
+          list.sort((a, b) => displayName(a).localeCompare(displayName(b)));
+          return list;
+        }, [status]);
+
+        const filtered = useMemo(
+          () => providers.filter((p) => filter === "all" || p.status === filter),
+          [providers, filter],
+        );
+
+        const upCount = providers.filter((p) => p.status === "up").length;
+        const downCount = providers.filter((p) => p.status === "down").length;
+        const totalStreams = providers.reduce((sum, p) => sum + (p.totalStreamsFound || 0), 0);
+        const lastUpdated = status?.lastUpdated ? formatRelativeTime(status.lastUpdated) : "—";
+
+        return h(
+          "main",
+          { className: "app-shell" },
+          h(
+            "header",
+            { className: "topbar" },
+            h(
+              "a",
+              { className: "brand", href: "/" },
+              h("img", { src: "public/logo.png", alt: "" }),
+              h(
+                "span",
+                { className: "brand-mark" },
+                h("span", { className: "brand-name" }, "PhoeniX"),
+                h("span", { className: "brand-subtitle" }, "Source status"),
+              ),
+            ),
+            h(
+              "div",
+              { className: "top-actions" },
+              IconButton({
+                label: theme === "dark" ? "Use light mode" : "Use dark mode",
+                onClick: () => setTheme(theme === "dark" ? "light" : "dark"),
+                children: theme === "dark" ? h(Sun, { size: 18 }) : h(Moon, { size: 18 }),
+              }),
+              IconButton({
+                label: "Refresh status",
+                onClick: load,
+                spinning: refreshing,
+                disabled: refreshing,
+                children: h(RefreshCw, { size: 17 }),
+              }),
+              h("a", { className: "button", href: "/" }, "Configure"),
+            ),
+          ),
+          h(
+            "div",
+            { className: "metric-row" },
+            h(
+              "div",
+              { className: "metric" },
+              h("span", { className: "metric-value" }, h(Signal, { size: 18 }), providers.length),
+              h("span", { className: "metric-label" }, "Sources"),
+            ),
+            h(
+              "div",
+              { className: "metric" },
+              h("span", { className: "metric-value is-up" }, h(Activity, { size: 18 }), upCount),
+              h("span", { className: "metric-label" }, "Up"),
+            ),
+            h(
+              "div",
+              { className: "metric" },
+              h("span", { className: "metric-value is-down" }, h(Activity, { size: 18 }), downCount),
+              h("span", { className: "metric-label" }, "Down"),
+            ),
+            h(
+              "div",
+              { className: "metric" },
+              h("span", { className: "metric-value" }, h(Film, { size: 18 }), totalStreams),
+              h("span", { className: "metric-label" }, "Streams found"),
+            ),
+          ),
+          h(
+            "section",
+            { className: "section", "aria-label": "Provider status" },
+            h(
+              "div",
+              { className: "section-header" },
+              h("h1", { className: "section-title" }, h(Clock3, { size: 20 }), "Provider status"),
+              h("span", { className: "section-meta" }, `Updated ${lastUpdated}`),
+            ),
+            h(
+              "div",
+              { className: "preset-bar" },
+              FILTERS.map((item) =>
+                h(
+                  "button",
+                  {
+                    key: item.id,
+                    type: "button",
+                    className: `preset-chip${filter === item.id ? " is-active" : ""}`,
+                    onClick: () => setFilter(item.id),
+                  },
+                  item.label,
+                ),
+              ),
+            ),
+            h(
+              "div",
+              { className: "provider-grid" },
+              filtered.length
+                ? filtered.map((provider) => h(ProviderRow, { key: provider.id, provider }))
+                : h("div", { className: "empty-state" }, `No sources match "${filter}".`),
+            ),
+          ),
+          h(
+            "div",
+            { className: "footer" },
+            h("span", null, "PhoeniX source monitor · refreshes every 30s"),
+          ),
+        );
+      }
+
+      createRoot(document.getElementById("root")).render(h(App));
+    </script>
+  </body>
+</html>

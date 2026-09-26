@@ -23,6 +23,11 @@ import { createRequire } from 'module';
 // and animes carry the same subtitle set on every card (user requirement).
 const require_ = createRequire(import.meta.url);
 const { fetchUnifiedSubs, mergeSubtitleTracks } = require_('./siteSubtitles.cjs');
+// Task 98: custom stream name/description template engine (configure UI's
+// "Custom formatter"). Only invoked when a configured install ships
+// formatter_name / formatter_description.
+const formatter = require_('./formatter.cjs');
+const ADDON_LABEL = process.env.ADDON_NAME || 'PhoeniX';
 
 // Extract a release name from a stream's meta + URL for OpenSubtitles
 // release-name matching. Returns "" if no recognizable release name found.
@@ -653,7 +658,11 @@ export class StreamResolver {
       } catch { /* no TMDB mapping — granite returns [] then; natsuki still queried with the imdb id */ }
     }
     const subsState = { settled: false, value: [] };
-    const unifiedSubsP = fetchUnifiedSubs({
+    // Task 98: a configured install can disable subtitles entirely
+    // (subtitles_disabled=on). Skip the upstream fetch AND the per-card merge;
+    // a pre-resolved promise keeps the wait machinery below intact.
+    const universalSubsWanted = !ctx.addonConfig?.subtitlesDisabled;
+    const unifiedSubsP = universalSubsWanted ? fetchUnifiedSubs({
       tmdbId: subsTmdbId,
       imdbId: subsImdbId,
       type,
@@ -665,13 +674,13 @@ export class StreamResolver {
       // Render storm windows past AbortSignal deadlines (DNS lookup class).
       fetcher: this.fetcher,
       ctx,
-    });
+    }) : Promise.resolve([]);
     unifiedSubsP
       .then(v => { subsState.settled = true; subsState.value = Array.isArray(v) ? v : []; })
       .catch(() => { subsState.settled = true; subsState.value = []; });
 
     const streams = [];
-    const urlResults = [];
+    let urlResults = []; // Task 98: `let` — the config layer reassigns after filtering
     let sourceErrorCount = 0;
 
     // Per-source timing data — exposed via /debug/stream for diagnostics.
@@ -877,7 +886,15 @@ export class StreamResolver {
     // multi-instance-correct architecture. The background tail is KEPT (it
     // is strictly better than the original's hard cut for sources exceeding
     // 40s) and the Task 54 playback-priority gate stays armed for it.
-    const CLIENT_BUDGET_MS = Math.max(5000, parseInt(process.env.STREAM_CLIENT_BUDGET_MS, 10) || 40000);
+    const CLIENT_BUDGET_MS = (() => {
+      // Task 98: a configured install can set the load timeout (5-45s); it
+      // OVERRIDES the env default (which governs legacy installs). The 5s
+      // floor guards the wave-0 delivery contract — below that even warm
+      // resolves would miss wave 0 entirely.
+      const configSec = ctx.addonConfig?.maxTimeoutSec;
+      if (configSec != null) return Math.max(5000, Math.min(45_000, Math.round(configSec * 1000)));
+      return Math.max(5000, parseInt(process.env.STREAM_CLIENT_BUDGET_MS, 10) || 40000);
+    })();
 
     // Track how many sources have fully settled (scrape + extractor stage).
     let settledCount = 0;
@@ -1144,6 +1161,72 @@ export class StreamResolver {
       return (Number(b.meta?.priority) || 0) - (Number(a.meta?.priority) || 0);
     });
 
+    // ── Task 98: ADDON CONFIG layer ─────────────────────────────────────
+    // ctx.addonConfig is the normalized user config (src/utils/addonConfig.cjs)
+    // attached by /stream when the install URL carries one. Absent/empty →
+    // the block is skipped entirely: legacy behavior stays byte-identical.
+    // Card-level fail-open: a card whose height or size is UNKNOWN is kept
+    // (it cannot be verified against a filter — same contract as the
+    // reference UI's "streams without a known size are always shown").
+    const ac = ctx.addonConfig;
+    if (ac && ac.hasAny) {
+      const heightsSet = Array.isArray(ac.heights) ? new Set(ac.heights) : null;
+      const rankOf = (h) => (h >= 2160 ? 2160 : h >= 1440 ? 1440 : h >= 1080 ? 1080 : h >= 720 ? 720 : h >= 480 ? 480 : h >= 360 ? 360 : 0);
+      // provider_order: rank map — selected sources in the user's order first;
+      // unranked sources keep registry order after them.
+      const orderRank = Array.isArray(ac.providerOrder)
+        ? new Map(ac.providerOrder.map((sid, i) => [sid, i]))
+        : null;
+
+      // Counting pass for per-source quality caps (limit 0 = block the tier,
+      // >0 = keep at most N of that source+resolution tier). Applied after
+      // the sort above, so "first N" = the N best of the tier (the sort
+      // already orders by height → size → priority).
+      const tierSeen = new Map();
+      urlResults = urlResults.filter((r) => {
+        if (r.error) return true; // build loop skips errors; keep indexing stable
+        const h = heightOf(r);
+        // quality whitelist (unknown height kept — cannot be verified)
+        if (heightsSet && h > 0 && !heightsSet.has(rankOf(h))) return false;
+        // filesize bounds (unknown size kept — cannot be verified)
+        const b = bytesOf(r);
+        if (ac.minBytes != null && b > 0 && b < ac.minBytes) return false;
+        if (ac.maxBytes != null && b > 0 && b > ac.maxBytes) return false;
+        // hide non-seekable: external player-page cards (zxcstream class) —
+        // they open a web page, not an inline stream, so a player cannot
+        // seek inside them. Everything else this addon ships is either a
+        // direct URL, a Range-capable /range-proxy wrap, or HLS.
+        if (ac.disableDirect && r.isExternal) return false;
+        // per-source resolution caps
+        if (ac.qualityCaps) {
+          const sid = r.meta?.sourceId || '';
+          const cap = ac.qualityCaps[`${sid}_${rankOf(h)}`];
+          if (cap != null) {
+            const key = `${sid}_${rankOf(h)}`;
+            const c = tierSeen.get(key) || 0;
+            tierSeen.set(key, c + 1);
+            if (c >= cap) return false;
+          }
+        }
+        return true;
+      });
+
+      // provider_order: stable re-rank INSIDE each height tier (the global
+      // sort above already tiers by height; re-stabilize per tier so the
+      // user's chosen provider order decides who leads within a tier).
+      if (orderRank) {
+        urlResults.sort((a, b) => {
+          if (a.error || b.error) return a.error ? -1 : 1;
+          const h = heightOf(b) - heightOf(a);
+          if (h !== 0) return h;
+          const ra = orderRank.has(a.meta?.sourceId) ? orderRank.get(a.meta?.sourceId) : Number.MAX_SAFE_INTEGER;
+          const rb = orderRank.has(b.meta?.sourceId) ? orderRank.get(b.meta?.sourceId) : Number.MAX_SAFE_INTEGER;
+          if (ra !== rb) return ra - rb;
+          return (Number(b.meta?.priority) || 0) - (Number(a.meta?.priority) || 0);
+        });
+      }
+    }
+
     // Build streams
     // Task 49: resolve the universal subtitle set without endangering budgets.
     //   - already settled (typical: fetched in parallel during the resolve) →
@@ -1304,10 +1387,41 @@ export class StreamResolver {
         finalUrl = proxyUrl;
       }
 
+      // Task 98: custom name/description formatting + stream grouping.
+      // group_by renames the card's bold first line so the player clusters
+      // cards visually: 'provider' → the source label (all cards from one
+      // source share a name); 'quality' → the resolution label (all cards of
+      // one resolution share a name). The custom formatter templates, when
+      // set, override name/description entirely (fields from urlResult.meta;
+      // engine never throws — see utils/formatter.cjs).
+      let builtName = this.buildName(urlResult);
+      let builtTitle = this.buildTitle(urlResult);
+      if (ac && ac.hasAny) {
+        const meta = urlResult.meta || {};
+        if (ac.groupBy === 'provider' && meta.sourceLabel) {
+          const sub = meta.serverName || meta.extractorLabel || meta.provider;
+          builtName = sub && sub !== meta.sourceLabel ? `${meta.sourceLabel} · ${sub}` : String(meta.sourceLabel);
+        } else if (ac.groupBy === 'quality') {
+          const h = Number(meta.height) || 0;
+          builtName = h >= 2160 ? '4K' : h >= 1080 ? '1080p' : h >= 720 ? '720p' : h >= 480 ? '480p' : h > 0 ? 'SD' : builtName;
+        }
+        if (ac.formatterName || ac.formatterDescription) {
+          const formatted = formatter.formatStream({
+            nameTemplate: ac.formatterName,
+            descriptionTemplate: ac.formatterDescription,
+            meta,
+            stream: { name: builtName, title: builtTitle },
+            addonName: ADDON_LABEL,
+          });
+          builtName = formatted.name;
+          builtTitle = formatted.description;
+        }
+      }
+
       const stream = {
         ...(urlResult.isExternal ? { externalUrl: finalUrl.href } : { url: finalUrl.href }),
-        name: this.buildName(urlResult),
-        title: this.buildTitle(urlResult),
+        name: builtName,
+        title: builtTitle,
         behaviorHints: {
           bingeGroup: `phoenix-${urlResult.meta?.sourceId}-${urlResult.meta?.extractorId}`,
           ...(urlResult.format !== Format.mp4 && urlResult.notWebReady !== false && { notWebReady: true }),
@@ -1323,7 +1437,10 @@ export class StreamResolver {
         // (meta.subtitles, attached above on the full path) keep priority;
         // the universal granite+natsuki set (fetched in parallel at resolve
         // start) fills in the rest — deduped by base language, capped at 48.
+        // Task 98: subtitles_disabled=on → no tracks at all (fetch skipped,
+        // merge skipped).
         ...(() => {
+          if (ctx.addonConfig?.subtitlesDisabled) return {};
           const merged = mergeSubtitleTracks(urlResult.meta?.subtitles, universalSubs);
           return merged.length > 0 ? { subtitles: merged } : {};
         })(),

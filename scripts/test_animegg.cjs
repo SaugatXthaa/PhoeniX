@@ -10,7 +10,7 @@
  *   3. AniDB App  — HLS, sub+dub, via Anivexa proxy
  *   4. AniBD      — HLS, sub only, direct
  *
- * All sources use AniList ID as input (same as PenguPlay's Antova).
+ * All sources use AniList ID as input (same as the reference addon's Antova).
  * 100% pure Node.js — NO Playwright, NO browser, Render free-tier compatible.
  *
  * USAGE:
