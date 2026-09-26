@@ -182,8 +182,8 @@ async function manifestPath(config) {
 }
 
 // ── shared components ──
-function IconButton({ children, label, onClick }) {
-  return h("button", { className: "icon-button", type: "button", onClick, "aria-label": label, title: label }, children);
+function IconButton({ children, label, onClick, disabled, spinning }) {
+  return h("button", { className: `icon-button${spinning ? " is-spinning" : ""}`, type: "button", onClick, disabled, "aria-label": label, title: label }, children);
 }
 
 function StatusDot({ status, name }) {
@@ -517,7 +517,11 @@ function App() {
     if (groupBy && groupBy !== "none") config.group_by = groupBy;
     if (sortBy && sortBy !== "quality") config.sort_by = sortBy;
     if (Array.isArray(providerOrder) && providerOrder.length > 0) config.provider_order = providerOrder.join(",");
-    if (maxTimeout && maxTimeout !== 15) config.max_timeout = maxTimeout;
+    // Always emit the load timeout: the Playback tab shows one of the five
+    // options as ACTIVE at all times (default 15s), so a configured install
+    // must actually run with that timeout — omitting the key would silently
+    // fall back to the server's 40s default while the UI claims 15s.
+    if (maxTimeout) config.max_timeout = maxTimeout;
     if (formatterName && formatterName.trim()) config.formatter_name = formatterName;
     if (formatterDescription && formatterDescription.trim()) config.formatter_description = formatterDescription;
     for (const [limitKey, limit] of Object.entries(qualityLimits)) {

@@ -185,6 +185,14 @@
         cursor: not-allowed;
       }
 
+      /* Refresh-status button while a status fetch is in flight */
+      .icon-button.is-spinning svg {
+        animation: icon-spin 0.9s linear infinite;
+      }
+      @keyframes icon-spin {
+        to { transform: rotate(360deg); }
+      }
+
       .button:not(:disabled):hover,
       .icon-button:not(:disabled):hover {
         border-color: var(--line-strong);

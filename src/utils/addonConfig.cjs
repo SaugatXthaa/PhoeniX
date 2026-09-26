@@ -59,6 +59,7 @@ const SOURCE_TAGS = {
   'anikototv':      ['Anime', 'HLS', 'Series'],
   'anikage':        ['Anime', 'HLS', 'Dub', 'Series'],
   'anibd':          ['Anime', 'HLS', 'Series'],
+  'animeflix':      ['Anime', 'HLS', 'Dub', 'Series'],
   '2dhive':         ['Anime', 'HLS', 'Movies Only'],
   'anidoor':        ['Anime', 'HLS', 'Dub'],
   'pantyflix':      ['Anime', '1080p', 'Series'],

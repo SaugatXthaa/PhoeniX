@@ -1171,7 +1171,12 @@ export class StreamResolver {
     const ac = ctx.addonConfig;
     if (ac && ac.hasAny) {
       const heightsSet = Array.isArray(ac.heights) ? new Set(ac.heights) : null;
-      const rankOf = (h) => (h >= 2160 ? 2160 : h >= 1440 ? 1440 : h >= 1080 ? 1080 : h >= 720 ? 720 : h >= 480 ? 480 : h >= 360 ? 360 : 0);
+      // Bucket heights into the whitelist tiers the configure UI offers
+      // (2160/1080/720/480/360). 1440p (QHD — Stellar/VidLink/VideasyTo emit
+      // it) has no checkbox of its own, so it rides the 1080p tier: with
+      // everything selected nothing is dropped, and deselecting 1080p also
+      // hides QHD (strict-tier semantics preserved for every offered tier).
+      const rankOf = (h) => (h >= 2160 ? 2160 : h >= 1080 ? 1080 : h >= 720 ? 720 : h >= 480 ? 480 : h >= 360 ? 360 : 0);
       // provider_order: rank map — selected sources in the user's order first;
       // unranked sources keep registry order after them.
       const orderRank = Array.isArray(ac.providerOrder)

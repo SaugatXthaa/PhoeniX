@@ -17,13 +17,16 @@
 //   - each probe calls source.handleInternal() directly (scrape stage only —
 //     the same definition the Task 78 per-source audit and the /debug/source
 //     route use; extraction is downstream of a successful scrape) with a
-//     35s race cap, on a fixed probe title.
+//     35s race cap, on a rotating probe title.
 //   - probe titles: a movie for movie-capable sources (rotated per sweep for
-//     diversity), an anime episode for the anime-only set. Series-capable
-//     sources get the movie too (they are all movie+series scrapers here).
+//     diversity), an anime episode for the anime-only set (rotated too).
+//     Series-capable sources get the movie too (they are all movie+series
+//     scrapers here). An empty FIRST probe gets ONE second-chance probe with
+//     the next title in the rotation before "down" is recorded — per-title
+//     catalog gaps must not paint a working source as down.
 //   - verdicts: up = scrape returned >=1 result within the cap; down =
-//     empty / timeout / error. responseTimeMs = scrape duration.
-//     lastCheck = ISO timestamp. error = short error string.
+//     empty / timeout / error on both attempts. responseTimeMs = scrape
+//     duration. lastCheck = ISO timestamp. error = short error string.
 //   - a sweep keeps going across "sweep changed" boundaries; the monitor is
 //     strictly sequential so it can never stack load.
 //
@@ -57,11 +60,16 @@ const MOVIE_PROBES = [
   { raw: 'tt8178634', label: 'RRR' },
 ];
 // Anime-only sources are episode scrapers (Task 61 resolver truth) — they
-// get a fixed anime title. JJK S1E1 = tmdb 127532 / tt12343534.
-// Jujutsu Kaisen S1E1 by TMDB id (127532) — every anime-only source is keyed
-// on TMDB/AniList mappings internally, and tmdb lookups avoid the extra
-// imdb→tmdb conversion request a tt id would trigger per probe.
-const ANIME_PROBE = { raw: 'tmdb:127532:1:1', label: 'JJK S1E1', type: 'series', tmdb: 127532 };
+// get an anime episode. ROTATED per sweep (same policy as the movie probes):
+// a single fixed title painted sources with honest catalog gaps as "down"
+// (production-measured: animeflix returns 0 on the JJK probe but delivers
+// Frieren — a catalog gap, not an outage). Both ids are delivery-proven:
+// 127532 = 17/19 anime-only sources delivered on the Task 98 boot sweep;
+// 209867 (Frieren S2E1) = Task 61/78 audit probe.
+const ANIME_PROBES = [
+  { raw: 'tmdb:127532:1:1', label: 'JJK S1E1', type: 'series', tmdb: 127532 },
+  { raw: 'tmdb:209867:2:1', label: 'Frieren S2E1', type: 'series', tmdb: 209867 },
+];
 
 const state = new Map(); // sourceId -> record
 let monitorTimer = null;
@@ -159,6 +167,20 @@ async function probeSource(source, probe) {
   return tested.success;
 }
 
+// Second-chance probe for accuracy: an empty first probe can be a per-title
+// catalog gap rather than an outage (the same false-negative class the probe
+// rotation above addresses — production-measured on animeflix/animezey).
+// Before recording "down", retry ONCE with the next probe title in the same
+// rotation class. Bounded: at most 2 scrapes per source per sweep, and the
+// empty path is the fast path (dead sources fail in seconds, not at the cap).
+async function probeWithFallback(source, primary, secondary) {
+  const ok = await probeSource(source, primary);
+  if (ok || !started || !secondary) return ok;
+  await waitWhilePlayback();
+  if (!started) return false;
+  return probeSource(source, secondary);
+}
+
 // Yield to playback: while a stream is actively serving through /proxy or
 // /range-proxy, the Task 54 gate says background work must wait. Probes are
 // background work. playbackGate.quient() resolves once playback has been idle
@@ -174,13 +196,18 @@ async function runSweep(sources, animeOnlyIds) {
   for (const source of sources) {
     if (!started) return; // shut down mid-sweep
     const isAnimeOnly = animeOnlyIds.has(source.id);
-    const probe = isAnimeOnly
-      ? ANIME_PROBE
-      : MOVIE_PROBES[sweepCount % MOVIE_PROBES.length];
+    let primary, secondary;
+    if (isAnimeOnly) {
+      primary = ANIME_PROBES[sweepCount % ANIME_PROBES.length];
+      secondary = ANIME_PROBES[(sweepCount + 1) % ANIME_PROBES.length];
+    } else {
+      primary = MOVIE_PROBES[sweepCount % MOVIE_PROBES.length];
+      secondary = MOVIE_PROBES[(sweepCount + 1) % MOVIE_PROBES.length];
+    }
     try {
       await waitWhilePlayback();
       if (!started) return;
-      await probeSource(source, probe);
+      await probeWithFallback(source, primary, secondary);
     } catch {
       // probeSource already records errors; a throw here must never kill the loop
     }
