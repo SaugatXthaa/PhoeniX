@@ -138,6 +138,10 @@ const FORMATTER_PRESETS = {
 };
 
 function detectFormatterPreset(name, description) {
+  // Task 102: the Default preset IS the addon's previous (pre-formatter-UI)
+  // format — it ships as empty templates and the resolver takes its native
+  // card-builder path. Both templates empty = Default.
+  if (!String(name || "").trim() && !String(description || "").trim()) return "default";
   for (const [presetKey, preset] of Object.entries(FORMATTER_PRESETS)) {
     if (preset.name === name && preset.description === description) return presetKey;
   }
@@ -591,10 +595,9 @@ function App() {
 
   // ── formatter preview (debounced; server renders the real engine) ──
   async function runFormatterPreview(name, description) {
-    if (!name.trim() && !description.trim()) {
-      setFormatterPreview(null);
-      return;
-    }
+    // Task 102: empty templates still fetch — the server renders the sample
+    // cards through the native builder so the Default preset previews the
+    // real pre-UI format instead of going blank.
     try {
       const response = await fetch("/api/formatter-preview", {
         method: "POST",
@@ -627,21 +630,15 @@ function App() {
     if (formatterUiTab === "preview") scheduleScenarioPreview();
   }, [formatterUiTab]);
 
-  async function handleUseDefaultFormatter() {
-    try {
-      const response = await fetch("/api/formatter-preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "x", description: "x" }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (result.ok && result.defaults) {
-        setFormatterName(result.defaults.name);
-        setFormatterDescription(result.defaults.description);
-        setFormatterPreset("default");
-        scheduleFormatterPreview({ name: result.defaults.name, description: result.defaults.description });
-      }
-    } catch {}
+  // Task 102: the Default preset is the addon's own previous format (the
+  // native card builder that ran before the formatter UI existed). It ships
+  // as EMPTY templates — the resolver then renders the exact pre-UI look.
+  function handleUseDefaultFormatter() {
+    setFormatterName("");
+    setFormatterDescription("");
+    setFormatterPreset("default");
+    setFormatterPreview(null);
+    scheduleFormatterPreview({ name: "", description: "" });
   }
 
   function applyFormatterPreset(presetKey) {
@@ -800,10 +797,8 @@ function App() {
     applyScenario(previewScenarioId);
   }
   async function runScenarioPreview(name, description, fields) {
-    if (!String(name).trim() && !String(description).trim()) {
-      setScenarioPreview(null);
-      return;
-    }
+    // Task 102: empty templates still fetch — the server renders the
+    // scenario's card through the native builder (the Default look).
     try {
       const response = await fetch("/api/formatter-preview", {
         method: "POST",
@@ -1412,7 +1407,7 @@ function App() {
                 formatterUiTab === "editor" ? h("div", null,
                   h("div", { style: { display: "flex", gap: "8px", alignItems: "center", marginTop: "12px" } },
                     h("button", { className: "clear-button", type: "button", onClick: () => { setFormatterJsonOpen((v) => !v); setFormatterJsonError(""); } }, "Import JSON"),
-                    h("button", { className: "clear-button", type: "button", onClick: () => { setFormatterName(""); setFormatterDescription(""); setFormatterPreset(null); setFormatterPreview(null); } }, "Clear"),
+                    h("button", { className: "clear-button", type: "button", onClick: handleUseDefaultFormatter }, "Clear"),
                   ),
                   formatterJsonOpen
                     ? h("div", { style: { marginTop: "10px" } },
@@ -1425,7 +1420,7 @@ function App() {
                       )
                     : null,
                   h("div", { className: "preset-bar", role: "group", "aria-label": "Formatter template" },
-                    h("button", { type: "button", className: `preset-chip${formatterPreset === "default" ? " is-active" : ""}`, onClick: handleUseDefaultFormatter }, "Default"),
+                    h("button", { type: "button", className: `preset-chip${formatterPreset === "default" ? " is-active" : ""}`, title: "The built-in PhoeniX format — the same card look as before the formatter UI", onClick: handleUseDefaultFormatter }, "Default"),
                     Object.entries(FORMATTER_PRESETS).map(([presetKey, preset]) => h("button", { key: presetKey, type: "button", className: `preset-chip${formatterPreset === presetKey ? " is-active" : ""}`, onClick: () => applyFormatterPreset(presetKey) }, preset.label)),
                   ),
                   h("label", { style: { display: "block", fontSize: "0.8rem", color: "var(--muted)", margin: "10px 0 4px" } }, "Name template"),
@@ -1433,9 +1428,12 @@ function App() {
                   h("label", { style: { display: "block", fontSize: "0.8rem", color: "var(--muted)", margin: "10px 0 4px" } }, "Description template"),
                   h("textarea", { value: formatterDescription, onChange: (e) => { setFormatterDescription(e.target.value); setFormatterPreset(null); setFormatterPreview(null); }, rows: 4, spellCheck: false, placeholder: "{stream.title} • {stream.size::bytes} • {addon.name}", style: textareaStyle }),
                   h("p", { style: { margin: "10px 0 0", color: "var(--subtle)", fontSize: "0.78rem" } },
-                    "Template syntax: {stream.resolution}, {stream.size::bytes}, {stream.languages}, {stream.quality}, {stream.filename}, conditionals like {field::exists[\"A\"||\"B\"]}, chains with ::and::/::or::, optional groups {? … ?}, and {tools.newLine}. Leave empty for the default look. Keep favourites in the Saved tab, and exercise every field from the Preview tab."),
+                    "Template syntax: {stream.resolution}, {stream.size::bytes}, {stream.languages}, {stream.quality}, {stream.filename}, conditionals like {field::exists[\"A\"||\"B\"]}, chains with ::and::/::or::, optional groups {? … ?}, and {tools.newLine}. Leave both empty for the Default preset — the built-in PhoeniX format. Keep favourites in the Saved tab, and exercise every field from the Preview tab."),
                   formatterPreview != null && typeof formatterPreview === "object" && formatterPreview.ok && Array.isArray(formatterPreview.samples)
                     ? h("div", { className: "formatter-preview" },
+                        !formatterName.trim() && !formatterDescription.trim()
+                          ? h("p", { style: { margin: "0 0 8px", color: "var(--muted)", fontSize: "0.78rem" } }, "Default PhoeniX format — the built-in card look used before custom templates existed.")
+                          : null,
                         formatterPreview.samples.map((sample) =>
                           h("div", { key: sample.label, className: "stream-card" },
                             h("div", { className: "stream-card-head" },
@@ -1513,10 +1511,11 @@ function App() {
                         scenarioInput("requestId", "IMDb id", "Series: tt0903747:2:5 fills season 2 · episode 5"),
                       ],
                   ),
-                  !formatterName.trim() && !formatterDescription.trim()
-                    ? h("p", { style: { margin: "10px 0 0", color: "var(--subtle)", fontSize: "0.78rem" } }, "Both templates are empty — set a template in the Editor tab to see the preview.")
-                    : scenarioPreview != null && typeof scenarioPreview === "object" && scenarioPreview.ok && Array.isArray(scenarioPreview.samples) && scenarioPreview.samples.length
+                  scenarioPreview != null && typeof scenarioPreview === "object" && scenarioPreview.ok && Array.isArray(scenarioPreview.samples) && scenarioPreview.samples.length
                       ? h("div", { className: "formatter-preview" },
+                          !formatterName.trim() && !formatterDescription.trim()
+                            ? h("p", { style: { margin: "0 0 8px", color: "var(--muted)", fontSize: "0.78rem" } }, "Default PhoeniX format for this scenario — rendered by the built-in card formatter.")
+                            : null,
                           scenarioPreview.samples.map((sample) =>
                             h("div", { key: sample.label, className: "stream-card" },
                               h("div", { className: "stream-card-head" },
@@ -1530,7 +1529,9 @@ function App() {
                         )
                       : typeof scenarioPreview === "string"
                         ? h("p", { style: { margin: "10px 0 0", color: "var(--danger)", fontSize: "0.78rem" } }, scenarioPreview)
-                        : null,
+                        : !formatterName.trim() && !formatterDescription.trim()
+                          ? h("p", { style: { margin: "10px 0 0", color: "var(--subtle)", fontSize: "0.78rem" } }, "Default preset — rendering the built-in PhoeniX format for this scenario…")
+                          : null,
                 ) : null,
               ),
             ),

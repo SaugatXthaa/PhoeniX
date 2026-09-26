@@ -17,6 +17,15 @@
 
 const zlib = require('zlib');
 
+// Task 102: the exact "Default" template pair that shipped before the preset
+// became the native pre-UI format. Saved configs carrying this exact pair are
+// migrated to unset (see normalizeConfig) so those installs see the same
+// native format every unconfigured install sees.
+const OLD_DEFAULT_TEMPLATES = Object.freeze({
+  name: '🐦‍🔥 PhoeniX · {stream.resolution::exists["{stream.resolution}"||""]}{stream.source::exists[" · {stream.source}"||""]}',
+  description: '{stream.title}',
+});
+
 // ── Source metadata for the configure page (/sources.json) ──────────────
 // Curated from the Task 78/83 per-source audits + known site behavior.
 // tags: [quality lead first, then speed/coverage tags]. Anime/movie-only
@@ -232,10 +241,17 @@ function normalizeConfig(raw, { allSourceIds } = {}) {
   // Task 101: template length caps — templates ride inside the compressed
   // config segment and every Stremio resource URL; anything beyond these
   // bounds cannot survive a URL roundtrip and would only break installs.
-  if (typeof raw.formatter_name === 'string' && raw.formatter_name.trim()) {
+  // Task 102: installs that clicked "Default" while the old simplified
+  // default template shipped carry that pair in their saved config. The
+  // Default preset is now the native pre-UI format (empty templates), so
+  // the exact old pair is migrated to unset — the resolver's native card
+  // builder runs again, exactly like before the formatter UI existed.
+  const isOldDefaultPair = raw.formatter_name === OLD_DEFAULT_TEMPLATES.name
+    && raw.formatter_description === OLD_DEFAULT_TEMPLATES.description;
+  if (typeof raw.formatter_name === 'string' && raw.formatter_name.trim() && !isOldDefaultPair) {
     cfg.formatterName = raw.formatter_name.slice(0, 20000); cfg.hasAny = true;
   }
-  if (typeof raw.formatter_description === 'string' && raw.formatter_description.trim()) {
+  if (typeof raw.formatter_description === 'string' && raw.formatter_description.trim() && !isOldDefaultPair) {
     cfg.formatterDescription = raw.formatter_description.slice(0, 20000); cfg.hasAny = true;
   }
   return cfg;

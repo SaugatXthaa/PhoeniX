@@ -118,6 +118,22 @@ app.use(segmentConfigMiddleware);
 // ============== MANIFEST ==============
 app.get('/manifest.json', (req, res) => {
   const hostUrl = `https://${req.headers.host}`;
+  // Task 102 BUGFIX: the configure UI's "Hide subtitles" toggle promises a
+  // manifest WITHOUT the subtitles resource — the comment below claimed it,
+  // the tooltip promises it, and per-card stripping honors it, but this
+  // route never consulted the config segment. Honor it now (the segment is
+  // part of the URL path, so per-config caching stays correct).
+  const manifestCfg = normalizeConfig(req.rawConfig || {});
+  const resources = [
+    'stream',
+    // Task 98: real subtitles resource — the unified Task 49 providers
+    // (granite VTT + natsuki SRT) served standalone. The configure UI's
+    // "Disable subtitles" toggle removes this resource from configured
+    // installs and strips per-card tracks.
+    ...(!manifestCfg.subtitlesDisabled
+      ? [{ name: 'subtitles', types: ['movie', 'series'], idPrefixes: ['tt', 'tmdb:'] }]
+      : []),
+  ];
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.json({
@@ -126,18 +142,7 @@ app.get('/manifest.json', (req, res) => {
     name: ADDON_NAME,
     description: 'Stream movies, series and anime in HD.',
     logo: `${hostUrl}/public/logo.png?v=${VERSION}`,
-    resources: [
-      'stream',
-      // Task 98: real subtitles resource — the unified Task 49 providers
-      // (granite VTT + natsuki SRT) served standalone. The configure UI's
-      // "Disable subtitles" toggle removes this resource from configured
-      // installs and strips per-card tracks.
-      {
-        name: 'subtitles',
-        types: ['movie', 'series'],
-        idPrefixes: ['tt', 'tmdb:'],
-      },
-    ],
+    resources,
     types: ['movie', 'series'],
     idPrefixes: ['tt', 'tmdb:'],
     catalogs: [],
@@ -2007,10 +2012,13 @@ app.get('/sources.json', (req, res) => {
 // Live formatter preview — the configure UI debounces template edits here and
 // renders the returned sample cards, so what you see is what the resolver
 // will produce. `defaults` powers the "Default" preset chip.
-const FORMATTER_DEFAULTS = {
-  name: '🐦‍🔥 PhoeniX · {stream.resolution::exists["{stream.resolution}"||""]}{stream.source::exists[" · {stream.source}"||""]}',
-  description: '{stream.title}',
-};
+// Task 102: the Default formatter preset IS the addon's own previous format
+// — the native card builder that ran before the formatter UI existed
+// (buildName/buildTitle in StreamResolver). "No templates" is exactly that
+// format, so the default preset ships empty templates and the resolver takes
+// its native path; the preview endpoint renders each sample's built-in
+// (native-format) name/title for the same reason.
+const FORMATTER_DEFAULTS = { name: '', description: '' };
 const FORMATTER_SAMPLES = [
   {
     label: '4K Remux',
@@ -2101,13 +2109,40 @@ function normalisePreviewSample(raw) {
 app.post('/api/formatter-preview', (req, res) => {
   const nameTemplate = typeof req.body?.name === 'string' ? req.body.name.slice(0, 20000) : '';
   const descriptionTemplate = typeof req.body?.description === 'string' ? req.body.description.slice(0, 20000) : '';
-  if (!nameTemplate.trim() && !descriptionTemplate.trim()) {
-    return res.json({ ok: true, samples: [], defaults: FORMATTER_DEFAULTS });
-  }
   let source = FORMATTER_SAMPLES;
   if (Array.isArray(req.body?.samples)) {
     const cleaned = req.body.samples.slice(0, 8).map(normalisePreviewSample).filter(Boolean);
     if (cleaned.length) source = cleaned;
+  }
+  // Task 102: empty templates = the Default preset = the native pre-UI
+  // format. Render each sample through the REAL native card builder
+  // (StreamResolver.buildName/buildTitle — the code that formatted cards
+  // before the formatter UI existed), so the preview shows exactly what a
+  // default-look card looks like. Falls back to the sample's own strings if
+  // a sample shape can't be built.
+  if (!nameTemplate.trim() && !descriptionTemplate.trim()) {
+    return res.json({
+      ok: true,
+      samples: source.map((sample) => {
+        try {
+          const urlResult = {
+            url: new URL(sample.url || 'https://card.example/stream'),
+            format: sample.meta.format === 'hls' ? 'hls' : sample.meta.format === 'mp4' ? 'mp4' : 'unknown',
+            isExternal: false,
+            meta: sample.meta,
+          };
+          return {
+            label: sample.label,
+            name: StreamResolver.prototype.buildName.call(null, urlResult),
+            description: StreamResolver.prototype.buildTitle.call(null, urlResult),
+            error: null,
+          };
+        } catch {
+          return { label: sample.label, name: sample.stream.name, description: sample.stream.title, error: null };
+        }
+      }),
+      defaults: FORMATTER_DEFAULTS,
+    });
   }
   const samples = source.map((sample) => {
     try {

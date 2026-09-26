@@ -106,12 +106,19 @@ console.log("== 4. fail-open on malformed samples ==");
   ok(s && !s.name.includes("<script>"), "bad language code dropped");
 }
 
-console.log("== 5. >8 samples capped; empty templates = empty samples ==");
+console.log("== 5. >8 samples capped; empty templates = native default look ==");
 {
   const out = await post({ name: NAME_TPL, description: DESC_TPL, samples: Array(12).fill(REMUX) });
   ok(out.samples?.length === 8, "capped at 8", `got ${out.samples?.length}`);
+  // Task 102: empty templates = the Default preset = the native pre-UI
+  // format. The endpoint renders each sample through the REAL native
+  // builder (StreamResolver.buildName/buildTitle), so the card shows the
+  // classic look: '🐦‍🔥 PhoeniX · …' name + multi-line native description.
   const empty = await post({ name: "", description: "", samples: [REMUX] });
-  ok(empty.ok === true && empty.samples?.length === 0 && empty.defaults, "empty templates → samples:[], defaults present");
+  ok(empty.ok === true && empty.defaults && typeof empty.defaults.name === "string" && empty.defaults.description === "", "empty templates → defaults present (empty preset)");
+  const s = empty.samples?.[0];
+  ok(s && typeof s.name === "string" && s.name.startsWith("🐦‍🔥 PhoeniX"), "empty templates → native builder name", JSON.stringify(s?.name));
+  ok(s && typeof s.description === "string" && s.description.includes("\n") && s.description.includes("🔗"), "empty templates → native multi-line description", JSON.stringify(s?.description?.slice(0, 80)));
 }
 
 console.log(`\nRESULT: ${pass} PASS / ${fail} FAIL`);
