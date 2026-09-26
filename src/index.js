@@ -2014,23 +2014,27 @@ const FORMATTER_DEFAULTS = {
 const FORMATTER_SAMPLES = [
   {
     label: '4K Remux',
-    meta: { height: 2160, bytes: 51_611_776_512, sourceLabel: '4KHDHub', serverName: '10Gbps', countryCodes: ['en', 'hi'], format: 'mp4', title: 'Dune.Part.Two.2024.2160p.BluRay.REMUX.HDR.DTS-HD.MA.5.1' },
+    meta: { height: 2160, bytes: 51_611_776_512, sourceLabel: '4KHDHub', serverName: '10Gbps', countryCodes: ['en', 'hi'], format: 'mp4', title: 'Dune Part Two', sourceType: 'BluRay Remux', codec: 'HEVC', audioCodec: 'TrueHD', audioChannels: '5.1', hdr: 'DV,HDR10', releaseGroup: 'FRAM' },
     stream: { name: '🐦‍🔥 PhoeniX · 4K · 4KHDHub · 10Gbps', title: 'Dune Part Two · 2024 · HDR · DTS-HD MA 5.1 · 48.1 GB' },
+    url: 'https://dl.example.com/Dune.Part.Two.2024.2160p.BluRay.Remux.HEVC.mkv', requestType: 'movie', requestId: 'tt15239678',
   },
   {
     label: '1080p Web-DL',
-    meta: { height: 1080, bytes: 3_221_225_472, sourceLabel: 'HDHub4u', serverName: '', countryCodes: ['hi', 'en'], format: 'mp4', title: 'The Batman 2022 1080p WEB-DL DD5.1 H.264-HDHub4u' },
+    meta: { height: 1080, bytes: 3_221_225_472, sourceLabel: 'HDHub4u', serverName: '', countryCodes: ['hi', 'en'], format: 'mp4', title: 'The Batman', sourceType: 'Web-DL', codec: 'AVC', audioCodec: 'DD+', audioChannels: '5.1', releaseGroup: 'HDHub4u' },
     stream: { name: '🐦‍🔥 PhoeniX · 1080p · HDHub4u', title: 'The Batman · 2022 · WEB-DL · DD5.1 · 3.0 GB' },
+    url: 'https://cdn.example/The.Batman.2022.1080p.WEB-DL.mp4', requestType: 'movie', requestId: 'tt1877830',
   },
   {
     label: '1440p QHD',
-    meta: { height: 1440, bytes: 7_032_530_944, sourceLabel: 'VidLink', serverName: '', countryCodes: ['en'], format: 'hls', title: 'Interstellar.2014.1440p.WEB-DL.x264' },
+    meta: { height: 1440, bytes: 7_032_530_944, sourceLabel: 'VidLink', serverName: '', countryCodes: ['en'], format: 'hls', title: 'Interstellar', sourceType: 'Web-DL', codec: 'x264', hdr: 'HDR' },
     stream: { name: '🐦‍🔥 PhoeniX · 1440p · VidLink', title: 'Interstellar · 2014 · WEB-DL · 6.5 GB' },
+    url: 'https://addon.example/proxy?url=https%3A%2F%2Fcdn.example%2Finter.m3u8', requestType: 'movie', requestId: 'tt0816692',
   },
   {
     label: 'HLS Anime',
-    meta: { height: 1080, bytes: 0, sourceLabel: 'HiAnime', serverName: 'MegaPlay', countryCodes: ['ja', 'en'], format: 'hls', title: 'Sousou no Frieren · S2E1 · Sub+Dub' },
+    meta: { height: 1080, bytes: 0, sourceLabel: 'HiAnime', serverName: 'MegaPlay', countryCodes: ['ja', 'en'], format: 'hls', title: 'Sousou no Frieren', sourceType: 'Web-DL', codec: 'HEVC', audioCodec: 'AAC' },
     stream: { name: '🐦‍🔥 PhoeniX · 1080p · HiAnime · MegaPlay', title: 'Sousou no Frieren · S2E1 · Sub+Dub' },
+    url: 'https://addon.example/proxy?url=https%3A%2F%2Fcdn.example%2Ffrieren.m3u8', requestType: 'series', requestId: 'tt209867:2:1',
   },
 ];
 
@@ -2048,6 +2052,9 @@ app.post('/api/formatter-preview', (req, res) => {
         meta: sample.meta,
         stream: sample.stream,
         addonName: ADDON_NAME,
+        url: sample.url,
+        requestType: sample.requestType,
+        requestId: sample.requestId,
       });
       return { label: sample.label, name: formatted.name, description: formatted.description, error: null };
     } catch (e) {

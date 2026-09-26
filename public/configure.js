@@ -45,6 +45,7 @@ const Zap = (p) => _ic(["M13 2 3 14h9l-1 8 10-12h-9l1-8z"], p);
 const ICON = "public/logo.png";
 const LS = {
   theme: "phoenix-theme",
+  savedTemplates: "phoenix-formatter-templates",
   config: "phoenix-config",
   sidebar: "phoenix-sidebar",
   versions: "phoenix-versions",
@@ -89,26 +90,49 @@ const timeoutOptions = [
 
 // Community formatter templates — written for the fields this addon's
 // resolver actually provides (see /api/formatter-preview for live truth).
+// Authentic AIOStreams community formatter templates (the reference
+// implementation's built-in definitions; usenet-release scenarios removed).
+// Rendered by the same engine the resolver runs — see /api/formatter-preview
+// for live truth on this addon's fields.
+// Authentic AIOStreams community formatter templates (the reference
+// implementation's built-in definitions; usenet-release scenarios removed).
+// Rendered by the same engine the resolver runs — see /api/formatter-preview
+// for live truth on this addon's fields.
 const FORMATTER_PRESETS = {
-  prism: {
-    label: "Prism",
-    name: `{stream.resolution::exists["{stream.resolution::replace('4K','🔥 4K UHD')::replace('1440p','🖥️ QHD')::replace('1080p','🚀 FHD')::replace('720p','💿 HD')::replace('480p','💩 SD')::replace('360p','💩 SD')}"||"🎞️ Stream"]}`,
-    description: `{stream.title::exists["{stream.title::title}"||""]}{stream.size::exists["\n📦 {stream.size}"||""]}{stream.languages::exists["\n🗣️ {stream.languages}"||""]}\n📡 {stream.source}{stream.server::exists[" · {stream.server}"||""]} · {addon.name}`,
+  "torrentio": {
+    label: "Torrentio",
+    name: "{stream.proxied[\"🕵️‍♂️ \"||\"\"]}{stream.private[\"🔑 \"||\"\"]}{stream.type::=p2p[\"[P2P] \"||\"\"]}{service.id::exists[\"[{service.shortName}\"||\"\"]}{service.cached[\"+] \"||\" download] \"]}{addon.name} {stream.resolution::exists[\"{stream.resolution}\"||\"Unknown\"]}\n{?{stream.visualTags::join(' | ')}?}",
+    description: "{?ℹ️{stream.message}?}\n{?{stream.folderName}?}\n{?{stream.filename}?}\n{stream.size::>0[\"💾{stream.size::bytes2} \"||\"\"]}{stream.folderSize::>0[\"/ 💾{stream.folderSize::bytes2}\"||\"\"]}{stream.seeders::>=0[\"👤{stream.seeders} \"||\"\"]}{?📅{stream.age} ?}{?⚙️{stream.indexer}?}\n{?{stream.languageEmojis::join(' / ')}?}{stream.subtitles::exists::and::stream.languageEmojis::exists[\" \"||\"\"]}{stream.subtitles::exists[\"Subs / {stream.subtitleEmojis::join(' / ')}\"||\"\"]}\n",
   },
-  tamtaro: {
-    label: "TamTaro",
-    name: `{stream.resolution::exists["{stream.resolution::replace('4K','  4K ')::replace('1440p','  QHD ')::replace('1080p','  FHD ')::replace('720p','  HD ')}"||""]}`,
-    description: `{stream.title}\n{stream.size::exists["📦 {stream.size} "||""]}📡 {stream.source} · {addon.name}`,
+  "torbox": {
+    label: "TorBox",
+    name: "{stream.proxied[\"🕵️‍♂️ \"||\"\"]}{stream.private[\"🔑 \"||\"\"]}{stream.type::=p2p[\"[P2P] \"||\"\"]}{addon.name}{stream.library[\" (Your Media) \"||\"\"]}{service.cached[\" (Instant \"||\" (\"]}{service.id::exists[\"{service.shortName})\"||\"\"]}{? ({stream.resolution})?}",
+    description: "Quality: {stream.quality::exists[\"{stream.quality}\"||\"Unknown\"]}\nName: {stream.filename::exists[\"{stream.filename}\"||\"Unknown\"]}\nSize: {stream.size::>0[\"{stream.size::bytes} \"||\"\"]}{stream.folderSize::>0[\"/ {stream.folderSize::bytes} \"||\"\"]}{?| Source: {stream.indexer} ?}{stream.duration::>0[\"| Duration: {stream.duration::time} \"||\"\"]}\nLanguages: {?{stream.languages::join(', ')}?}{stream.subtitles::exists::and::stream.languages::exists[\" | \"||\"\"]}{?Subtitles: {stream.subtitles::join(', ')}?}\n{?Message: {stream.message}?}",
   },
-  "light-google-drive": {
+  "gdrive": {
+    label: "Google Drive",
+    name: "{stream.proxied[\"🕵️ \"||\"\"]}{stream.private[\"🔑 \"||\"\"]}{stream.type::=p2p[\"[P2P] \"||\"\"]}{?[{service.shortName}?}{service.cached[\"⚡] \"||\"⏳] \"]}{addon.name}{stream.library[\" (Your Media)\"||\"\"]} {?{stream.resolution}?}{stream.seadexBest[\" (Best)\"||\"\"]}{stream.seadex::and::stream.seadexBest::isfalse[\" (SeaDex Alt.)\"||\"\"]}{stream.rseMatched::exists::and::stream.seadex::isfalse::and::stream.rseMatched::string::~T1::or::stream.rseMatched::string::~T2::or::stream.rseMatched::string::~T3::or::stream.rseMatched::string::~T4::or::stream.rseMatched::string::~T5::or::stream.rseMatched::string::~T6::or::stream.rseMatched::string::~T7::or::stream.rseMatched::string::~T8[\" ({stream.rseMatched::first})\"||\"\"]}{stream.regexMatched::exists::and::stream.rseMatched::exists::isfalse::and::stream.seadex::isfalse[\" ({stream.regexMatched})\"||\"\"]}",
+    description: "{?🎥 {stream.quality} ?}{?🎞️ {stream.encode} ?}{?🏷️ {stream.releaseGroup} ?}{?📡 {stream.network} ?}{stream.editions::exists[\"🏆 {stream.editions::join(' | ')} \"||\"\"]}\n{?📺 {stream.visualTags::join(' | ')} ?}{?🎧 {stream.audioTags::join(' | ')} ?}{?🔊 {stream.audioChannels::join(' | ')}?}\n{stream.size::>0[\"📦 {stream.size::sbytes} \"||\"\"]}{stream.folderSize::>0[\"/ {stream.folderSize::sbytes} \"||\"\"]}{stream.bitrate::>0[\"({stream.bitrate::sbitrate})\"||\"\"]}{stream.duration::>0[\"⏱️ {stream.duration::time} \"||\"\"]}{stream.seeders::>0[\"👥 {stream.seeders} \"||\"\"]}{?📅 {stream.age} ?}{?🔍 {stream.indexer}?}\n{?🌎 {stream.languages::join(' | ')}?}{?📝 {stream.subtitles::join(' | ')}?}\n{stream.filename::exists[\"📁\"||\"\"]} {?{stream.folderName}/?}{?{stream.filename}?}\n{?ℹ️ {stream.message}?}\n      ",
+  },
+  "lightgdrive": {
     label: "Light Google Drive",
-    name: `{?{addon.name}?}{stream.resolution::exists[" {stream.resolution}"||""]}`,
-    description: `{stream.title::exists["📁 {stream.title::title}"||""]}{stream.size::exists["\n📦 {stream.size}"||""]}{stream.languages::exists["\n🌐 {stream.languages}"||""]}`,
+    name: "{stream.proxied[\"🕵️ \"||\"\"]}{stream.private[\"🔑 \"||\"\"]}{stream.type::=p2p[\"[P2P] \"||\"\"]}{?[{service.shortName}?}{stream.library[\"☁️\"||\"\"]}{service.cached[\"⚡] \"||\"⏳] \"]}{addon.name}{? {stream.resolution}?}{stream.seadexBest[\" (Best)\"||\"\"]}{stream.seadex::and::stream.seadexBest::isfalse[\" (SeaDex Alt.)\"||\"\"]}{stream.rseMatched::exists::and::stream.seadex::isfalse::and::stream.rseMatched::string::~T1::or::stream.rseMatched::string::~T2::or::stream.rseMatched::string::~T3::or::stream.rseMatched::string::~T4::or::stream.rseMatched::string::~T5::or::stream.rseMatched::string::~T6::or::stream.rseMatched::string::~T7::or::stream.rseMatched::string::~T8[\" ({stream.rseMatched::first})\"||\"\"]}{stream.regexMatched::exists::and::stream.rseMatched::exists::isfalse::and::stream.seadex::isfalse[\" ({stream.regexMatched})\"||\"\"]}",
+    description: "{?📁 {stream.title::title}?}{? ({stream.year})?}{? {stream.seasonEpisode::join(' • ')}?}\n{?🎥 {stream.quality} ?}{?🎞️ {stream.encode} ?}{?🏷️ {stream.releaseGroup}?}{?📡 {stream.network} ?}{stream.editions::exists[\" 🏆 {stream.editions::join(' • ')}\"||\"\"]}\n{?📺 {stream.visualTags::join(' • ')} ?}{?🎧 {stream.audioTags::join(' • ')} ?}{?🔊 {stream.audioChannels::join(' • ')}?}\n{stream.size::>0[\"📦 {stream.size::sbytes} \"||\"\"]}{stream.folderSize::>0[\"/ {stream.folderSize::sbytes} \"||\"\"]}{stream.duration::>0[\"⏱️ {stream.duration::time} \"||\"\"]}{?📅 {stream.age} ?}{?🔍 {stream.indexer}?}\n{?🌐 {stream.languageEmojis::join(' / ')}?}{stream.subtitles::exists[\"📝 {stream.subtitleEmojis::join(' / ')}\"||\"\"]}\n{?ℹ️ {stream.message}?}",
   },
-  minimalistic: {
+  "minimalisticgdrive": {
     label: "Minimalistic",
-    name: `{stream.resolution::exists["{stream.resolution::replace('4K','✨ 4K')::replace('1440p','🖥️ 1440p')::replace('1080p','🧿 1080p')::replace('720p','💿 720p')}"||"N/A"]}`,
-    description: `{stream.title}{stream.size::exists[" · {stream.size}"||""]}`,
+    name: "{stream.resolution::exists[\"{stream.resolution::replace('2160p','✨ 4K')::replace('1440p','📀 2K')::replace('1080p','🧿1080p')::replace('720p','💿720p')}\"||\"N/A\"]}{service.cached[\" 🎫 \"||\" 🎟️ \"]}\n{?{stream.quality::upper}?}\n",
+    description: "{?🔆 {stream.visualTags::join(' • ')}  ?}{?🔊 {stream.audioTags::join(' • ')}?}\n{stream.size::>0[\"📦 {stream.size::sbytes} \"||\"\"]}\n{?🌎 {stream.languages::join(' • ')}?}{?📝 {stream.subtitles::join(' • ')}?}\n",
+  },
+  "prism": {
+    label: "Prism",
+    name: "{stream.resolution::exists[\"{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p','✨ QHD')::replace('1080p','🚀 FHD')::replace('720p','💿 HD')::replace('576p','💩 Low Quality')::replace('480p','💩 Low Quality')::replace('360p','💩 Low Quality')::replace('240p','💩 Low Quality')::replace('144p','💩 Low Quality')}\"||\"💩 Unknown\"]}",
+    description: "{?🎬 {stream.title::title} ?}{?({stream.year}) ?}{?🍂 {stream.formattedSeasons} ?}{?🎞️ {stream.formattedEpisodes}?}{stream.seadexBest[\"🎚️ Best \"||\"\"]}{stream.seadex::and::stream.seadexBest::isfalse[\"🎚️ Alternative\"||\"\"]}{stream.rseMatched::exists::and::stream.seadex::isfalse::and::stream.rseMatched::string::~T1::or::stream.rseMatched::string::~T2::or::stream.rseMatched::string::~T3::or::stream.rseMatched::string::~T4::or::stream.rseMatched::string::~T5::or::stream.rseMatched::string::~T6::or::stream.rseMatched::string::~T7::or::stream.rseMatched::string::~T8[\" 🎚️ {stream.rseMatched::first}\"||\"\"]}{stream.regexMatched::exists::and::stream.rseMatched::exists::isfalse::and::stream.seadex::isfalse[\"🎚️ {stream.regexMatched} \"||\"\"]}\n{?🎥 {stream.quality} ?}{?📺 {stream.visualTags::join(' | ')} ?}{?🎞️ {stream.encode} ?}{stream.duration::>0[\"⏱️ {stream.duration::time} \"||\"\"]}{stream.editions::exists[\"🏆 {stream.editions::join(' | ')} \"||\"\"]}\n{?🎧 {stream.audioTags::join(' | ')} ?}{?🔊 {stream.audioChannels::join(' | ')} ?}{stream.languages::exists[\"🗣️ {stream.languageEmojis::join(' / ')}\"||\"\"]}{stream.subtitles::exists[\"📝 {stream.subtitleEmojis::join(' / ')}\"||\"\"]}\n{stream.size::>0[\"📦 {stream.size::sbytes} \"||\"\"]}{stream.folderSize::>0[\"/ {stream.folderSize::sbytes} \"||\"\"]}{stream.bitrate::>0[\"📊 {stream.bitrate::sbitrate} \"||\"\"]}{service.cached::isfalse::or::stream.type::=p2p::and::stream.seeders::>0[\"🌱 {stream.seeders} \"||\"\"]}\n{?🏷️ {stream.releaseGroup} ?}{?📡 {stream.indexer} ?}{?🎭 {stream.network}?}\n{service.cached[\"⚡Ready \"||\"❌ Not Ready \"]}{service.id::exists[\"({service.shortName}) \"||\"\"]}{stream.library[\"📌 Library \"||\"\"]}{stream.type::=p2p[\"⚠️ P2P \"||\"\"]}{stream.type::=http[\"💻 Web Link \"||\"\"]}{stream.type::=youtube[\"▶️ Youtube \"||\"\"]}{stream.type::=live[\"📺 Live \"||\"\"]}{stream.proxied[\"🔒 Proxied \"||\"\"]}{stream.private[\"🔑 Private \"||\"\"]}🔍{addon.name} \n{?ℹ️ {stream.message}?}\n",
+  },
+  "tamtaro": {
+    label: "TamTaro",
+    name: "{stream.resolution::exists[\"{stream.resolution::replace('2160p','   4K ')::replace('1440p','    2K ')::replace('p','P')}‍\"||\"‍     \"]}{?‍{stream.type::replace('debrid','    ')::replace('p2p','⁽ᵖ²ᵖ⁾')::replace('live','⁽ˡᶦᵛᵉ⁾')::replace('http','⁽ʷᵉᵇ⁾')::replace('info','⁽ᶦⁿᶠᵒ⁾')::replace('statistic','⁽ˢᵗᵃᵗˢ⁾')::replace('external','⁽ᵉˣᵗ⁾')::replace('error','⁽ᵉʳʳᵒʳ⁾')::replace('youtube','⁽ʸᵗ⁾')}‍‍‍?}{service.cached[\"⚡\"||\"‍⏳‍​\"||\"\"]}{?‍‍\\n  〈{stream.quality::title::replace('Bluray Remux','Remux')::replace('Web-dl','Web‍-‍dl')::replace('Hc Hd-rip','HC HDRip')::replace('Hdrip','HDRip')}〉‍     ?}{stream.message::~Download[\"{tools.removeLine}\\n\"||\"\"]}{?‍\\n  {stream.nSeScore::star::replace('⯪','☆')}            ?}{stream.message::~Download[\"{tools.removeLine}\\n\"||\"\"]}",
+    description: "{stream.title::exists[\"{stream.library::istrue[\"☁︎\"||\"{stream.preloading::istrue[\"➤\"||\"✎\"]}\"]}  {stream.date::exists[\"{stream.title::title::truncate(20)}\"||\"{stream.title::title::truncate(15)}\"]}\"||\"\"]}{? · {stream.country} ?}{metadata.queryType::~series[\"{stream.date::exists[\" · {stream.date::date('%-d %b %Y')} \"||\"\"]}\"||\"{stream.date::exists[\" · {stream.date::date('%-d %b %Y')} \"||\"{? ({stream.year::replace('-20', '-')::replace('-19', '-')}) ?}\"]}\"]}{?  {stream.seasonEpisode::join('·')::replace('E','ᴇ')::replace('S','s')::translate('0123456789','₀₁₂₃₄₅₆₇₈₉')}?}\n{?▣  {stream.encode}  ?}{stream.visualTags::exists[\"{stream.visualTags::in('DV','HLG','HDR','HDR10','HDR10+')[\"✦  \"||\"✧  \"]}{stream.visualTags::sort::join(' · ')::replace('HDR · HDR','HDR')::replace('HDR10 · HDR10','HDR10')}  \"||\"\"]}{stream.visualTags::length::<=1::and::stream.audioTags::length::=1::and::stream.audioChannels::length::<=1[\"♬  {stream.audioTags::lsort::join(' · ')::replace('DD · DD','DD')::replace('DTS · DTS','DTS')}{?  ♯ {stream.audioChannels::rsort::join(' · ')}?}\"||\"\"]}\n{stream.visualTags::length::>1::or::stream.audioTags::length::=0::or::stream.audioTags::length::>1::or::stream.audioChannels::length::>1[\"{stream.audioTags::length::>0[\"♬  {stream.audioTags::lsort::join(' · ')::replace('DD · DD','DD')::replace('DTS · DTS','DTS')}  \"||\"\"]}{stream.audioChannels::length::>0[\"♯  {stream.audioChannels::rsort::join(' · ')} \"||\"\"]}\"||\"\"]}\n{stream.size::>0[\"{stream.seasonPack[\"❖ \"||\"◈ \"||\"\"]}{stream.size::>0::and::stream.folderSize::>0::and::stream.size::sbytes::~GB::and::stream.folderSize::sbytes::~GB[\"{stream.size::sbytes::replace(' GB','')}\"||\"{stream.size::sbytes}\"]}\"||\"\"]}{stream.folderSize::>0[\" / {stream.folderSize::sbytes}\"||\"\"]}{? · {stream.bitrate::sbitrate::replace('Mbps','ᴹᵇᵖˢ')::replace('Kbps','ᴷᵇᵖˢ')} ?}{stream.message::~Download[\"{tools.removeLine}\"||\"\"]}{service.cached::isfalse::or::stream.type::=p2p::and::stream.seeders::>0[\"⇄ {stream.seeders}❦ \"||\"\"]}{?· {stream.age}?}\n{stream.proxied::istrue[\"⛊ \"||\"⛉ \"]}{?[{service.shortName}] ?}{addon.name}{stream.private[\" ⚿ ᴘʀɪᴠᴀᴛᴇ \"||\"\"]}{? · {stream.releaseGroup::truncate(13)}?}{stream.message::~Download[\"{tools.removeLine}\n\"||\"\"]}\n{?{stream.subtitles::exists[\"✓\"||\"⛿\"]} {stream.uSmallLanguageCodes::join(' · ')::replace('ꜱ','s')::replace('ᴅᴜᴀʟ ᴀᴜᴅɪᴏ','ᴅᴜᴏ')::replace('ᴅᴜʙʙᴇᴅ','ᴅᴜʙ')} ?}{stream.subbed[\"{stream.uLanguages::exists[\"· sᴜʙ \"||\"⛿ sᴜʙ \"]}\"||\"\"]}{?({stream.uSmallSubtitleCodes::join(' · ')::replace('ꜱ','s')}) ?}{stream.seadex::or::stream.message::length::>0::or::stream.rseMatched::length::>0::or::stream.editions::exists::or::stream.network::exists::or::stream.seScore::>0::or::stream.seScore::<0[\"{stream.uSmallLanguageCodes::length::>2::or::stream.uSmallSubtitleCodes::length::>2::or::stream.rseMatched::remove('TrueHD ATMOS','DD+ ATMOS','ATMOS','TrueHD','DTS-HD MA','FLAC','DTS-HD HRA','DD+','DD','DTS-ES','DTS X','DTS','AAC','Opus','DV (Disk)','DV','HDR10+ Boost','HDR','IMAX Enhanced','IMAX','UHD Streaming Boost','HD Streaming Boost','INTERNAL','No-RlsGroup','FHD','UHD','HD','4K','126811','SiC','FraMeSToR','TheFarm','hallowed','BHDStudio','FLUX','Season Pack')::join(' ')::length::>10[\"\n» \"||\" » \"]}\"||\"\"]}{stream.seadex[\"{stream.seadexBest[\" ʙᴇsᴛ ʀᴇʟᴇᴀsᴇ \"||\" ᴀʟᴛ ʙᴇsᴛ ʀᴇʟᴇᴀsᴇ \"]}\"||\"\"]}{stream.seadex::isfalse::and::stream.rseMatched::length::>0[\"{stream.rseMatched::remove('TrueHD ATMOS','DD+ ATMOS','ATMOS','TrueHD','DTS-HD MA','FLAC','DTS-HD HRA','DD+','DD','DTS-ES','DTS X','DTS','AAC','Opus','DV (Disk)','DV','HDR10+ Boost','HDR','IMAX Enhanced','IMAX','UHD Streaming Boost','HD Streaming Boost','INTERNAL','No-RlsGroup','FHD','UHD','HD','4K','126811','SiC','FraMeSToR','TheFarm','hallowed','BHDStudio','FLUX','Season Pack')::join(' ')::replace('UHD ','')::replace('HD ','')::replace('Movies Anywhere','MA')::translate('0123456789','₀₁₂₃₄₅₆₇₈₉')::smallcaps::replace('ꜱ','s')} \"||\"\"]}{stream.seadex::isfalse::and::stream.rseMatched::length::>0::isfalse::and::stream.network::exists[\"{stream.network::smallcaps::replace('ꜱ','s')} \"||\"\"]}{stream.seadex::isfalse::and::stream.rseMatched::length::>0::isfalse::and::stream.network::exists::isfalse::and::stream.editions::exists[\"{stream.editions::join(' ')::remove('Edition')::smallcaps::replace('ꜱ','s')} \"||\"\"]}{stream.seScore::>0::or::stream.seScore::<0[\"{stream.seScore::string::translate('0123456789','₀₁₂₃₄₅₆₇₈₉')}\"||\"\"]}{stream.message::~Download[\"{tools.removeLine}\"||\"\"]}{service.cached::istrue::and::stream.message::~Download::istrue[\"\n➥ DL Stream\"||\"\"]}",
   },
 };
 
@@ -342,6 +366,12 @@ function App() {
   const [formatterJsonOpen, setFormatterJsonOpen] = useState(false);
   const [formatterJsonText, setFormatterJsonText] = useState("");
   const [formatterJsonError, setFormatterJsonError] = useState("");
+  // Task 100: saved-template library — unlimited entries in localStorage,
+  // with file export/import so setups can move between browsers/devices.
+  const [savedTemplates, setSavedTemplates] = useState([]);
+  const [templateLabel, setTemplateLabel] = useState("");
+  const [templateLibraryMsg, setTemplateLibraryMsg] = useState("");
+  const importFileRef = useRef(null);
 
   const [copyState, setCopyState] = useState("Copy Addon URL");
   const [qualityDrawerOpen, setQualityDrawerOpen] = useState(false);
@@ -490,6 +520,102 @@ function App() {
       scheduleFormatterPreview({ name, description });
     } catch {
       setFormatterJsonError("Could not parse that as JSON — paste the whole {\"name\": …, \"description\": …} object.");
+    }
+  }
+
+  // ── Task 100: saved-template library (no limit) ──
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS.savedTemplates);
+      const list = raw ? JSON.parse(raw) : [];
+      setSavedTemplates(Array.isArray(list) ? list.filter((t) => t && typeof t.name === "string" && typeof t.description === "string") : []);
+    } catch { setSavedTemplates([]); }
+  }, []);
+  function persistTemplates(list) {
+    setSavedTemplates(list);
+    try { localStorage.setItem(LS.savedTemplates, JSON.stringify(list)); } catch {}
+  }
+  function saveCurrentTemplate() {
+    if (!formatterName.trim() && !formatterDescription.trim()) {
+      setTemplateLibraryMsg("Nothing to save — both templates are empty.");
+      return;
+    }
+    const entry = {
+      id: `t${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+      label: templateLabel.trim() || `Template ${savedTemplates.length + 1}`,
+      name: formatterName, description: formatterDescription,
+      savedAt: new Date().toISOString(),
+    };
+    persistTemplates([...savedTemplates, entry]);
+    setTemplateLabel("");
+    setTemplateLibraryMsg(`Saved "${entry.label}" (${savedTemplates.length + 1} stored).`);
+  }
+  function loadTemplate(id) {
+    const entry = savedTemplates.find((t) => t.id === id);
+    if (!entry) return;
+    setFormatterName(entry.name || "");
+    setFormatterDescription(entry.description || "");
+    setFormatterPreset(null);
+    scheduleFormatterPreview({ name: entry.name || "", description: entry.description || "" });
+    setTemplateLibraryMsg(`Loaded "${entry.label}".`);
+  }
+  function deleteTemplate(id) {
+    const entry = savedTemplates.find((t) => t.id === id);
+    persistTemplates(savedTemplates.filter((t) => t.id !== id));
+    setTemplateLibraryMsg(entry ? `Deleted "${entry.label}".` : "Template deleted.");
+  }
+  function exportTemplatesFile() {
+    const payload = {
+      app: "PhoeniX", kind: "formatter-templates", version: 1,
+      exportedAt: new Date().toISOString(),
+      templates: savedTemplates.map(({ id, label, name, description, savedAt }) => ({ id, label, name, description, savedAt })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "phoenix-formatter-templates.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setTemplateLibraryMsg(`Exported ${savedTemplates.length} template${savedTemplates.length === 1 ? "" : "s"}.`);
+  }
+  function normalizeTemplateEntry(raw, index) {
+    const name = typeof raw?.name === "string" ? raw.name : "";
+    const description = typeof raw?.description === "string" ? raw.description : "";
+    if (!name.trim() && !description.trim()) return null;
+    return {
+      id: `t${Date.now()}i${index}${Math.random().toString(36).slice(2, 6)}`,
+      label: (typeof raw?.label === "string" && raw.label.trim()) || `Imported ${index + 1}`,
+      name, description,
+      savedAt: typeof raw?.savedAt === "string" ? raw.savedAt : new Date().toISOString(),
+    };
+  }
+  async function importTemplatesFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.templates) ? parsed.templates : [parsed];
+      const seen = new Set(savedTemplates.map((t) => `${t.name}\u0000${t.description}`));
+      const added = [];
+      let skipped = 0;
+      list.forEach((raw, i) => {
+        const entry = normalizeTemplateEntry(raw, i);
+        if (!entry) { skipped++; return; }
+        const key = `${entry.name}\u0000${entry.description}`;
+        if (seen.has(key)) { skipped++; return; }
+        seen.add(key);
+        added.push(entry);
+      });
+      if (added.length) persistTemplates([...savedTemplates, ...added]);
+      setTemplateLibraryMsg(added.length
+        ? `Imported ${added.length} template${added.length === 1 ? "" : "s"}${skipped ? ` (${skipped} skipped)` : ""}.`
+        : `Nothing new imported${skipped ? ` (${skipped} skipped)` : ""}.`);
+    } catch {
+      setTemplateLibraryMsg("Import failed — that file is not valid JSON.");
     }
   }
 
@@ -1072,12 +1198,30 @@ function App() {
                   h("button", { type: "button", className: `preset-chip${formatterPreset === "default" ? " is-active" : ""}`, onClick: handleUseDefaultFormatter }, "Default"),
                   Object.entries(FORMATTER_PRESETS).map(([presetKey, preset]) => h("button", { key: presetKey, type: "button", className: `preset-chip${formatterPreset === presetKey ? " is-active" : ""}`, onClick: () => applyFormatterPreset(presetKey) }, preset.label)),
                 ),
+                // Task 100: saved-template library — save unlimited personal
+                // templates, reload them any time, move them via JSON files.
+                h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", marginTop: "12px" } },
+                  h("input", { value: templateLabel, onChange: (e) => setTemplateLabel(e.target.value), placeholder: "Name this template…", "aria-label": "Template name", style: { flex: "1 1 160px", minWidth: "140px", padding: "6px 10px", fontSize: "0.82rem" } }),
+                  h("button", { type: "button", className: "preset-chip", onClick: saveCurrentTemplate }, "Save current"),
+                  h("button", { type: "button", className: "clear-button", onClick: exportTemplatesFile, disabled: savedTemplates.length === 0, style: { opacity: savedTemplates.length === 0 ? 0.45 : 1 } }, "Export file"),
+                  h("button", { type: "button", className: "clear-button", onClick: () => importFileRef.current?.click() }, "Import file"),
+                  h("input", { ref: importFileRef, type: "file", accept: "application/json,.json", style: { display: "none" }, "aria-hidden": "true", onChange: importTemplatesFile }),
+                ),
+                savedTemplates.length
+                  ? h("div", { className: "preset-bar", role: "list", "aria-label": "Saved templates" },
+                      savedTemplates.map((t) => h("span", { key: t.id, role: "listitem", style: { display: "inline-flex", alignItems: "center", gap: "4px", border: "1px solid var(--line)", borderRadius: "6px", padding: "2px 4px 2px 10px", background: "var(--surface-2)" } },
+                        h("button", { type: "button", className: "preset-chip", style: { padding: "2px 6px" }, title: "Load this template", onClick: () => loadTemplate(t.id) }, t.label),
+                        h("button", { type: "button", className: "clear-button", style: { padding: "2px 6px", fontSize: "0.72rem" }, "aria-label": `Delete ${t.label}`, title: "Delete", onClick: () => deleteTemplate(t.id) }, "✕"),
+                      )),
+                    )
+                  : h("p", { style: { margin: "8px 0 0", color: "var(--subtle)", fontSize: "0.76rem" } }, "No saved templates yet — set templates above and press Save current, or Import a file."),
+                templateLibraryMsg ? h("p", { style: { margin: "6px 0 0", color: "var(--muted)", fontSize: "0.78rem" } }, templateLibraryMsg) : null,
                 h("label", { style: { display: "block", fontSize: "0.8rem", color: "var(--muted)", margin: "10px 0 4px" } }, "Name template"),
                 h("textarea", { value: formatterName, onChange: (e) => { setFormatterName(e.target.value); setFormatterPreset(null); setFormatterPreview(null); }, rows: 4, spellCheck: false, placeholder: "{stream.resolution} • {stream.source}", style: textareaStyle }),
                 h("label", { style: { display: "block", fontSize: "0.8rem", color: "var(--muted)", margin: "10px 0 4px" } }, "Description template"),
                 h("textarea", { value: formatterDescription, onChange: (e) => { setFormatterDescription(e.target.value); setFormatterPreset(null); setFormatterPreview(null); }, rows: 4, spellCheck: false, placeholder: "{stream.title} • {stream.size::bytes} • {addon.name}", style: textareaStyle }),
                 h("p", { style: { margin: "10px 0 0", color: "var(--subtle)", fontSize: "0.78rem" } },
-                  "Template syntax over this addon's real stream fields: resolution, size, source, server, languages, title, type, addon.name. Leave empty for the default look. Shared badge packs that come as one {\"name\": …, \"description\": …} JSON object go through Import JSON above."),
+                  "Template syntax: {stream.resolution}, {stream.size::bytes}, {stream.languages}, {stream.quality}, {stream.filename}, conditionals like {field::exists[\"A\"||\"B\"]}, chains with ::and::/::or::, optional groups {? … ?}, and {tools.newLine}. Leave empty for the default look. Save favourites above, and move them between devices with Export/Import file."),
                 formatterPreview != null && typeof formatterPreview === "object" && formatterPreview.ok && Array.isArray(formatterPreview.samples)
                   ? h("div", { className: "formatter-preview" },
                       formatterPreview.samples.map((sample) =>

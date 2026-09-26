@@ -1435,6 +1435,15 @@ export class StreamResolver {
             meta,
             stream: { name: builtName, title: builtTitle },
             addonName: ADDON_LABEL,
+            // Task 100: full template context — config whitelist for {user.*},
+            // request identity for {metadata.*}, final URL for proxied/
+            // filename/container fields.
+            config: ac,
+            requestId: typeof id === 'object' ? (id.id || id) : id,
+            requestType: type,
+            requestSeason: typeof id === 'object' && id ? id.season : undefined,
+            requestEpisode: typeof id === 'object' && id ? id.episode : undefined,
+            url: finalUrl.href,
           });
           builtName = formatted.name;
           builtTitle = formatted.description;
