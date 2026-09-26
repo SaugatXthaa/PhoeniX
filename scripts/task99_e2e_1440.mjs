@@ -94,7 +94,7 @@ const DESC_TPL = 'SZ{stream.size::exists["={stream.size}"||"=none"]} · {stream.
 {
   const r = await j(`${BASE}/${encodeURIComponent(seg({ source_videasyto: 'on', formatter_name: NAME_TPL, formatter_description: DESC_TPL }))}/stream/movie/tt1375666.json`);
   const streams = r.body?.streams || [];
-  const nameRe = /^PX \[(4K|1440p|1080p|720p|480p|360p|\?)\] .+/;
+  const nameRe = /^PX \[(4K|2160p|1440p|1080p|720p|480p|360p|\?)\] .+/;
   const descRe = /^SZ=(.+|none) · .+/;
   const badName = streams.filter(s => !nameRe.test(s.name || '')).length;
   const badDesc = streams.filter(s => !descRe.test((s.title || '').replace(/\n.*/s, ''))).length;
@@ -104,8 +104,11 @@ const DESC_TPL = 'SZ{stream.size::exists["={stream.size}"||"=none"]} · {stream.
   // resolution label the same card carries in its default naming (run w/o formatter).
   const d = await j(`${BASE}/stream/movie/tt1375666.json?sources=videasyto`);
   const dLabels = (d.body?.streams || []).map(s => heightLabel(s.name)).sort();
-  const fLabels = streams.map(s => (/\[([^\]]+)\]/.exec(s.name || '') || [])[1] || '?').sort();
-  const same = dLabels.length === fLabels.length && dLabels.every((l, i) => (l === 'unknown' ? true : fLabels[i] === l));
+  // Task 100: the formatter emits the AIOStreams canonical form ('2160p'),
+  // while default card naming uses '4K' — same tier, both documented.
+  const canonical = (l) => (l === '4K' ? '2160p' : l);
+  const fLabels = streams.map(s => canonical((/\[([^\]]+)\]/.exec(s.name || '') || [])[1] || '?')).sort();
+  const same = dLabels.length === fLabels.length && dLabels.every((l, i) => (l === 'unknown' ? true : fLabels[i] === canonical(l)));
   ok('formatter resolution matches the card own default label per position', same, `default=[${dLabels.join(',')}] formatted=[${fLabels.join(',')}]`);
 }
 {

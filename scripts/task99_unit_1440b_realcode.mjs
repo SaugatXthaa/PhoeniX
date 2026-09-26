@@ -76,24 +76,27 @@ console.log('── formatter engine (real formatter.cjs): 1440p fields ──')
 {
   const meta = { height: 1440, bytes: 7_032_530_944, sourceLabel: 'VidLink', format: 'hls', title: 'Interstellar.2014.1440p.WEB-DL.x264' };
   const fields = fieldsForStream(meta, { name: 'n', title: 't' }, 'PhoeniX');
-  ok('stream.resolution = 1440p', fields['stream.resolution'] === '1440p');
-  ok('stream.size humanized', fields['stream.size'] === '6.5 GB', fields['stream.size']);
+  // Task 100: fields are nested sections now (AIOStreams shape)
+  ok('stream.resolution = 1440p', fields.stream?.resolution === '1440p');
+  // Task 100: size is the raw byte NUMBER (AIOStreams contract); humanize via ::bytes
+  ok('stream.size numeric bytes', fields.stream?.size === 7_032_530_944, String(fields.stream?.size));
 }
 {
   const out = formatStream({
     nameTemplate: '{stream.resolution::exists["Q={stream.resolution}"||"Q=?"]}',
-    descriptionTemplate: '{stream.size::exists["SZ={stream.size}"||"SZ=none"]}',
+    descriptionTemplate: '{stream.size::exists["SZ={stream.size::bytes}"||"SZ=none"]}',
     meta: { height: 1440, bytes: 7_032_530_944, sourceLabel: 'VidLink' },
     stream: { name: 'orig', title: 'origT' },
     addonName: 'PhoeniX',
   });
-  ok('QHD card renders 1440p through the real engine', out.name === 'Q=1440p' && out.description === 'SZ=6.5 GB', JSON.stringify(out));
+  ok('QHD card renders 1440p through the real engine', out.name === 'Q=1440p' && out.description === 'SZ=7.03 GB', JSON.stringify(out));
 }
 {
-  // Prism preset must now have a 1440p variant rendering path (replace chain)
-  const prism = `{stream.resolution::exists["{stream.resolution::replace('2160p','🔥 4K UHD')::replace('1080p','🚀 FHD')::replace('720p','💿 HD')::replace('480p','💩 SD')::replace('360p','💩 SD')}"||"🎞️ Stream"]}`;
+  // Task 100: resolution values are AIOStreams-canonical — a template carrying
+  // the OLD '4K' replace token passes 2160p through untouched (honest label)
+  const prism = `{stream.resolution::exists["{stream.resolution::replace('4K','🔥 4K UHD')::replace('1080p','🚀 FHD')}"||"🎞️ Stream"]}`;
   const out = renderTemplate(prism, fieldsForStream({ height: 1440, bytes: 1, sourceLabel: 'S' }, { name: 'n', title: 't' }, 'PhoeniX'));
-  ok('Prism-style template passes 1440p through untouched (honest label)', out === '1440p', out);
+  ok('Old-token Prism template passes 1440p through untouched (honest label)', out === '1440p', out);
 }
 
 console.log('── formatter fail-open (real engine, malformed template) ──');
