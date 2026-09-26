@@ -27,7 +27,18 @@ const RETRY_DELAY_MS = 2500;
 const SERVER_CATEGORIES = [
   { buttonIncludes: 'FSLv2', buttonExcludes: '', label: 'HubCloud (FSLv2)', extractorId: 'hubcloud_fslv2', priority: 4, seekable: true },
   { buttonIncludes: 'FSL', buttonExcludes: 'FSLv2', label: 'HubCloud (FSL)', extractorId: 'hubcloud_fsl', priority: 5, seekable: true },
-  { buttonIncludes: '10Gbps', buttonExcludes: '', label: 'HubCloud (10Gbps)', extractorId: 'hubcloud_fast', priority: 2, seekable: true },
+  // Task 98: the 10Gbps button now points to pixel.hubcloud.ist/?id=<hex> —
+  // an HTML 302-CHAIN (pixel.hubcloud.ist → pixel.<rand>.workers.dev →
+  // gamerxyt.com/dl.php?link=<DIRECT>) whose link= param IS the final direct
+  // file URL — measured live as video-downloads.googleusercontent.com (the
+  // same class hdhub4u's CDN button yields). The old design shipped the raw
+  // pixel.hubcloud.* HTML page URL, which the StreamResolver filter then
+  // dropped entirely ("dead workers 500" era comment) — so every 10Gbps
+  // card vanished. resolvePixelChain: true makes the extractor walk the 302
+  // chain server-side and emit the FINAL direct URL (range-proxy-wrapped for
+  // google-family per HubExtractor's CDN convention) — the same playable +
+  // seekable form other addons deliver.
+  { buttonIncludes: '10Gbps', buttonExcludes: '', label: 'HubCloud (10Gbps)', extractorId: 'hubcloud_fast', priority: 2, seekable: true, resolvePixelChain: true },
   // PixelServer : 2 must come BEFORE PixelServer — otherwise 'PixelServer'
   // matches first and 'PixelServer : 2' (which links to pixeldrain.dev)
   // is never tested.
@@ -155,7 +166,9 @@ export class HubCloud extends Extractor {
     super(fetcher, logger);
     this.id = 'hubcloud';
     this.label = 'HubCloud';
-    this.cacheVersion = 13;
+    // Task 98: cacheVersion 13 → 14 — 10Gbps cards now ship the resolved
+    // final direct URL instead of the raw pixel.hubcloud.* page URL.
+    this.cacheVersion = 14;
     // Short TTL (30s) — HubCloud workers.dev URLs contain session tokens
     // that expire quickly. With 5min TTL, cached URLs would be stale
     // by the time Stremio plays them, causing 403 "Access Denied".
@@ -265,6 +278,31 @@ export class HubCloud extends Extractor {
             // Apply URL transform if the category has one (e.g. PixelDrain
             // converts /u/{id} viewer page → /api/file/{id})
             const finalUrl = category.transformUrl ? category.transformUrl(href) : href;
+            // Task 98: 10Gbps / pixel-chain class — resolve the 302 chain to
+            // the FINAL direct file URL before emitting the card (see the
+            // SERVER_CATEGORIES note). googleusercontent finals get the
+            // /range-proxy wrap (HubExtractor 'HubCloud (CDN)' convention);
+            // other direct finals ship as-is. Resolution failure = skip (the
+            // unresolvable pixel page was dropped by the resolver filter
+            // anyway — this path only ever ADDS cards).
+            let emittedUrl = finalUrl;
+            if (category.resolvePixelChain) {
+              const resolved = await this.resolvePixelChain(finalUrl);
+              if (!resolved) {
+                this.logger.warn(`[hubcloud] 10Gbps pixel chain unresolved — skipping: ${String(finalUrl).slice(0, 90)}`);
+                continue;
+              }
+              if (/googleusercontent\.com/i.test(new URL(resolved).hostname)) {
+                // google-family: hard-stalls datacenter egress — ship the
+                // /range-proxy 302-to-direct form (Task 62 semantics; the
+                // Task 96 SeekGate auto-upgrades it if google honors Range).
+                const proxyUrl = new URL('/range-proxy', ctx.hostUrl);
+                proxyUrl.searchParams.set('url', resolved);
+                emittedUrl = proxyUrl.href;
+              } else {
+                emittedUrl = resolved;
+              }
+            }
             // Task 92: liveness gate for download-class URLs (workers.dev token
             // files that flap 206↔403). Range-GET the URL with its Referer;
             // one flap-tolerant retry after a short delay; drop on persistent
@@ -276,9 +314,25 @@ export class HubCloud extends Extractor {
                 continue;
               }
             }
+            // Task 98: the pixel chain is resolved server-side, so the
+            // liveness gate above must probe the FINAL url, not the (never
+            // shipped) pixel page. For range-proxy-wrapped google finals the
+            // gate is skipped entirely — google hard-stalls datacenter Range
+            // probes (Task 62) and the fresh-per-resolve token makes a
+            // confirmed 404 rare; the /range-proxy 302 form is the proven
+            // playable shape. Sanity-guard the URL still.
+            if (category.validate && !category.resolvePixelChain && emittedUrl !== finalUrl) {
+              const ok = await this.validateStreamUrl(emittedUrl, meta.referer ?? url.href);
+              if (!ok) {
+                this.logger.warn(`[hubcloud] dropping dead Download URL (resolved): ${String(emittedUrl).slice(0, 90)}`);
+                continue;
+              }
+            }
             classified.push({
-              url: new URL(finalUrl),
-              format: Format.unknown,
+              url: new URL(emittedUrl),
+              // Task 98: google-family range-proxy cards use Format.mp4
+              // (HubExtractor CDN convention); unknown keeps the sniffer path.
+              format: emittedUrl !== finalUrl && /\/range-proxy\?/.test(emittedUrl) ? Format.mp4 : Format.unknown,
               ttl: HUBCLOUD_CACHE_TTL,
               label: category.label,
               meta: {
@@ -346,6 +400,73 @@ export class HubCloud extends Extractor {
       }
     }
     return false;
+  }
+
+  /**
+   * Task 98: resolve the 10Gbps pixel redirect chain to the FINAL direct file
+   * URL. Measured live chain:
+   *   pixel.hubcloud.ist/?id=<hex>            → 302
+   *   pixel.<rand>.workers.dev/?id=<hex>      → 302
+   *   gamerxyt.com/dl.php?link=<DIRECT-URL>   (link param IS the final file:
+   *                                            video-downloads.googleusercontent.com)
+   * Design: redirect:'manual' walk (max 5 hops, 8s timeout each, bodies
+   * cancelled immediately — Task 41 OOM doctrine). At every hop the Location
+   * is checked for the dl.php?link= fast path. If a 200 HTML page is met
+   * instead (chain shape drift), a 64KB-capped body read goes through the
+   * same REDIRECT_STRATEGIES used for drive pages. Returns the final URL
+   * string, or null (caller skips the card — the raw pixel page was dropped
+   * by the StreamResolver filter anyway, so this path only ever ADDS cards).
+   */
+  async resolvePixelChain(urlStr) {
+    let current = urlStr;
+    try {
+      for (let hop = 0; hop < 5; hop++) {
+        let parsed;
+        try { parsed = new URL(current); } catch { return null; }
+        // dl.php fast path — the link param is the final direct URL (raw or
+        // encoded both parse correctly via searchParams)
+        if (parsed.pathname === '/dl.php') {
+          const link = parsed.searchParams.get('link');
+          if (link && /^https?:\/\//i.test(link)) return link;
+        }
+        let res;
+        try {
+          res = await fetch(parsed.href, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', Referer: 'https://gamerxyt.com/' },
+            redirect: 'manual',
+            signal: AbortSignal.timeout(8000),
+          });
+        } catch { return null; } // our-vantage network flake — unresolved, skip
+        try { res.body?.cancel?.(); } catch {}
+        const loc = res.headers.get('location');
+        if (res.status >= 300 && res.status < 400 && loc) {
+          current = new URL(loc, parsed).href;
+          continue;
+        }
+        if (res.status === 200) {
+          // Shape drift guard: capped HTML read → reuse the drive-page
+          // redirect strategies (var url= / meta refresh / location.href …)
+          let html = '';
+          try {
+            if (res.body) {
+              const reader = res.body.getReader();
+              let got = 0;
+              while (got < 65536) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                html += Buffer.from(value).toString('latin1', 0, Math.min(value.length, 65536 - got));
+                got += value.length;
+              }
+              try { await reader.cancel(); } catch {}
+            }
+          } catch {}
+          const hit = this.extractRedirectUrl(html);
+          return hit && /^https?:\/\//i.test(hit) ? hit : null;
+        }
+        return null; // 403/404/500 … — chain dead (documented worker 500 class)
+      }
+    } catch { return null; }
+    return null;
   }
 
   extractRedirectUrl(html) {

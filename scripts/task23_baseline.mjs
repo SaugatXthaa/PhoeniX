@@ -307,7 +307,16 @@ async function runChecks(child, logFile, bootLines) {
   const allStreams = [...(mv.json?.streams || []), ...(sr.json?.streams || [])];
   const direct = allStreams.filter(s => {
     const u = s.url || '';
-    return /^https?:\/\//.test(u) && !/\.m3u8($|\?)/i.test(u) && !/\/proxy\?/.test(u) && !/(^|\.)workers\.dev$/i.test(new URL(u).hostname || '');
+    // Task 98: also exclude /range-proxy cards and any self-hosted (loopback)
+    // URL — the Task 98 pixel-chain fix added ~20 legitimate /range-proxy
+    // google-family cards to the merged catalog and they filled the
+    // candidate pool; proxying our own range-proxy endpoint through /proxy
+    // is self-referential (502). Purpose of the check unchanged: a REAL
+    // direct file card must proxy with 206 + EBML.
+    let host = '';
+    try { host = new URL(u).hostname || ''; } catch { return false; }
+    const selfHosted = /^127\.|^localhost$|^0\.0\.0\.0$/.test(host);
+    return /^https?:\/\//.test(u) && !/\.m3u8($|\?)/i.test(u) && !/\/proxy\?/.test(u) && !/\/range-proxy\?/.test(u) && !selfHosted && !/(^|\.)workers\.dev$/i.test(host);
   });
   let proxyOk = false, proxyDetail = 'no direct candidate';
   for (const cand of direct.slice(0, 8)) {
