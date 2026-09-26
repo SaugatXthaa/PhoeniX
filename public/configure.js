@@ -1006,7 +1006,7 @@ function App() {
                   ),
                 ),
                 h("div", { className: "option-block" },
-                  h("span", { className: "option-label" }, "Sort streams", h("span", { className: "help-icon", "data-tooltip": "Resolutions always stay grouped (4K first, then 1080p, …). Default keeps the per-provider arrival order inside each group; Size puts the biggest files first inside each group." }, "?")),
+                  h("span", { className: "option-label" }, "Sort streams", h("span", { className: "help-icon", "data-tooltip": "Resolutions always stay grouped (4K first, then 1080p, …). Default uses the addon's quality-first ranking inside each group; Size puts the biggest files first inside each group. Streams without a known size keep their normal position." }, "?")),
                   h("div", { className: "segmented", role: "group", "aria-label": "Sort streams" },
                     [{ value: "quality", label: "Default" }, { value: "size", label: "Size" }].map((opt) => h("button", { type: "button", key: opt.value, className: `segmented-btn${sortBy === opt.value ? " is-active" : ""}`, "aria-pressed": sortBy === opt.value, onClick: () => setSortBy(opt.value) }, opt.label)),
                   ),

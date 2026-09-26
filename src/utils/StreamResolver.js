@@ -1230,6 +1230,24 @@ export class StreamResolver {
           return (Number(b.meta?.priority) || 0) - (Number(a.meta?.priority) || 0);
         });
       }
+
+      // sort_by=size: "biggest files first inside each group" (the configure
+      // UI's Sort=Size contract). Re-ranks within each height tier by bytes
+      // DESC, overriding the provider clustering above for this mode. Cards
+      // with a known size lead; unknown-size cards (cannot be compared —
+      // fail-open contract) keep priority order after them.
+      if (ac.sortBy === 'size') {
+        urlResults.sort((a, b) => {
+          if (a.error || b.error) return a.error ? -1 : 1;
+          if (a.isExternal || b.isExternal) return a.isExternal ? 1 : -1;
+          const h = heightOf(b) - heightOf(a);
+          if (h !== 0) return h;
+          const ba = bytesOf(a) || 0, bb = bytesOf(b) || 0;
+          if (ba > 0 && bb > 0 && ba !== bb) return bb - ba;
+          if ((ba > 0) !== (bb > 0)) return ba > 0 ? -1 : 1;
+          return (Number(b.meta?.priority) || 0) - (Number(a.meta?.priority) || 0);
+        });
+      }
     }
 
     // Build streams
