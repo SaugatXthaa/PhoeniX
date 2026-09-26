@@ -34,13 +34,13 @@ const SOURCE_TAGS = {
   'moviebox':       ['Fast', '1080p', 'Regional', 'Anime', 'Indie'],
   'cinewave':       ['HLS', '4K', '1080p', 'Mainstream', 'Series', 'Subtitles'],
   'vidfast':        ['HLS', '4K', '1080p', 'Mainstream', 'Series'],
-  'vidlink2':       ['HLS', '1080p', 'Mainstream', 'Classic TV', 'Fast'],
+  'vidlink2':       ['HLS', '1440p', '1080p', 'Mainstream', 'Classic TV', 'Fast'],
   'vidking':        ['HLS', '4K', '1080p', 'Multi-Server', 'Series'],
   'vidsrcsbs':      ['HLS', '1080p', 'Mainstream'],
   'watchseries':    ['HLS', '1080p', 'Series', 'Classic TV'],
   'necro':          ['HLS', '1080p', 'Multi-Source'],
   'videasy':        ['HLS', '4K', '1080p', 'Multi-Server', 'Subtitles'],
-  'videasyto':      ['HLS', '4K', '1080p', 'Multi-Server', 'Subtitles'],
+  'videasyto':      ['HLS', '4K', '1440p', '1080p', 'Multi-Server', 'Subtitles'],
   'cineby':         ['HLS', '4K', '1080p', 'Multi-Server', 'Anime'],
   'cinebyrocks':    ['HLS', '4K', '1080p', 'Multi-Server', 'Anime'],
   'zxcstream':      ['Player page', '1080p', 'Mainstream'],
@@ -54,7 +54,7 @@ const SOURCE_TAGS = {
   'framextv':       ['HLS', '4K', '1080p', 'Anime', 'Subtitles'],
   'cinejoyaio':     ['HLS', '4K', '1080p', 'Subtitles', 'Series'],
   'atlantic':       ['HLS', '4K', '1080p', 'Multi-Audio', 'Anime'],
-  'stellar':        ['HLS', '4K', '1080p', 'Mainstream'],
+  'stellar':        ['HLS', '4K', '1440p', '1080p', 'Mainstream'],
   'anikoto':        ['Anime', 'HLS', 'Subtitles', 'Dub'],
   'anikototv':      ['Anime', 'HLS', 'Series'],
   'anikage':        ['Anime', 'HLS', 'Dub', 'Series'],
@@ -122,7 +122,7 @@ function configFromQuery(query) {
   return out;
 }
 
-const RANKS = [2160, 1080, 720, 480, 360];
+const RANKS = [2160, 1440, 1080, 720, 480, 360];
 
 // Normalize a raw config map into the resolved options the resolver and the
 // /stream route consume. Anything not explicitly configured stays "unset"
@@ -169,7 +169,12 @@ function normalizeConfig(raw, { allSourceIds } = {}) {
   const heights = [];
   let sawRes = false;
   for (const rank of RANKS) {
-    const v = raw[`res_${rank}`];
+    let v = raw[`res_${rank}`];
+    // Backward compat: installs configured before the 1440p option existed
+    // carry no res_1440 key — QHD rode the 1080p tier then, so it inherits
+    // the 1080p toggle's state. The current UI always emits res_1440
+    // explicitly (on AND off), so new installs are never affected.
+    if (rank === 1440 && v == null) v = raw.res_1080;
     if (v != null) {
       sawRes = true;
       if (v === 'on' || v === '1' || v === 'true') heights.push(rank);
@@ -207,11 +212,20 @@ function normalizeConfig(raw, { allSourceIds } = {}) {
     if (!k.startsWith('quality_limit_')) continue;
     // key: quality_limit_<sourceId>_<rank>
     const rest = k.slice('quality_limit_'.length);
-    const m = /^(.+)_(2160|1080|720|480|360)$/.exec(rest);
+    const m = /^(.+)_(2160|1440|1080|720|480|360)$/.exec(rest);
     if (!m) continue;
     const n = Number(v);
     if (!Number.isFinite(n) || n < 0) continue;
     if (n > 0 || n === 0) { caps[`${m[1]}_${m[2]}`] = Math.round(n); cfg.hasAny = true; }
+  }
+  // Backward compat for pre-1440p installs: the 1080p cap governed QHD cards
+  // too (they shared the tier before 1440p got its own checkbox), so mirror
+  // every <src>_1080 cap onto <src>_1440. Installs that carry an explicit
+  // res_1440 key are new-style and keep fully independent per-tier caps.
+  if (raw.res_1440 == null) {
+    for (const [k, v] of Object.entries(caps)) {
+      if (k.endsWith('_1080')) caps[`${k.slice(0, -5)}_1440`] = v;
+    }
   }
   if (Object.keys(caps).length) cfg.qualityCaps = caps;
 

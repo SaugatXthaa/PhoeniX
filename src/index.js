@@ -86,7 +86,7 @@ function manifestConfigArray() {
   for (const s of sources) {
     cfg.push({ key: `source_${s.id}`, type: 'checkbox', title: s.label || s.id, default: 'checked' });
   }
-  for (const [rank, label] of [[2160, '4K'], [1080, '1080p'], [720, '720p'], [480, '480p'], [360, '360p']]) {
+  for (const [rank, label] of [[2160, '4K'], [1440, '1440p'], [1080, '1080p'], [720, '720p'], [480, '480p'], [360, '360p']]) {
     cfg.push({ key: `res_${rank}`, type: 'checkbox', title: label, default: 'checked' });
   }
   cfg.push({ key: 'subtitles_disabled', type: 'checkbox', title: 'Disable subtitles', default: 'unchecked' });
@@ -2021,6 +2021,11 @@ const FORMATTER_SAMPLES = [
     label: '1080p Web-DL',
     meta: { height: 1080, bytes: 3_221_225_472, sourceLabel: 'HDHub4u', serverName: '', countryCodes: ['hi', 'en'], format: 'mp4', title: 'The Batman 2022 1080p WEB-DL DD5.1 H.264-HDHub4u' },
     stream: { name: '🐦‍🔥 PhoeniX · 1080p · HDHub4u', title: 'The Batman · 2022 · WEB-DL · DD5.1 · 3.0 GB' },
+  },
+  {
+    label: '1440p QHD',
+    meta: { height: 1440, bytes: 7_032_530_944, sourceLabel: 'VidLink', serverName: '', countryCodes: ['en'], format: 'hls', title: 'Interstellar.2014.1440p.WEB-DL.x264' },
+    stream: { name: '🐦‍🔥 PhoeniX · 1440p · VidLink', title: 'Interstellar · 2014 · WEB-DL · 6.5 GB' },
   },
   {
     label: 'HLS Anime',

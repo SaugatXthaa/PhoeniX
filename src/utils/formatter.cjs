@@ -224,7 +224,12 @@ function formatStream({ nameTemplate, descriptionTemplate, meta, stream, addonNa
     try {
       const values = fieldsForStream(meta, stream, addonName);
       const out = renderTemplate(String(tpl), values);
-      return out.trim() ? out : fallback;
+      // A render that still carries unrendered field tokens means the template
+      // itself is malformed (unclosed brace / broken switch syntax leaks raw
+      // text like '{stream.resolution::exists["…'). Ship the card's original
+      // text instead of template junk — same contract as the throw path.
+      if (!out.trim() || /\{(?:stream|addon)\./.test(out)) return fallback;
+      return out;
     } catch {
       return fallback;
     }

@@ -126,7 +126,7 @@ export function enrichMeta(urlResult) {
   // 1b. If still no height, try parsing from URL path
   // Common patterns: /1080/, /720/, /480/, /hls3/01/0720, /quality=1080
   if (!meta.height) {
-    const urlHeightMatch = urlLower.match(/\/(1080|720|480|360|2160)\b/);
+    const urlHeightMatch = urlLower.match(/\/(2160|1440|1080|720|480|360)\b/);
     if (urlHeightMatch) meta.height = parseInt(urlHeightMatch[1]);
   }
 
@@ -1172,11 +1172,11 @@ export class StreamResolver {
     if (ac && ac.hasAny) {
       const heightsSet = Array.isArray(ac.heights) ? new Set(ac.heights) : null;
       // Bucket heights into the whitelist tiers the configure UI offers
-      // (2160/1080/720/480/360). 1440p (QHD — Stellar/VidLink/VideasyTo emit
-      // it) has no checkbox of its own, so it rides the 1080p tier: with
-      // everything selected nothing is dropped, and deselecting 1080p also
-      // hides QHD (strict-tier semantics preserved for every offered tier).
-      const rankOf = (h) => (h >= 2160 ? 2160 : h >= 1080 ? 1080 : h >= 720 ? 720 : h >= 480 ? 480 : h >= 360 ? 360 : 0);
+      // (2160/1440/1080/720/480/360). 1440p (QHD — Stellar/VidLink/VideasyTo
+      // emit it) is a first-class checkbox since the 1440p option shipped;
+      // installs whose config predates it inherit the 1080p toggle's state
+      // inside normalizeConfig (addonConfig.cjs), so legacy behavior holds.
+      const rankOf = (h) => (h >= 2160 ? 2160 : h >= 1440 ? 1440 : h >= 1080 ? 1080 : h >= 720 ? 720 : h >= 480 ? 480 : h >= 360 ? 360 : 0);
       // provider_order: rank map — selected sources in the user's order first;
       // unranked sources keep registry order after them.
       const orderRank = Array.isArray(ac.providerOrder)
@@ -1426,7 +1426,7 @@ export class StreamResolver {
           builtName = sub && sub !== meta.sourceLabel ? `${meta.sourceLabel} · ${sub}` : String(meta.sourceLabel);
         } else if (ac.groupBy === 'quality') {
           const h = Number(meta.height) || 0;
-          builtName = h >= 2160 ? '4K' : h >= 1080 ? '1080p' : h >= 720 ? '720p' : h >= 480 ? '480p' : h > 0 ? 'SD' : builtName;
+          builtName = h >= 2160 ? '4K' : h >= 1440 ? '1440p' : h >= 1080 ? '1080p' : h >= 720 ? '720p' : h >= 480 ? '480p' : h > 0 ? 'SD' : builtName;
         }
         if (ac.formatterName || ac.formatterDescription) {
           const formatted = formatter.formatStream({
@@ -1488,6 +1488,7 @@ export class StreamResolver {
     // Quality label (phoenix emoji for all resolutions)
     const height = meta.height;
     if (height >= 2160) parts.push('4K');
+    else if (height >= 1440) parts.push('1440p');
     else if (height >= 1080) parts.push('1080p');
     else if (height >= 720) parts.push('720p');
     else if (height >= 480) parts.push('480p');
@@ -1531,6 +1532,7 @@ export class StreamResolver {
     // Quality
     const height = meta.height;
     if (height >= 2160) specs.push('2160p');
+    else if (height >= 1440) specs.push('1440p');
     else if (height >= 1080) specs.push('1080p');
     else if (height >= 720) specs.push('720p');
     else if (height >= 480) specs.push('480p');

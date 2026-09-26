@@ -72,6 +72,7 @@ const presets = () => [
 
 const qualities = [
   { key: "res_2160", rank: 2160, label: "4K", hint: "2160p" },
+  { key: "res_1440", rank: 1440, label: "1440p", hint: "QHD" },
   { key: "res_1080", rank: 1080, label: "1080p", hint: "Full HD" },
   { key: "res_720", rank: 720, label: "720p", hint: "HD" },
   { key: "res_480", rank: 480, label: "480p", hint: "SD" },
@@ -315,7 +316,15 @@ function App() {
   })();
 
   const [selectedSources, setSelectedSources] = useState(savedConfig?.selectedSources || null);
-  const [selectedQualities, setSelectedQualities] = useState(savedConfig?.selectedQualities || initialSelectedQualities);
+  // Restore saved quality selections. Saves created before the 1440p option
+  // existed carry no res_1440 entry — QHD used to ride the 1080p tier, so it
+  // inherits the saved 1080p state (faithful restore of the old behavior).
+  const [selectedQualities, setSelectedQualities] = useState(() => {
+    const saved = savedConfig?.selectedQualities;
+    if (!saved) return initialSelectedQualities;
+    if (saved.res_1440 == null) return { ...saved, res_1440: saved.res_1080 ?? true };
+    return saved;
+  });
   const [subtitlesDisabled, setSubtitlesDisabled] = useState(savedConfig?.subtitlesDisabled ?? false);
   const [disableDirect, setDisableDirect] = useState(savedConfig?.disableDirect ?? false);
   const [qualityLimits, setQualityLimits] = useState(savedConfig?.qualityLimits || {});
@@ -507,8 +516,11 @@ function App() {
     for (const provider of providers()) {
       if (selectedSources?.[provider.key]) config[provider.key] = "on";
     }
+    // Every quality tier is emitted explicitly (on AND off): the server
+    // treats an ABSENT res_1440 key as "pre-1440p install — inherit the
+    // 1080p toggle", so deselecting 1440p must still send res_1440=off.
     for (const quality of qualities) {
-      if (selectedQualities[quality.key]) config[quality.key] = "on";
+      config[quality.key] = selectedQualities[quality.key] ? "on" : "off";
     }
     if (subtitlesDisabled) config.subtitles_disabled = "on";
     if (disableDirect) config.disable_direct = "on";
